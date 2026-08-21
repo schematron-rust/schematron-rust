@@ -258,7 +258,7 @@ fn documentation_files() -> Vec<PathBuf> {
             files.push(path);
         }
     }
-    for directory in ["spec", "AGENTS"] {
+    for directory in ["spec", "agents"] {
         let directory = root.join(directory);
         if !directory.is_dir() {
             continue;
@@ -404,12 +404,67 @@ fn every_runnable_example_is_referenced_from_the_documentation() {
 }
 
 #[test]
+fn directories_are_lowercase() {
+    // spec/agents-directory-name-is-lowercase.md. The check is worth having
+    // because macOS and Windows filesystems are case-insensitive: a directory
+    // that regressed to `AGENTS/` would work on the machine that made the
+    // change and fail only on Linux, in CI, later.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut offenders = Vec::new();
+
+    for entry in fs::read_dir(root).expect("the repository root should be readable") {
+        let path = entry.expect("directory entry").path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        // Skip build output and version control, which are not ours to name.
+        if name.starts_with('.') || name == "target" {
+            continue;
+        }
+        if name != name.to_lowercase() {
+            offenders.push(name);
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "directory names must be lowercase; see spec/agents-directory-name-is-lowercase.md: {}",
+        offenders.join(", ")
+    );
+}
+
+#[test]
+fn the_agents_directory_is_lowercase() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    assert!(
+        root.join("agents").is_dir(),
+        "the agent documentation directory must be `agents/`, lowercase"
+    );
+
+    // On a case-insensitive filesystem `agents` and `AGENTS` are the same
+    // directory, so existence proves nothing about the recorded case. Read
+    // the parent listing instead, which preserves it.
+    let recorded = fs::read_dir(root)
+        .expect("the repository root should be readable")
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .find(|name| name.eq_ignore_ascii_case("agents"));
+
+    assert_eq!(
+        recorded.as_deref(),
+        Some("agents"),
+        "the agent documentation directory is recorded with the wrong case"
+    );
+}
+
+#[test]
 fn every_agent_document_is_reachable() {
     // A document nobody links to is a document nobody reads, and it rots
-    // faster than the ones that are read. Everything under AGENTS/ must be
+    // faster than the ones that are read. Everything under agents/ must be
     // reachable from AGENTS.md or from the repository index.
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let directory = root.join("AGENTS");
+    let directory = root.join("agents");
     if !directory.is_dir() {
         return;
     }
@@ -421,20 +476,20 @@ fn every_agent_document_is_reachable() {
     );
 
     let mut orphans = Vec::new();
-    for entry in fs::read_dir(&directory).expect("AGENTS/ should be readable") {
+    for entry in fs::read_dir(&directory).expect("agents/ should be readable") {
         let path = entry.expect("directory entry").path();
         if path.extension().is_none_or(|e| e != "md") {
             continue;
         }
         let name = path.file_name().unwrap().to_string_lossy().to_string();
-        if !entry_points.contains(&format!("AGENTS/{name}")) {
+        if !entry_points.contains(&format!("agents/{name}")) {
             orphans.push(name);
         }
     }
 
     assert!(
         orphans.is_empty(),
-        "AGENTS/ document(s) not linked from AGENTS.md or index.md: {}",
+        "agents/ document(s) not linked from AGENTS.md or index.md: {}",
         orphans.join(", ")
     );
 }

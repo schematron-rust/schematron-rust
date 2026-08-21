@@ -48,11 +48,11 @@ that is a defect in one of them.
 | Document | Covers |
 |---|---|
 | [AGENTS.md](AGENTS.md) | Entry point: gates, non-negotiables, where facts live |
-| [AGENTS/architecture.md](AGENTS/architecture.md) | The four layers and why they are separate |
-| [AGENTS/invariants.md](AGENTS/invariants.md) | What must never break, and the test that catches it |
-| [AGENTS/conventions.md](AGENTS/conventions.md) | Code and prose style |
-| [AGENTS/testing.md](AGENTS/testing.md) | How to prove a change works |
-| [AGENTS/tasks.md](AGENTS/tasks.md) | Recipes for common jobs |
+| [agents/architecture.md](agents/architecture.md) | The four layers and why they are separate |
+| [agents/invariants.md](agents/invariants.md) | What must never break, and the test that catches it |
+| [agents/conventions.md](agents/conventions.md) | Code and prose style |
+| [agents/testing.md](agents/testing.md) | How to prove a change works |
+| [agents/tasks.md](agents/tasks.md) | Recipes for common jobs |
 | [CLAUDE.md](CLAUDE.md) | Claude Code mechanics; points at AGENTS.md |
 
 ## Runnable code

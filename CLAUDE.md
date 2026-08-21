@@ -52,7 +52,7 @@ is Claude-specific mechanics that do not belong there.
   nothing.
 - A `report` firing does not make a document invalid. It is an observation.
 
-Full list with reasoning: [`AGENTS/invariants.md`](AGENTS/invariants.md).
+Full list with reasoning: [`agents/invariants.md`](agents/invariants.md).
 
 ## Before claiming a change is done
 

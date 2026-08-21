@@ -95,7 +95,7 @@ Existing narrow allows all carry their reason:
 #[allow(clippy::similar_names)]
 ```
 
-## Prose style in `spec/` and `AGENTS/`
+## Prose style in `spec/` and `agents/`
 
 - Second person, present tense, active voice.
 - Tables for anything enumerable; prose for anything that needs a reason.

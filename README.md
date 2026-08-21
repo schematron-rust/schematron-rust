@@ -332,7 +332,7 @@ adding a directory, with no Rust to change.
 The documentation is machine-checked: `tests/docs.rs` compiles every schema
 shown in the docs, resolves every relative link, and ties duplicated facts —
 the MSRV, the CLI flags, the XPath function list — back to their single
-source. See [AGENTS/testing.md](AGENTS/testing.md).
+source. See [agents/testing.md](agents/testing.md).
 
 ---
 

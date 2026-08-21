@@ -22,11 +22,11 @@ which you changed.
 Read, in this order:
 
 1. [`spec/index.md`](spec/index.md) — what the project is and is not
-2. [`AGENTS/architecture.md`](AGENTS/architecture.md) — the four layers and why they are separate
-3. [`AGENTS/invariants.md`](AGENTS/invariants.md) — **the things that must never break**
-4. [`AGENTS/conventions.md`](AGENTS/conventions.md) — how code here is written
-5. [`AGENTS/testing.md`](AGENTS/testing.md) — how to prove a change works
-6. [`AGENTS/tasks.md`](AGENTS/tasks.md) — recipes for the common jobs
+2. [`agents/architecture.md`](agents/architecture.md) — the four layers and why they are separate
+3. [`agents/invariants.md`](agents/invariants.md) — **the things that must never break**
+4. [`agents/conventions.md`](agents/conventions.md) — how code here is written
+5. [`agents/testing.md`](agents/testing.md) — how to prove a change works
+6. [`agents/tasks.md`](agents/tasks.md) — recipes for the common jobs
 
 ## The commands that gate a change
 
@@ -42,7 +42,7 @@ cargo +1.94 test --all-features               # the MSRV boundary
 Slower, run when relevant:
 
 ```sh
-cargo bench                                   # criterion; see AGENTS/testing.md
+cargo bench                                   # criterion; see agents/testing.md
 cargo +nightly fuzz run fuzz_validate -- -max_total_time=60
 ```
 
@@ -61,7 +61,7 @@ back to this, or to a missing namespace prefix. See
 
 ## Non-negotiables
 
-These are in [`AGENTS/invariants.md`](AGENTS/invariants.md) with reasoning.
+These are in [`agents/invariants.md`](agents/invariants.md) with reasoning.
 The short version:
 
 - **No `unsafe`.** The crate is `#![forbid(unsafe_code)]`.
@@ -80,7 +80,7 @@ The short version:
 Match the surrounding code. Specifically:
 
 - Comments explain **why**, never what. If a comment restates the code,
-  delete it. See [`AGENTS/conventions.md`](AGENTS/conventions.md).
+  delete it. See [`agents/conventions.md`](agents/conventions.md).
 - Every public item has a rustdoc comment; `missing_docs` is a warning and
   `cargo doc` must stay clean.
 - Errors name what failed **and where**. A message reading only "invalid

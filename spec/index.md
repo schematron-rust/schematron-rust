@@ -25,6 +25,7 @@ XML data model, its own XPath 1.0 engine, and its own Schematron validator.
 | Testing | [testing.md](testing.md) | Implemented |
 | Conformance and limits | [conformance.md](conformance.md) | Implemented |
 | Rust MSRV policy | [rust-msrv-n-minus-3.md](rust-msrv-n-minus-3.md) | Implemented |
+| Agents directory naming | [agents-directory-name-is-lowercase.md](agents-directory-name-is-lowercase.md) | Implemented |
 | Tutorial | [tutorial.md](tutorial.md) | — |
 | Roadmap | [roadmap.md](roadmap.md) | — |
 
