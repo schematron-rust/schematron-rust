@@ -19,6 +19,9 @@ use crate::xml::{Document, NodeId};
 /// assert!(!Value::String(String::new()).to_boolean_scalar());
 /// ```
 #[derive(Debug, Clone, PartialEq)]
+// Variants will be added: XPath 2.0 phase 2b adds the date and time types.
+// Marking it non-exhaustive now means that will not be a breaking change.
+#[non_exhaustive]
 pub enum Value {
     /// A set of nodes, kept sorted by document order and deduplicated.
     NodeSet(Vec<NodeId>),
@@ -28,6 +31,89 @@ pub enum Value {
     Number(f64),
     /// A string.
     String(String),
+    /// An XPath 2.0 sequence: an ordered list of nodes and atomic values.
+    ///
+    /// **Unreachable under XPath 1.0.** Nothing in the 1.0 grammar or
+    /// function library constructs one, so a 1.0 expression evaluates through
+    /// exactly the code it did before this variant existed, with exactly the
+    /// same results. See `spec/xpath2.md`.
+    ///
+    /// Sequences do not nest: building one from others flattens them.
+    Sequence(Vec<Item>),
+}
+
+/// One member of an XPath 2.0 [`Value::Sequence`].
+///
+/// A node or an atomic value — never a sequence, because sequences do not
+/// nest.
+#[derive(Debug, Clone, PartialEq)]
+// Variants will be added: XPath 2.0 phase 2b adds the date and time types.
+// Marking it non-exhaustive now means that will not be a breaking change.
+#[non_exhaustive]
+pub enum Item {
+    /// A node.
+    Node(NodeId),
+    /// A string.
+    String(String),
+    /// A number.
+    Number(f64),
+    /// A boolean.
+    Boolean(bool),
+}
+
+impl Item {
+    /// The item's string value.
+    #[must_use]
+    pub fn to_xpath_string(&self, document: &Document) -> String {
+        match self {
+            Item::Node(node) => document.string_value(*node),
+            Item::String(text) => text.clone(),
+            Item::Number(number) => format_number(*number),
+            Item::Boolean(boolean) => if *boolean { "true" } else { "false" }.to_string(),
+        }
+    }
+
+    /// The item's numeric value.
+    #[must_use]
+    pub fn to_number(&self, document: &Document) -> f64 {
+        match self {
+            Item::Node(node) => parse_number(&document.string_value(*node)),
+            Item::String(text) => parse_number(text),
+            Item::Number(number) => *number,
+            Item::Boolean(boolean) => f64::from(u8::from(*boolean)),
+        }
+    }
+
+    /// The name of this item's type, for error messages.
+    #[must_use]
+    pub const fn type_name(&self) -> &'static str {
+        match self {
+            Item::Node(_) => "node",
+            Item::String(_) => "string",
+            Item::Number(_) => "number",
+            Item::Boolean(_) => "boolean",
+        }
+    }
+}
+
+/// Builds a sequence from values, flattening any that are themselves
+/// sequences or node-sets.
+///
+/// This is what makes `(a, (b, c))` and `(a, b, c)` the same sequence, which
+/// XPath 2.0 requires.
+#[must_use]
+pub fn flatten_into_sequence(values: Vec<Value>) -> Vec<Item> {
+    let mut items = Vec::new();
+    for value in values {
+        match value {
+            Value::Sequence(inner) => items.extend(inner),
+            Value::NodeSet(nodes) => items.extend(nodes.into_iter().map(Item::Node)),
+            Value::Boolean(boolean) => items.push(Item::Boolean(boolean)),
+            Value::Number(number) => items.push(Item::Number(number)),
+            Value::String(text) => items.push(Item::String(text)),
+        }
+    }
+    items
 }
 
 impl Value {
@@ -39,6 +125,7 @@ impl Value {
             Value::Boolean(_) => "boolean",
             Value::Number(_) => "number",
             Value::String(_) => "string",
+            Value::Sequence(_) => "sequence",
         }
     }
 
@@ -53,7 +140,45 @@ impl Value {
             Value::Boolean(b) => *b,
             Value::Number(n) => *n != 0.0 && !n.is_nan(),
             Value::String(s) => !s.is_empty(),
+            // A sequence uses XPath 2.0's effective boolean value, whose
+            // "anything else is a type error" case cannot be expressed here;
+            // `effective_boolean_value` reports it properly.
+            Value::Sequence(items) => match items.as_slice() {
+                [] => false,
+                [Item::Boolean(boolean)] => *boolean,
+                [Item::String(text)] => !text.is_empty(),
+                [Item::Number(number)] => *number != 0.0 && !number.is_nan(),
+                // A sequence starting with a node is true. So is any other
+                // multi-item sequence here, but that case is a type error
+                // rather than a value — see `effective_boolean_value`.
+                _ => true,
+            },
         }
+    }
+
+    /// Converts to boolean, reporting XPath 2.0's type error.
+    ///
+    /// The effective boolean value of a sequence of two or more atomic items
+    /// is a **type error** in XPath 2.0, not `true`. Raising it means
+    /// `if (1, 2) then …` fails rather than quietly taking a branch.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message naming the offending sequence.
+    pub fn effective_boolean_value(&self) -> Result<bool, String> {
+        if let Value::Sequence(items) = self {
+            match items.as_slice() {
+                [] | [Item::Node(_), ..] | [_] => {}
+                _ => {
+                    return Err(format!(
+                        "a sequence of {} atomic items has no effective boolean value; \
+                         XPath 2.0 makes this a type error",
+                        items.len()
+                    ))
+                }
+            }
+        }
+        Ok(self.to_boolean())
     }
 
     /// Converts to boolean without needing a document.
@@ -78,6 +203,12 @@ impl Value {
             Value::Boolean(b) => if *b { "true" } else { "false" }.to_string(),
             Value::Number(n) => format_number(*n),
             Value::String(s) => s.clone(),
+            // The string value of a sequence is its first item's, matching
+            // how a node-set behaves; XPath 2.0 makes a multi-item sequence a
+            // type error here, which `spec/xpath2.md` records as a divergence.
+            Value::Sequence(items) => items
+                .first()
+                .map_or_else(String::new, |item| item.to_xpath_string(document)),
         }
     }
 
@@ -88,7 +219,7 @@ impl Value {
     #[must_use]
     pub fn to_xpath_string_scalar(&self) -> String {
         match self {
-            Value::NodeSet(_) => String::new(),
+            Value::NodeSet(_) | Value::Sequence(_) => String::new(),
             Value::Boolean(b) => if *b { "true" } else { "false" }.to_string(),
             Value::Number(n) => format_number(*n),
             Value::String(s) => s.clone(),
@@ -106,8 +237,28 @@ impl Value {
             Value::Number(n) => *n,
             Value::Boolean(b) => f64::from(u8::from(*b)),
             Value::String(s) => parse_number(s),
-            Value::NodeSet(_) => parse_number(&self.to_xpath_string(document)),
+            Value::NodeSet(_) | Value::Sequence(_) => {
+                parse_number(&self.to_xpath_string(document))
+            }
         }
+    }
+
+    /// The sequence's items, or `None` for the other types.
+    #[must_use]
+    pub fn as_sequence(&self) -> Option<&[Item]> {
+        match self {
+            Value::Sequence(items) => Some(items),
+            _ => None,
+        }
+    }
+
+    /// The value as a sequence of items, converting a node-set or scalar.
+    ///
+    /// This is what lets `for`, `some`, `every`, and the sequence functions
+    /// accept a node-set as readily as a sequence.
+    #[must_use]
+    pub fn into_items(self) -> Vec<Item> {
+        flatten_into_sequence(vec![self])
     }
 
     /// Returns the node-set, or `None` for the other three types.

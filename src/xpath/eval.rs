@@ -5,10 +5,10 @@
 //! 1.0's existential node-set semantics differ from what most readers expect
 //! and are implemented literally rather than "fixed".
 
-use super::ast::{Axis, BinaryOp, Expr, NodeTest, PathExpr, PathStart, Step};
+use super::ast::{Axis, BinaryOp, Expr, NodeTest, PathExpr, PathStart, Quantifier, Step};
 use super::context::EvalContext;
 use super::functions;
-use super::value::Value;
+use super::value::{flatten_into_sequence, Item, Value};
 use crate::xml::{Document, NodeId, NodeKind};
 
 /// A failure during evaluation.
@@ -95,6 +95,33 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
 
         Expr::Path(path) => Ok(Value::NodeSet(evaluate_path(path, context)?)),
 
+        Expr::Sequence(members) => {
+            let mut values = Vec::with_capacity(members.len());
+            for member in members {
+                values.push(evaluate(member, context)?);
+            }
+            Ok(Value::Sequence(flatten_into_sequence(values)))
+        }
+
+        Expr::Range(from, to) => {
+            let from = evaluate(from, context)?.to_number(context.document);
+            let to = evaluate(to, context)?.to_number(context.document);
+            Ok(Value::Sequence(range_items(from, to)?))
+        }
+
+        Expr::For {
+            variable,
+            input,
+            body,
+        } => evaluate_for(variable, input, body, context),
+
+        Expr::Quantified {
+            quantifier,
+            variable,
+            input,
+            test,
+        } => evaluate_quantified(*quantifier, variable, input, test, context),
+
         Expr::If {
             condition,
             then_branch,
@@ -102,7 +129,10 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
         } => {
             // Only the taken branch is evaluated, so a conditional can guard
             // an expression that would fail on the other side.
-            if evaluate(condition, context)?.to_boolean() {
+            let holds = evaluate(condition, context)?
+                .effective_boolean_value()
+                .map_err(EvalError::new)?;
+            if holds {
                 evaluate(then_branch, context)
             } else {
                 evaluate(else_branch, context)
@@ -194,6 +224,17 @@ fn compare_equality(left: &Value, right: &Value, document: &Document, want_equal
     let test = |a: &str, b: &str| (a == b) == want_equal;
 
     match (left, right) {
+        // XPath 2.0: a general comparison involving a sequence is
+        // existential over its atomized items, exactly as it is for a
+        // node-set. Handled first so that every XPath 1.0 arm below is
+        // reached by precisely the values it was written for.
+        (Value::Sequence(_), _) | (_, Value::Sequence(_)) => {
+            let a = comparable_strings(left, document);
+            let b = comparable_strings(right, document);
+            a.iter()
+                .any(|left| b.iter().any(|right| test(left, right)))
+        }
+
         (Value::NodeSet(a), Value::NodeSet(b)) => {
             let b_strings: Vec<String> = b.iter().map(|&n| document.string_value(n)).collect();
             a.iter().any(|&node| {
@@ -217,6 +258,7 @@ fn compare_equality(left: &Value, right: &Value, document: &Document, want_equal
                 .iter()
                 .any(|&node| test(&document.string_value(node), s)),
             Value::NodeSet(_) => unreachable!("matched by the arm above"),
+            Value::Sequence(_) => unreachable!("matched by the sequence arm above"),
         },
 
         // Neither side is a node-set: boolean wins, then number, then string.
@@ -248,6 +290,9 @@ fn compare_relational(op: BinaryOp, left: &Value, right: &Value, document: &Docu
                 .iter()
                 .map(|&n| super::value::parse_number(&document.string_value(n)))
                 .collect(),
+            // XPath 2.0: existential over the sequence's items, as for a
+            // node-set.
+            Value::Sequence(items) => items.iter().map(|item| item.to_number(document)).collect(),
             other => vec![other.to_number(document)],
         }
     };
@@ -259,6 +304,140 @@ fn compare_relational(op: BinaryOp, left: &Value, right: &Value, document: &Docu
     left_numbers
         .iter()
         .any(|&a| right_numbers.iter().any(|&b| compare(a, b)))
+}
+
+/// `for $v in E return E`: evaluates the body once per item and concatenates.
+fn evaluate_for(
+    variable: &super::ast::NameTest,
+    input: &Expr,
+    body: &Expr,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let items = evaluate(input, context)?.into_items();
+    let mut out = Vec::with_capacity(items.len());
+
+    // One clone of the enclosing scope for the whole loop; the binding is
+    // replaced per iteration rather than the scope being rebuilt each time.
+    let mut scope = context.variables.clone();
+    let mark = scope.mark();
+    let name = variable.to_string();
+
+    for item in items {
+        scope.truncate(mark);
+        scope.bind(name.clone(), item_to_value(item));
+        let inner = EvalContext {
+            variables: &scope,
+            ..*context
+        };
+        out.push(evaluate(body, &inner)?);
+    }
+    Ok(Value::Sequence(flatten_into_sequence(out)))
+}
+
+/// `some`/`every $v in E satisfies E`.
+fn evaluate_quantified(
+    quantifier: Quantifier,
+    variable: &super::ast::NameTest,
+    input: &Expr,
+    test: &Expr,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let items = evaluate(input, context)?.into_items();
+    let mut scope = context.variables.clone();
+    let mark = scope.mark();
+    let name = variable.to_string();
+
+    for item in items {
+        scope.truncate(mark);
+        scope.bind(name.clone(), item_to_value(item));
+        let inner = EvalContext {
+            variables: &scope,
+            ..*context
+        };
+        let holds = evaluate(test, &inner)?
+            .effective_boolean_value()
+            .map_err(EvalError::new)?;
+        // Both quantifiers short-circuit on the first decisive item.
+        match quantifier {
+            Quantifier::Some if holds => return Ok(Value::Boolean(true)),
+            Quantifier::Every if !holds => return Ok(Value::Boolean(false)),
+            _ => {}
+        }
+    }
+    // `every` over an empty sequence is true, `some` is false.
+    Ok(Value::Boolean(matches!(quantifier, Quantifier::Every)))
+}
+
+/// Wraps a sequence item back into a value, for binding to a variable.
+fn item_to_value(item: Item) -> Value {
+    match item {
+        // A single node binds as a one-node node-set, so paths can continue
+        // from it: `for $x in a return $x/b`.
+        Item::Node(node) => Value::NodeSet(vec![node]),
+        Item::String(text) => Value::String(text),
+        Item::Number(number) => Value::Number(number),
+        Item::Boolean(boolean) => Value::Boolean(boolean),
+    }
+}
+
+/// The largest `to` range that will be materialised.
+///
+/// XPath 2.0 sets no limit, but a range becomes a real `Vec`, so an absurd
+/// one would be stopped by the allocator rather than by an error. The fuzz
+/// targets exist to keep "hostile input is an error" true, and this is part
+/// of it.
+const MAX_RANGE: f64 = 1_000_000.0;
+
+/// The items of `from to to`, ascending.
+///
+/// A descending range is the empty sequence, which XPath 2.0 specifies. A
+/// bound that is not a number is a type error rather than an empty result,
+/// because silently yielding nothing would make a broken range look like an
+/// empty one.
+fn range_items(from: f64, to: f64) -> Result<Vec<Item>, EvalError> {
+    if from.is_nan() || to.is_nan() {
+        return Err(EvalError::new(
+            "the bounds of a `to` range must be numbers",
+        ));
+    }
+    let from = from.trunc();
+    let to = to.trunc();
+    if from > to {
+        return Ok(Vec::new());
+    }
+
+    // A range is materialised, so an absurd one would exhaust memory.
+    if to - from >= MAX_RANGE {
+        return Err(EvalError::new(format!(
+            "a `to` range of {} items exceeds the limit of {MAX_RANGE:.0}",
+            to - from + 1.0
+        )));
+    }
+
+    let mut items = Vec::new();
+    let mut current = from;
+    while current <= to {
+        items.push(Item::Number(current));
+        current += 1.0;
+    }
+    Ok(items)
+}
+
+/// The string values a value contributes to a general comparison.
+///
+/// A sequence or node-set contributes one per item; a scalar contributes one.
+fn comparable_strings(value: &Value, document: &Document) -> Vec<String> {
+    match value {
+        Value::Sequence(items) => items
+            .iter()
+            .map(|item| item.to_xpath_string(document))
+            .collect(),
+        Value::NodeSet(nodes) => nodes
+            .iter()
+            .map(|&node| document.string_value(node))
+            .collect(),
+        other => vec![other.to_xpath_string(document)],
+    }
 }
 
 /// Sorts a node-set into document order and removes duplicates.

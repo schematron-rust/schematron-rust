@@ -8,6 +8,9 @@ use std::fmt;
 
 /// A parsed XPath expression.
 #[derive(Debug, Clone, PartialEq)]
+// Variants will be added: XPath 2.0 phase 2b adds `cast as` and `instance of`.
+// Marking it non-exhaustive now means that will not be a breaking change.
+#[non_exhaustive]
 pub enum Expr {
     /// A binary operation.
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
@@ -28,6 +31,35 @@ pub enum Expr {
         /// The argument expressions.
         args: Vec<Expr>,
     },
+    /// `(E, E, E)` — an XPath 2.0 sequence.
+    ///
+    /// Nested sequences flatten when the value is built, so this holds the
+    /// operands as written.
+    Sequence(Vec<Expr>),
+    /// `E to E` — an ascending range of integers.
+    ///
+    /// A descending range yields the empty sequence, as XPath 2.0 specifies.
+    Range(Box<Expr>, Box<Expr>),
+    /// `for $v in E return E` — iterates, yielding a sequence.
+    For {
+        /// The variable bound on each iteration.
+        variable: NameTest,
+        /// The sequence or node-set to iterate.
+        input: Box<Expr>,
+        /// Evaluated once per item; its results concatenate.
+        body: Box<Expr>,
+    },
+    /// `some $v in E satisfies E` and `every $v in E satisfies E`.
+    Quantified {
+        /// Which quantifier.
+        quantifier: Quantifier,
+        /// The variable bound on each iteration.
+        variable: NameTest,
+        /// The sequence or node-set to iterate.
+        input: Box<Expr>,
+        /// The test applied to each item.
+        test: Box<Expr>,
+    },
     /// `if (E) then E else E`.
     ///
     /// XPath 2.0 only; an XPath 1.0 binding rejects it at compile time. Both
@@ -42,8 +74,31 @@ pub enum Expr {
     },
 }
 
+/// Which quantifier an [`Expr::Quantified`] uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quantifier {
+    /// `some` — true when any item satisfies the test.
+    Some,
+    /// `every` — true when every item does, and for an empty input.
+    Every,
+}
+
+impl Quantifier {
+    /// The keyword, for error messages.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Quantifier::Some => "some",
+            Quantifier::Every => "every",
+        }
+    }
+}
+
 /// The binary operators, at their XPath precedence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Variants will be added: XPath 2.0 phase 2b adds the value comparisons.
+// Marking it non-exhaustive now means that will not be a breaking change.
+#[non_exhaustive]
 pub enum BinaryOp {
     /// `or`
     Or,
@@ -235,6 +290,9 @@ impl fmt::Display for NameTest {
 
 /// The node test applied to each node an axis yields.
 #[derive(Debug, Clone, PartialEq)]
+// Variants will be added: XPath 2.0 phase 2b adds the kind tests. Marking it
+// non-exhaustive now means that will not be a breaking change.
+#[non_exhaustive]
 pub enum NodeTest {
     /// A qualified name: matches nodes of the axis's principal type whose
     /// expanded name matches.

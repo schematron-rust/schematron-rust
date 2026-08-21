@@ -215,6 +215,7 @@ states the limits and deliberate divergences in full.
 | SVRL output | Full |
 | XPath 1.0 — 13 axes, 27 core functions, exact conversion semantics | Full |
 | XPath `document()`, with cross-document node-sets | Full |
+| XPath 2.0 sequences, `for`, `some`, `every`, ranges, regular expressions | Subset — see [spec/xpath2.md](spec/xpath2.md) |
 | `queryBinding="xslt"`, `"xpath"`, or absent | Supported |
 | `queryBinding="xslt2"`, `"xpath2"` | Partly — see [spec/xpath2.md](spec/xpath2.md) |
 | `queryBinding="xslt3"` and later | Refused by default |

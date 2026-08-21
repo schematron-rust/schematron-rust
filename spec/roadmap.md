@@ -19,17 +19,19 @@
   sequential one
 - XPath 2.0 phase 1: the `xslt2` and `xpath2` bindings, regular expressions,
   conditionals, and the string and numeric functions that need no sequences
+- XPath 2.0 phase 2a: the sequence type, and with it sequence construction,
+  ranges, `for`, `some`, `every`, `tokenize()`, `distinct-values()` and
+  `index-of()`
 - Fuzz targets, criterion benchmarks, clippy pedantic, corpus test suite,
   runnable examples, and this specification
 
 ## Next
 
-1. **XPath 2.0 phase 2** — the parts phase 1 deliberately left out, listed in
-   [xpath2.md](xpath2.md): the sequence type, and with it `for`, `some`,
-   `every`, `tokenize()` and the range operator; the date and time types; and
-   value comparisons. This is also what would close the semantic divergences
-   phase 1 documents, since those exist only because expressions still
-   evaluate on the XPath 1.0 engine.
+1. **XPath 2.0 phase 2b** — the parts phase 2a deliberately left out, listed
+   in [xpath2.md](xpath2.md): the date and time types, and value comparisons
+   (`eq`, `ne`, `lt`, `le`, `gt`, `ge`). Closing the semantic divergences
+   phase 1 documents belongs here too, since those exist only because shared
+   constructs still evaluate on the XPath 1.0 engine.
 2. **XSLT key emulation** — `<sch:key>` and the `key()` function, which some
    1.5-era schemas and some large industry schemas rely on for cross-reference
    checks that are otherwise quadratic.

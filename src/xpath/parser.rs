@@ -5,7 +5,9 @@
 //! only cleverness is in the [`lexer`](super::lexer), which has already
 //! resolved XPath's context-sensitive token classes.
 
-use super::ast::{Axis, BinaryOp, Expr, NameTest, NodeTest, PathExpr, PathStart, Step};
+use super::ast::{
+    Axis, BinaryOp, Expr, NameTest, NodeTest, PathExpr, PathStart, Quantifier, Step,
+};
 use super::lexer::{tokenize, Token, TokenKind};
 
 /// The maximum nesting depth accepted while parsing.
@@ -118,8 +120,22 @@ impl Parser {
     ///
     /// XPath 2.0's keywords are not reserved words; `then` and `else` are
     /// ordinary names that only mean something in position.
+    /// Whether the next token is this keyword.
+    ///
+    /// XPath 2.0's keywords — `in`, `return`, `satisfies`, `then`, `else`,
+    /// `to` — are not reserved words, so the lexer classifies them by
+    /// position like any other name. A keyword directly followed by `(`, as
+    /// in `in (1 to 10)`, arrives as a function name; both spellings mean the
+    /// keyword here.
+    fn at_name(&self, text: &str) -> bool {
+        matches!(
+            self.peek(),
+            Some(TokenKind::Name(name) | TokenKind::FunctionName(name)) if name == text
+        )
+    }
+
     fn eat_name(&mut self, text: &str) -> bool {
-        if matches!(self.peek(), Some(TokenKind::Name(name)) if name == text) {
+        if self.at_name(text) {
             self.index += 1;
             return true;
         }
@@ -160,12 +176,101 @@ impl Parser {
         self.depth -= 1;
     }
 
-    /// `Expr := OrExpr`
+    /// `Expr := ExprSingle ("," ExprSingle)*`
+    ///
+    /// The comma builds an XPath 2.0 sequence. It is admitted only here —
+    /// at the top level and inside parentheses — because function arguments
+    /// and predicates take an `ExprSingle`, where a comma separates arguments
+    /// rather than sequence members.
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
+        let first = self.parse_expr_single()?;
+        if self.peek() != Some(&TokenKind::Comma) {
+            return Ok(first);
+        }
+        let mut members = vec![first];
+        while self.eat(&TokenKind::Comma) {
+            members.push(self.parse_expr_single()?);
+        }
+        Ok(Expr::Sequence(members))
+    }
+
+    /// `ExprSingle := ForExpr | QuantifiedExpr | IfExpr | OrExpr`
+    fn parse_expr_single(&mut self) -> Result<Expr, ParseError> {
         self.enter()?;
-        let expr = self.parse_or();
+        let expr = self.parse_expr_single_inner();
         self.leave();
         expr
+    }
+
+    fn parse_expr_single_inner(&mut self) -> Result<Expr, ParseError> {
+        // `for` and `some`/`every` are ordinary names until a `$` follows
+        // them, which is what tells them apart from an element called `for`.
+        if let Some(TokenKind::Name(name) | TokenKind::FunctionName(name)) = self.peek().cloned() {
+            let binds_a_variable =
+                matches!(self.tokens.get(self.index + 1).map(|t| &t.kind), Some(TokenKind::Variable(_)));
+            if binds_a_variable {
+                match name.as_str() {
+                    "for" => return self.parse_for(),
+                    "some" => return self.parse_quantified(Quantifier::Some),
+                    "every" => return self.parse_quantified(Quantifier::Every),
+                    _ => {}
+                }
+            }
+        }
+        self.parse_or()
+    }
+
+    /// `for $v in ExprSingle return ExprSingle`
+    fn parse_for(&mut self) -> Result<Expr, ParseError> {
+        self.index += 1; // `for`
+        let variable = self.expect_variable()?;
+        if !self.eat_name("in") {
+            return self.error("expected `in` after the variable of a `for` expression");
+        }
+        let input = self.parse_expr_single()?;
+        if !self.eat_name("return") {
+            return self.error("expected `return` after the sequence of a `for` expression");
+        }
+        let body = self.parse_expr_single()?;
+        Ok(Expr::For {
+            variable,
+            input: Box::new(input),
+            body: Box::new(body),
+        })
+    }
+
+    /// `(some | every) $v in ExprSingle satisfies ExprSingle`
+    fn parse_quantified(&mut self, quantifier: Quantifier) -> Result<Expr, ParseError> {
+        self.index += 1; // `some` or `every`
+        let variable = self.expect_variable()?;
+        if !self.eat_name("in") {
+            return self.error(format!(
+                "expected `in` after the variable of a `{}` expression",
+                quantifier.as_str()
+            ));
+        }
+        let input = self.parse_expr_single()?;
+        if !self.eat_name("satisfies") {
+            return self.error(format!(
+                "expected `satisfies` in a `{}` expression",
+                quantifier.as_str()
+            ));
+        }
+        let test = self.parse_expr_single()?;
+        Ok(Expr::Quantified {
+            quantifier,
+            variable,
+            input: Box::new(input),
+            test: Box::new(test),
+        })
+    }
+
+    fn expect_variable(&mut self) -> Result<NameTest, ParseError> {
+        if let Some(TokenKind::Variable(name)) = self.advance() {
+            return Ok(NameTest::parse(&name));
+        }
+        self.index = self.index.saturating_sub(1);
+        self.error("expected a variable, written `$name`")
     }
 
     /// `OrExpr := AndExpr ('or' AndExpr)*`
@@ -204,9 +309,9 @@ impl Parser {
         Ok(left)
     }
 
-    /// `RelationalExpr := AdditiveExpr (('<'|'>'|'<='|'>=') AdditiveExpr)*`
+    /// `RelationalExpr := RangeExpr (('<'|'>'|'<='|'>=') RangeExpr)*`
     fn parse_relational(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_additive()?;
+        let mut left = self.parse_range()?;
         loop {
             let op = match self.peek() {
                 Some(TokenKind::Less) => BinaryOp::Less,
@@ -216,10 +321,24 @@ impl Parser {
                 _ => break,
             };
             self.index += 1;
-            let right = self.parse_additive()?;
+            let right = self.parse_range()?;
             left = Expr::Binary(op, Box::new(left), Box::new(right));
         }
         Ok(left)
+    }
+
+    /// `RangeExpr := AdditiveExpr ("to" AdditiveExpr)?`
+    ///
+    /// XPath 2.0 only. `to` is an ordinary name in XPath 1.0, and a 1.0
+    /// binding rejects the resulting `Expr::Range` at compile time.
+    fn parse_range(&mut self) -> Result<Expr, ParseError> {
+        let left = self.parse_additive()?;
+        if !self.at_name("to") {
+            return Ok(left);
+        }
+        self.index += 1;
+        let right = self.parse_additive()?;
+        Ok(Expr::Range(Box::new(left), Box::new(right)))
     }
 
     /// `AdditiveExpr := MultiplicativeExpr (('+'|'-') MultiplicativeExpr)*`
@@ -455,7 +574,7 @@ impl Parser {
     fn parse_predicates(&mut self) -> Result<Vec<Expr>, ParseError> {
         let mut predicates = Vec::new();
         while self.eat(&TokenKind::LeftBracket) {
-            predicates.push(self.parse_expr()?);
+            predicates.push(self.parse_expr_single()?);
             self.expect(&TokenKind::RightBracket)?;
         }
         Ok(predicates)
@@ -468,6 +587,10 @@ impl Parser {
             Some(TokenKind::Literal(text)) => Ok(Expr::Literal(text)),
             Some(TokenKind::Number(value)) => Ok(Expr::Number(value)),
             Some(TokenKind::LeftParen) => {
+                // `()` is XPath 2.0's empty sequence, not an empty group.
+                if self.eat(&TokenKind::RightParen) {
+                    return Ok(Expr::Sequence(Vec::new()));
+                }
                 let inner = self.parse_expr()?;
                 self.expect(&TokenKind::RightParen)?;
                 Ok(inner)
@@ -509,7 +632,7 @@ impl Parser {
                 let mut args = Vec::new();
                 if !self.eat(&TokenKind::RightParen) {
                     loop {
-                        args.push(self.parse_expr()?);
+                        args.push(self.parse_expr_single()?);
                         if self.eat(&TokenKind::Comma) {
                             continue;
                         }

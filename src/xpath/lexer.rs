@@ -430,18 +430,13 @@ impl<'a> Lexer<'a> {
             return;
         }
 
-        // Rule: following character is `(` -> node type or function name.
-        if self.next_significant(self.position) == Some(b'(') {
-            let kind = if NODE_TYPES.contains(&name.as_str()) {
-                TokenKind::NodeType(name)
-            } else {
-                TokenKind::FunctionName(name)
-            };
-            self.push(kind, start);
-            return;
-        }
-
         // Rule: in operator position, these names are operators.
+        //
+        // This is checked **before** the followed-by-`(` rule, because XPath
+        // 1.0 section 3.7 orders them that way. Getting the order wrong makes
+        // `a and (b)` lex as a call to a function named `and`, which is a
+        // syntax error — and `and`, `or`, `div` and `mod` followed by an
+        // opening parenthesis are all perfectly ordinary things to write.
         if self.previous_allows_operator() {
             let kind = match name.as_str() {
                 "and" => Some(TokenKind::And),
@@ -454,6 +449,17 @@ impl<'a> Lexer<'a> {
                 self.push(kind, start);
                 return;
             }
+        }
+
+        // Rule: following character is `(` -> node type or function name.
+        if self.next_significant(self.position) == Some(b'(') {
+            let kind = if NODE_TYPES.contains(&name.as_str()) {
+                TokenKind::NodeType(name)
+            } else {
+                TokenKind::FunctionName(name)
+            };
+            self.push(kind, start);
+            return;
         }
 
         self.push(TokenKind::Name(name), start);
@@ -524,6 +530,29 @@ mod tests {
                 TokenKind::Name("b".into())
             ]
         );
+    }
+
+    #[test]
+    fn operator_names_beat_function_names() {
+        // XPath 1.0 section 3.7 orders the operator-position rule before the
+        // followed-by-`(` rule. With the two the other way round, `a and (b)`
+        // lexed as a call to a function named `and` and failed to parse — a
+        // real bug, found while adding XPath 2.0 sequences.
+        for (input, expected) in [
+            ("a and (b)", TokenKind::And),
+            ("a or (b)", TokenKind::Or),
+            ("1 div (2)", TokenKind::Div),
+            ("1 mod (2)", TokenKind::Mod),
+        ] {
+            assert_eq!(kinds(input)[1], expected, "{input}");
+        }
+    }
+
+    #[test]
+    fn operator_names_are_still_function_names_in_name_position() {
+        // At the start of an expression there is no preceding token, so the
+        // operator rule does not apply and `and(...)` is a function call.
+        assert_eq!(kinds("and(1)")[0], TokenKind::FunctionName("and".into()));
     }
 
     #[test]

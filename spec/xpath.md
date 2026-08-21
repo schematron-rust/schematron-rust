@@ -51,6 +51,11 @@ precedence chain below.
 
 The full XPath 1.0 grammar is implemented, at standard precedence:
 
+Under an XPath 2.0 binding the top production is
+`Expr := ExprSingle ("," ExprSingle)*`, where the comma builds a sequence, and
+function arguments and predicates take an `ExprSingle` so that a comma there
+still separates arguments. See [xpath2.md](xpath2.md).
+
 ```
 Expr        := OrExpr
 OrExpr      := AndExpr        ('or' AndExpr)*
@@ -82,6 +87,13 @@ implemented by tracking the preceding token:
 3. A name followed by `(` is a function name unless it is a node type
    (`node`, `text`, `comment`, `processing-instruction`); a name followed by
    `::` is an axis name.
+
+**The order matters.** Rule 2 is applied before rule 3, as the standard
+specifies. With the two the other way round, `a and (b)` lexes as a call to a
+function named `and` and fails to parse — and `and`, `or`, `div` and `mod`
+followed by an opening parenthesis are all perfectly ordinary things to
+write. This was a real defect, shipped in 0.1.0 and fixed after the XPath 2.0
+keyword handling turned up the same interaction for `in (`.
 
 ## Axes
 

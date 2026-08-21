@@ -331,19 +331,40 @@ impl Schema {
                 then_branch,
                 else_branch,
             } => {
-                if !self.version.is_v2() {
-                    return Err(Error::xpath_syntax(
-                        location,
-                        source,
-                        0,
-                        "`if (…) then … else …` is XPath 2.0 syntax; this schema's \
-                         query binding is XPath 1.0. Set queryBinding=\"xslt2\" to \
-                         use it, and see spec/xpath2.md for what that enables.",
-                    ));
-                }
+                self.require_v2("`if (…) then … else …`", source, location)?;
                 self.check_expression(condition, source, location)?;
                 self.check_expression(then_branch, source, location)?;
                 self.check_expression(else_branch, source, location)?;
+            }
+            Expr::Sequence(members) => {
+                self.require_v2("a sequence written with `,`", source, location)?;
+                for member in members {
+                    self.check_expression(member, source, location)?;
+                }
+            }
+            Expr::Range(from, to) => {
+                self.require_v2("the `to` range operator", source, location)?;
+                self.check_expression(from, source, location)?;
+                self.check_expression(to, source, location)?;
+            }
+            Expr::For { input, body, .. } => {
+                self.require_v2("`for … in … return …`", source, location)?;
+                self.check_expression(input, source, location)?;
+                self.check_expression(body, source, location)?;
+            }
+            Expr::Quantified {
+                quantifier,
+                input,
+                test,
+                ..
+            } => {
+                self.require_v2(
+                    &format!("`{} … in … satisfies …`", quantifier.as_str()),
+                    source,
+                    location,
+                )?;
+                self.check_expression(input, source, location)?;
+                self.check_expression(test, source, location)?;
             }
             Expr::Path(path) => {
                 if let PathStart::Expr(start, predicates) = &path.start {
@@ -370,6 +391,26 @@ impl Schema {
             }
         }
         Ok(())
+    }
+
+    /// Rejects an XPath 2.0 construct under an XPath 1.0 query binding.
+    ///
+    /// Keeping this in one place means every 2.0 construct refuses the same
+    /// way and says the same thing about how to enable it.
+    fn require_v2(&self, construct: &str, source: &str, location: &str) -> Result<()> {
+        if self.version.is_v2() {
+            return Ok(());
+        }
+        Err(Error::xpath_syntax(
+            location,
+            source,
+            0,
+            format!(
+                "{construct} is XPath 2.0 syntax; this schema's query binding is \
+                 XPath 1.0. Set queryBinding=\"xslt2\" to use it, and see \
+                 spec/xpath2.md for what that enables."
+            ),
+        ))
     }
 
     fn check_prefix(&self, prefix: &str, source: &str, location: &str) -> Result<()> {
@@ -690,6 +731,16 @@ fn calls_document_function(expr: &Expr) -> bool {
             calls_document_function(condition)
                 || calls_document_function(then_branch)
                 || calls_document_function(else_branch)
+        }
+        Expr::Sequence(members) => members.iter().any(calls_document_function),
+        Expr::Range(from, to) => {
+            calls_document_function(from) || calls_document_function(to)
+        }
+        Expr::For { input, body, .. } => {
+            calls_document_function(input) || calls_document_function(body)
+        }
+        Expr::Quantified { input, test, .. } => {
+            calls_document_function(input) || calls_document_function(test)
         }
         Expr::Path(path) => {
             let start = match &path.start {

@@ -9,16 +9,60 @@ crate implements, and, more importantly, **where it still behaves like XPath
 Read the divergences section before relying on this. It is short and it
 matters.
 
-## Status: phase 1
+## Status: phases 1 and 2a
 
 Schematron schemas in the wild declare `xslt2` far more often than they use
-the parts of XPath 2.0 that are genuinely incompatible with 1.0. Phase 1
-targets that gap: the constructs those schemas actually reach for, on top of
-the existing XPath 1.0 engine.
+the parts of XPath 2.0 that are genuinely incompatible with 1.0. The
+implementation targets that gap, in order of how much the constructs are
+actually used.
 
-Phase 2 — the sequence type, date and time types, and value comparisons — is
-roadmap item 1 in [roadmap.md](roadmap.md). Nothing in phase 1 depends on
-guessing what phase 2 will do.
+**Phase 1** added the function library and conditionals on top of the XPath
+1.0 engine.
+
+**Phase 2a** adds the **sequence type**, and with it the constructs that
+needed it: sequence construction, ranges, `for`, `some`, `every`, and the
+functions that produce or consume sequences.
+
+**Phase 2b** — date and time types, and value comparisons (`eq`, `ne`, `lt`,
+`le`, `gt`, `ge`) — remains roadmap item 1 in [roadmap.md](roadmap.md).
+
+### The sequence type, and why XPath 1.0 is unaffected
+
+XPath 2.0 replaces the node-set with the sequence: an ordered, possibly
+heterogeneous list of items, where an item is a node or an atomic value.
+Sequences do not nest — building one out of others flattens them.
+
+This crate keeps the node-set as well, and adds `Value::Sequence` beside it.
+The invariant that makes that safe is:
+
+> **A `Value::Sequence` is unreachable under XPath 1.0.** Nothing in the 1.0
+> grammar or function library can construct one.
+
+So an XPath 1.0 expression evaluates through exactly the code it did before,
+with exactly the same results. The sequence type is additive, not a
+replacement, and the 1.0 engine cannot tell it exists.
+
+A path expression still yields a node-set rather than a sequence of nodes.
+The two behave alike for every operation the crate supports, and keeping
+paths on the node-set means the whole of XPath 1.0 stays on its original,
+exact code path.
+
+### Effective boolean value
+
+A sequence in a boolean position uses XPath 2.0's effective boolean value:
+
+| Sequence | Result |
+|---|---|
+| empty | false |
+| first item is a node | true |
+| exactly one boolean | itself |
+| exactly one string | non-empty |
+| exactly one number | not zero and not NaN |
+| anything else | **type error** |
+
+The last row is a genuine XPath 2.0 type error, and the crate raises it rather
+than guessing — so `if (1, 2) then …` fails instead of quietly taking a
+branch.
 
 ## What is implemented
 
@@ -31,6 +75,11 @@ cannot accidentally acquire 2.0 behaviour.
 | Construct | Notes |
 |---|---|
 | `if (E) then E else E` | Both branches required, as XPath 2.0 requires |
+| `(E, E, E)` | Sequence construction; nested sequences flatten |
+| `E to E` | An ascending range of integers; descending yields the empty sequence |
+| `for $v in E return E` | Iterates a sequence or node-set, yielding a sequence |
+| `some $v in E satisfies E` | True when any item satisfies the test |
+| `every $v in E satisfies E` | True when every item does; true for an empty input |
 
 ### Functions
 
@@ -45,23 +94,24 @@ cannot accidentally acquire 2.0 behaviour.
 | `abs(number)` | |
 | `min(node-set)`, `max(node-set)`, `avg(node-set)` | Numeric, over a node-set |
 | `exists(node-set)`, `empty(node-set)` | |
-| `string-join(node-set, separator)` | Joins the string values, in document order |
+| `string-join(sequence, separator)` | Joins the string values, in order |
+| `tokenize(input, pattern)` | Splits on a regular expression, yielding a sequence |
+| `tokenize(input, pattern, flags)` | |
+| `distinct-values(sequence)` | Removes duplicates, keeping first-seen order |
+| `index-of(sequence, value)` | The one-based positions of matching items |
+| `count`, `exists`, `empty`, `min`, `max`, `avg`, `sum` | Accept a sequence as well as a node-set |
 
 ## What is not implemented
 
 Every one of these is a **hard error naming the construct**, at schema-compile
 time. None of them silently does something else.
 
-| Construct | Why it needs phase 2 |
+| Construct | Why it needs phase 2b |
 |---|---|
-| Sequences: `(1, 2, 3)`, `E, E` | Needs the sequence type |
-| `for $x in E return E` | Produces a sequence |
-| `some`/`every $x in E satisfies E` | Needs per-iteration variable binding |
-| `tokenize()` | Returns a sequence of strings |
-| `E to E` range | Produces a sequence |
 | Value comparisons: `eq`, `ne`, `lt`, `le`, `gt`, `ge` | Different semantics from `=`, `<`, and the rest |
 | `instance of`, `cast as`, `castable as`, `treat as` | Needs the type system |
 | Date and time types, `current-date()`, `current-dateTime()` | Needs those types and their arithmetic |
+| Sequence types in general — `element()`, `item()*` | Needs the type system |
 | `xslt3`, `xpath3`, `xpath31` bindings | Still refused; use `allow_unknown_query_binding` |
 
 ## Divergences: where 2.0 still behaves like 1.0

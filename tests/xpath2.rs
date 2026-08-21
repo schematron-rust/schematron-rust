@@ -141,10 +141,11 @@ fn a_conditional_requires_both_branches() {
 }
 
 #[test]
-fn constructs_needing_sequences_say_so() {
+fn constructs_still_needing_phase_two_b_say_so() {
+    // What phase 2a did not add still names itself rather than misbehaving.
     for (test, expected) in [
-        ("count(tokenize(@x, ','))", "sequence"),
-        ("count(distinct-values(b))", "sequence"),
+        ("count(subsequence(b, 2))", "sequence"),
+        ("deep-equal(b, c)", "does not implement"),
     ] {
         let message = compile_error("xslt2", test);
         assert_contains!(message, expected);
@@ -212,4 +213,174 @@ fn the_documented_divergence_from_real_xpath_two_holds() {
     // means the documentation cannot drift away from the behaviour.
     assert!(!check("number(@x) + 1 &gt; 0", r#"<a x="not-a-number"/>"#));
     assert!(!check("'x' &gt; 0", "<a/>"));
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2a: the sequence type.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_sequence_can_be_constructed_and_counted() {
+    assert!(check("count((1, 2, 3)) = 3", "<a/>"));
+    assert!(check("count(()) = 0", "<a/>"));
+    // Sequences do not nest: building one from others flattens them.
+    assert!(check("count((1, (2, 3), 4)) = 4", "<a/>"));
+}
+
+#[test]
+fn a_sequence_can_mix_nodes_and_atomic_values() {
+    assert!(check("count((b, 'x', 1)) = 4", "<a><b/><b/></a>"));
+}
+
+#[test]
+fn a_range_counts_up_and_is_empty_when_descending() {
+    assert!(check("count(1 to 5) = 5", "<a/>"));
+    assert!(check("count(5 to 1) = 0", "<a/>"));
+    assert!(check("count(3 to 3) = 1", "<a/>"));
+}
+
+#[test]
+fn an_absurd_range_is_an_error_rather_than_an_allocation() {
+    let source = schema_with(
+        "xslt2",
+        r#"<pattern><rule context="a"><assert test="count(1 to 100000000) > 0">m</assert></rule></pattern>"#,
+    );
+    let schema = Schema::from_str(&source).expect("schema should compile");
+    let document = Document::from_str("<a/>").unwrap();
+    let error = schema.validate(&document).unwrap_err();
+    assert_contains!(error.to_string(), "exceeds the limit");
+}
+
+#[test]
+fn for_iterates_and_concatenates() {
+    assert!(check("count(for $b in b return $b) = 3", "<a><b/><b/><b/></a>"));
+    // The bound variable is a node, so a path can continue from it.
+    assert!(check(
+        "count(for $b in b return $b/c) = 2",
+        "<a><b><c/></b><b><c/></b><b/></a>"
+    ));
+    // Each iteration may yield several items; the results concatenate.
+    assert!(check("count(for $n in (1, 2) return (1 to 3)) = 6", "<a/>"));
+}
+
+#[test]
+fn some_and_every_quantify_over_a_sequence() {
+    let doc = r#"<a><b n="1"/><b n="2"/><b n="3"/></a>"#;
+    assert!(check("some $b in b satisfies number($b/@n) = 2", doc));
+    assert!(!check("some $b in b satisfies number($b/@n) = 9", doc));
+    assert!(check("every $b in b satisfies number($b/@n) > 0", doc));
+    assert!(!check("every $b in b satisfies number($b/@n) > 1", doc));
+}
+
+#[test]
+fn every_is_true_for_an_empty_input_and_some_is_false() {
+    // Vacuous truth, as XPath 2.0 specifies.
+    assert!(check("every $b in nothing satisfies false()", "<a/>"));
+    assert!(!check("some $b in nothing satisfies true()", "<a/>"));
+}
+
+#[test]
+fn quantifiers_work_over_a_constructed_sequence() {
+    assert!(check("some $n in (1 to 10) satisfies $n = 7", "<a/>"));
+    assert!(check("every $n in (2, 4, 6) satisfies $n mod 2 = 0", "<a/>"));
+}
+
+#[test]
+fn a_bound_variable_does_not_escape_its_expression() {
+    // `$b` is bound only inside the quantified expression. Referencing it
+    // outside must be an unbound-variable error, not a stale binding.
+    let source = schema_with(
+        "xslt2",
+        r#"<pattern><rule context="a">
+             <assert test="(every $b in b satisfies true()) and $b">m</assert>
+           </rule></pattern>"#,
+    );
+    let schema = Schema::from_str(&source).expect("schema should compile");
+    let document = Document::from_str("<a><b/></a>").unwrap();
+    let error = schema.validate(&document).unwrap_err();
+    assert_contains!(error.to_string(), "$b");
+}
+
+#[test]
+fn tokenize_splits_into_a_sequence() {
+    assert!(check("count(tokenize(@x, ',')) = 3", r#"<a x="p,q,r"/>"#));
+    assert!(check(
+        "string-join(tokenize(@x, ',\\s*'), '-') = 'p-q-r'",
+        r#"<a x="p, q,  r"/>"#
+    ));
+}
+
+#[test]
+fn distinct_values_removes_duplicates_keeping_order() {
+    assert!(check(
+        "string-join(distinct-values((1, 2, 1, 3, 2)), ',') = '1,2,3'",
+        "<a/>"
+    ));
+    assert!(check("count(distinct-values(b)) = 2", "<a><b>x</b><b>y</b><b>x</b></a>"));
+}
+
+#[test]
+fn index_of_reports_one_based_positions() {
+    assert!(check("index-of(('a', 'b', 'c'), 'b') = 2", "<a/>"));
+    assert!(check("count(index-of(('a', 'b', 'a'), 'a')) = 2", "<a/>"));
+    assert!(check("count(index-of(('a', 'b'), 'z')) = 0", "<a/>"));
+}
+
+#[test]
+fn aggregates_accept_sequences_as_well_as_node_sets() {
+    assert!(check("sum((1, 2, 3)) = 6", "<a/>"));
+    assert!(check("min((3, 1, 2)) = 1", "<a/>"));
+    assert!(check("max((3, 1, 2)) = 3", "<a/>"));
+    assert!(check("avg((2, 4)) = 3", "<a/>"));
+    assert!(check("exists((1))", "<a/>"));
+    assert!(check("empty(())", "<a/>"));
+}
+
+#[test]
+fn a_sequence_compares_existentially_like_a_node_set() {
+    assert!(check("(1, 2, 3) = 2", "<a/>"));
+    assert!(!check("(1, 2, 3) = 9", "<a/>"));
+    assert!(check("(1, 2, 3) > 2", "<a/>"));
+    // Both can be true at once, as for node-sets.
+    assert!(check("((1, 2) = 1) and ((1, 2) != 1)", "<a/>"));
+}
+
+#[test]
+fn a_multi_item_sequence_has_no_effective_boolean_value() {
+    // XPath 2.0 makes this a type error; guessing a branch would be worse.
+    let source = schema_with(
+        "xslt2",
+        r#"<pattern><rule context="a"><assert test="if ((1, 2)) then true() else false()">m</assert></rule></pattern>"#,
+    );
+    let schema = Schema::from_str(&source).expect("schema should compile");
+    let document = Document::from_str("<a/>").unwrap();
+    let error = schema.validate(&document).unwrap_err();
+    assert_contains!(error.to_string(), "effective boolean value");
+}
+
+#[test]
+fn sequence_syntax_is_refused_under_a_one_point_zero_binding() {
+    for (test, fragment) in [
+        ("count((1, 2))", "sequence"),
+        ("count(1 to 3)", "`to` range"),
+        ("count(for $b in b return $b)", "for"),
+        ("some $b in b satisfies true()", "some"),
+        ("every $b in b satisfies true()", "every"),
+    ] {
+        let message = compile_error("xslt", test);
+        assert_contains!(message, fragment);
+        assert_contains!(message, "xslt2");
+    }
+}
+
+#[test]
+fn keywords_are_not_reserved_words() {
+    // `in`, `to`, `return` and the rest are ordinary names in XPath, so a
+    // document may legitimately use them as element names.
+    assert!(check("count(to) = 1", "<a><to/></a>"));
+    assert!(check("count(for) = 1", "<a><for/></a>"));
+    assert!(check("count(some) = 1", "<a><some/></a>"));
+    // And a keyword directly followed by `(` is still the keyword.
+    assert!(check("some $n in (1 to 3) satisfies $n = 2", "<a/>"));
+    assert!(check("count(for $n in (1, 2) return ($n)) = 2", "<a/>"));
 }

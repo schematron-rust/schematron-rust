@@ -12,6 +12,9 @@
 
 /// The XPath version an expression is evaluated as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+// Variants will be added: further XPath versions are on the roadmap. Marking
+// it non-exhaustive now means that will not be a breaking change.
+#[non_exhaustive]
 pub enum XPathVersion {
     /// XPath 1.0: the `xslt` and `xpath` query bindings, and the default.
     #[default]

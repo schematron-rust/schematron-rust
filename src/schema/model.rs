@@ -24,6 +24,9 @@ pub const SCHEMATRON_1_5_NAMESPACE: &str = "http://www.ascc.net/xml/schematron";
 /// they are refused rather than approximated. See `spec/conformance.md`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+// Variants will be added: further query bindings are on the roadmap. Marking
+// it non-exhaustive now means that will not be a breaking change.
+#[non_exhaustive]
 pub enum QueryBinding {
     /// No `@queryBinding`; the standard's default, which is XPath 1.0.
     #[default]

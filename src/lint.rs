@@ -334,6 +334,16 @@ fn first_unprefixed_element_name(expr: &Expr) -> Option<String> {
         } => [condition, then_branch, else_branch]
             .into_iter()
             .find_map(|branch| first_unprefixed_element_name(branch)),
+        Expr::Sequence(members) => members.iter().find_map(first_unprefixed_element_name),
+        Expr::Range(from, to) => [from, to]
+            .into_iter()
+            .find_map(|part| first_unprefixed_element_name(part)),
+        Expr::For { input, body, .. } => [input, body]
+            .into_iter()
+            .find_map(|part| first_unprefixed_element_name(part)),
+        Expr::Quantified { input, test, .. } => [input, test]
+            .into_iter()
+            .find_map(|part| first_unprefixed_element_name(part)),
         Expr::Path(path) => {
             if let PathStart::Expr(start, predicates) = &path.start {
                 if let Some(found) = first_unprefixed_element_name(start) {

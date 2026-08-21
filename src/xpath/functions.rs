@@ -9,7 +9,7 @@
 
 use super::context::EvalContext;
 use super::eval::EvalError;
-use super::value::{parse_number, Value};
+use super::value::{parse_number, Item, Value};
 use super::version::XPathVersion;
 use crate::xml::{Document, NodeId, NodeKind};
 
@@ -65,6 +65,9 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("exists", 1, Some(1)),
     ("empty", 1, Some(1)),
     ("string-join", 2, Some(2)),
+    ("tokenize", 2, Some(3)),
+    ("distinct-values", 1, Some(1)),
+    ("index-of", 2, Some(2)),
 ];
 
 /// XPath 2.0 functions this crate does **not** implement, and why.
@@ -72,9 +75,6 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
 /// Naming them turns "unknown function" into a message that says what is
 /// actually wrong, and what it would take to support them.
 const V2_FUNCTIONS_NEEDING_SEQUENCES: &[&str] = &[
-    "tokenize",
-    "distinct-values",
-    "index-of",
     "subsequence",
     "insert-before",
     "remove",
@@ -247,7 +247,7 @@ pub(crate) fn call(
     match name {
         "last" => Ok(Value::Number(as_f64(context.size))),
         "position" => Ok(Value::Number(as_f64(context.position))),
-        "count" => Ok(Value::Number(as_f64(node_set(name, args, 0)?.len()))),
+        "count" => Ok(Value::Number(as_f64(items_of(name, args, 0, context.version)?.len()))),
         "id" => Ok(Value::NodeSet(id_function(args, context))),
 
         "local-name" => Ok(Value::String(
@@ -329,12 +329,9 @@ pub(crate) fn call(
             None => parse_number(&document.string_value(context.node)),
         })),
         "sum" => {
-            let nodes = node_set(name, args, 0)?;
+            let items = items_of(name, args, 0, context.version)?;
             Ok(Value::Number(
-                nodes
-                    .iter()
-                    .map(|&n| parse_number(&document.string_value(n)))
-                    .sum(),
+                items.iter().map(|item| item.to_number(document)).sum(),
             ))
         }
         "floor" => Ok(Value::Number(args[0].to_number(document).floor())),
@@ -393,13 +390,58 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             let count = numbers.len() as f64;
             Ok(Value::Number(total / count))
         }
-        "exists" => Ok(Value::Boolean(!node_set(name, args, 0)?.is_empty())),
-        "empty" => Ok(Value::Boolean(node_set(name, args, 0)?.is_empty())),
+        "exists" => Ok(Value::Boolean(!items_of(name, args, 0, context.version)?.is_empty())),
+        "empty" => Ok(Value::Boolean(items_of(name, args, 0, context.version)?.is_empty())),
         "string-join" => {
-            let nodes = node_set(name, args, 0)?;
+            let items = items_of(name, args, 0, context.version)?;
             let separator = args[1].to_xpath_string(document);
-            let parts: Vec<String> = nodes.iter().map(|&n| document.string_value(n)).collect();
+            let parts: Vec<String> = items
+                .iter()
+                .map(|item| item.to_xpath_string(document))
+                .collect();
             Ok(Value::String(parts.join(&separator)))
+        }
+
+        "tokenize" => {
+            let regex = compile_regex(&args[1].to_xpath_string(document), args.get(2), document)?;
+            let input = args[0].to_xpath_string(document);
+            Ok(Value::Sequence(
+                regex
+                    .split(&input)
+                    .map(|part| Item::String(part.to_string()))
+                    .collect(),
+            ))
+        }
+
+        "distinct-values" => {
+            let items = items_of(name, args, 0, context.version)?;
+            // Compared by string value, and first-seen order is kept, which
+            // is what makes the result predictable. XPath 2.0 leaves the
+            // order implementation-defined.
+            let mut seen: Vec<String> = Vec::new();
+            let mut out = Vec::new();
+            for item in items {
+                let key = item.to_xpath_string(document);
+                if seen.iter().any(|existing| existing == &key) {
+                    continue;
+                }
+                seen.push(key.clone());
+                out.push(Item::String(key));
+            }
+            Ok(Value::Sequence(out))
+        }
+
+        "index-of" => {
+            let items = items_of(name, args, 0, context.version)?;
+            let wanted = args[1].to_xpath_string(document);
+            let positions = items
+                .iter()
+                .enumerate()
+                .filter(|(_, item)| item.to_xpath_string(document) == wanted)
+                // XPath positions are one-based.
+                .map(|(index, _)| Item::Number(as_f64(index + 1)))
+                .collect();
+            Ok(Value::Sequence(positions))
         }
 
         _ => Err(EvalError::new(format!("unknown function {name}()"))),
@@ -415,10 +457,31 @@ fn as_f64(value: usize) -> f64 {
     value as f64
 }
 
-fn node_set<'a>(name: &str, args: &'a [Value], index: usize) -> Result<&'a [NodeId], EvalError> {
-    args.get(index)
-        .and_then(Value::as_node_set)
-        .ok_or_else(|| EvalError::new(format!("{name}() requires a node-set argument")))
+/// The items of an argument that may be a node-set or an XPath 2.0 sequence.
+///
+/// Under XPath 2.0 every value *is* a sequence, so a scalar counts as a
+/// one-item one and `exists(1)` is true. Under XPath 1.0 a sequence is
+/// unreachable and a scalar is an error, exactly as the node-set accessor
+/// this replaced behaved — so the 1.0 functions are unaffected.
+fn items_of(
+    name: &str,
+    args: &[Value],
+    index: usize,
+    version: XPathVersion,
+) -> Result<Vec<Item>, EvalError> {
+    match args.get(index) {
+        Some(Value::NodeSet(nodes)) => Ok(nodes.iter().copied().map(Item::Node).collect()),
+        Some(Value::Sequence(items)) => Ok(items.clone()),
+        Some(other) if version.is_v2() => Ok(match other {
+            Value::String(text) => vec![Item::String(text.clone())],
+            Value::Number(number) => vec![Item::Number(*number)],
+            Value::Boolean(boolean) => vec![Item::Boolean(*boolean)],
+            Value::NodeSet(_) | Value::Sequence(_) => unreachable!("matched above"),
+        }),
+        _ => Err(EvalError::new(format!(
+            "{name}() requires a node-set argument"
+        ))),
+    }
 }
 
 /// The node an optional-node-set function operates on: the first node of the
@@ -459,6 +522,7 @@ fn numbers_of(args: &[Value], document: &Document) -> Vec<f64> {
             .iter()
             .map(|&node| parse_number(&document.string_value(node)))
             .collect(),
+        Value::Sequence(items) => items.iter().map(|item| item.to_number(document)).collect(),
         // A single scalar is a one-item sequence in XPath 2.0 terms.
         other => vec![other.to_number(document)],
     }
@@ -748,7 +812,7 @@ mod tests {
 
     #[test]
     fn unimplemented_two_point_zero_functions_say_what_they_need() {
-        let sequences = check_function("tokenize", 2, XPathVersion::V2).unwrap_err();
+        let sequences = check_function("subsequence", 2, XPathVersion::V2).unwrap_err();
         assert!(sequences.contains("sequence"), "{sequences}");
 
         let dates = check_function("current-date", 0, XPathVersion::V2).unwrap_err();
@@ -756,10 +820,30 @@ mod tests {
     }
 
     #[test]
+    fn the_sequence_functions_are_available_now_that_sequences_exist() {
+        // These moved out of the "needs sequences" list in phase 2a.
+        for (name, arity) in [("tokenize", 2), ("distinct-values", 1), ("index-of", 2)] {
+            assert!(
+                check_function(name, arity, XPathVersion::V2).is_ok(),
+                "{name}() should be available"
+            );
+        }
+    }
+
+    #[test]
     fn the_two_point_zero_library_has_the_documented_names() {
         let names = function_names_v2();
-        assert_eq!(names.len(), 12, "{names:?}");
-        for expected in ["matches", "replace", "abs", "exists", "string-join"] {
+        assert_eq!(names.len(), 15, "{names:?}");
+        for expected in [
+            "matches",
+            "replace",
+            "abs",
+            "exists",
+            "string-join",
+            "tokenize",
+            "distinct-values",
+            "index-of",
+        ] {
             assert!(names.contains(&expected), "{expected} is missing");
         }
     }

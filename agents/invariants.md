@@ -105,6 +105,20 @@ Every pattern gets its own pass over the document.
 
 - Corpus: `tests/corpus/patterns-are-independent/`
 
+### `Value::Sequence` is unreachable under XPath 1.0
+
+Nothing in the XPath 1.0 grammar or function library constructs a sequence, so
+a 1.0 expression evaluates through exactly the code it did before sequences
+existed. This is what makes the XPath 2.0 type additive rather than a rewrite
+of the 1.0 engine.
+
+Preserve it when adding to the engine: a new 2.0 construct must be gated by
+`XPathVersion`, and a 1.0 code path must never see a `Sequence`. Where a match
+arm can prove that, say so with `unreachable!` rather than inventing a
+behaviour for it.
+
+- Test: `tests/xpath2.rs::sequence_syntax_is_refused_under_a_one_point_zero_binding`
+
 ### XPath 1.0 semantics are exact, including the surprising parts
 
 Do not "fix" any of these:
@@ -117,6 +131,12 @@ Do not "fix" any of these:
 
 Each has a test in `src/xpath/`. A "simplification" here makes the engine
 disagree with every other conformant processor.
+
+The lexer's disambiguation rules are ordered, and the order is part of the
+standard: the operator-position rule comes before the followed-by-`(` rule.
+Reversing them breaks `a and (b)`, which shipped broken in 0.1.0.
+
+- Test: `src/xpath/lexer.rs::tests::operator_names_beat_function_names`
 
 ## Performance
 

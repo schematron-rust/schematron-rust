@@ -63,10 +63,12 @@ mod parser;
 mod value;
 mod version;
 
-pub use ast::{Axis, BinaryOp, Expr, NameTest, NodeTest, PathExpr, PathStart, Step};
+pub use ast::{
+    Axis, BinaryOp, Expr, NameTest, NodeTest, PathExpr, PathStart, Quantifier, Step,
+};
 pub use context::{Documents, EvalContext, Namespaces, Variables};
 pub use version::XPathVersion;
 pub use eval::{evaluate, EvalError};
 pub use functions::{check_function, check_regex, function_names, function_names_v2};
 pub use parser::{parse, ParseError, MAX_RECURSION_DEPTH};
-pub use value::{format_number, parse_number, Value};
+pub use value::{flatten_into_sequence, format_number, parse_number, Item, Value};
