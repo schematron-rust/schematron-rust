@@ -5,6 +5,7 @@
 //! including the number-to-string format, which is the detail engines most
 //! often get wrong.
 
+use super::temporal::Temporal;
 use crate::xml::{Document, NodeId};
 
 /// An XPath 1.0 value.
@@ -59,6 +60,8 @@ pub enum Item {
     Number(f64),
     /// A boolean.
     Boolean(bool),
+    /// An `xs:date`, `xs:dateTime`, or `xs:time`.
+    Temporal(Temporal),
 }
 
 impl Item {
@@ -70,6 +73,7 @@ impl Item {
             Item::String(text) => text.clone(),
             Item::Number(number) => format_number(*number),
             Item::Boolean(boolean) => if *boolean { "true" } else { "false" }.to_string(),
+            Item::Temporal(temporal) => temporal.to_lexical(),
         }
     }
 
@@ -81,6 +85,9 @@ impl Item {
             Item::String(text) => parse_number(text),
             Item::Number(number) => *number,
             Item::Boolean(boolean) => f64::from(u8::from(*boolean)),
+            // A date has no numeric value in XPath 2.0; NaN keeps every
+            // numeric comparison against it false rather than inventing one.
+            Item::Temporal(_) => f64::NAN,
         }
     }
 
@@ -92,6 +99,16 @@ impl Item {
             Item::String(_) => "string",
             Item::Number(_) => "number",
             Item::Boolean(_) => "boolean",
+            Item::Temporal(temporal) => temporal.kind().as_str(),
+        }
+    }
+
+    /// The temporal value, if this item is one.
+    #[must_use]
+    pub const fn as_temporal(&self) -> Option<&Temporal> {
+        match self {
+            Item::Temporal(temporal) => Some(temporal),
+            _ => None,
         }
     }
 }
@@ -148,9 +165,10 @@ impl Value {
                 [Item::Boolean(boolean)] => *boolean,
                 [Item::String(text)] => !text.is_empty(),
                 [Item::Number(number)] => *number != 0.0 && !number.is_nan(),
-                // A sequence starting with a node is true. So is any other
-                // multi-item sequence here, but that case is a type error
-                // rather than a value — see `effective_boolean_value`.
+                // A sequence starting with a node is true, and so is a lone
+                // date. So is any other multi-item sequence here, but that
+                // case is a type error rather than a value — see
+                // `effective_boolean_value`.
                 _ => true,
             },
         }

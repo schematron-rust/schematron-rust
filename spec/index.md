@@ -77,14 +77,27 @@ in the past because future contracts are not allowed.</assert>
 </rule>
 ```
 
-It is worth knowing why that one does **not** compile here, because the reason
-is instructive twice over. First, `current-date()` is an XPath 2.0 function,
-so it needs the `xslt2` query binding, which this crate refuses rather than
-approximating — see [conformance.md](conformance.md). Second, the assertion is
-self-contradictory as written: it tests that the date is in the *future* while
-its message says the date should be in the past. Schematron will happily let
-you write an assertion whose message contradicts its test; nothing checks the
-prose against the XPath. That is worth remembering every time you write one.
+That one **does** now run, under an `xslt2` query binding — `current-date()`
+and the date types arrived in XPath 2.0 phase 2b, see [xpath2.md](xpath2.md):
+
+```xml
+<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+   <pattern>
+      <rule context="Contract">
+         <assert test="ContractDate &lt; current-date()">ContractDate should be
+ in the past because future contracts are not allowed.</assert>
+      </rule>
+   </pattern>
+</schema>
+```
+
+Note the comparison had to be turned around. As quoted, the example is
+self-contradictory: it tests that the date is in the *future* while its
+message says the date should be in the past. Schematron will happily let you
+write an assertion whose message contradicts its test — nothing checks the
+prose against the XPath. That is worth remembering every time you write one,
+and it is why the crate's own linter reports an assertion with no message but
+cannot report one with the wrong message.
 
 ## Standardisation history
 

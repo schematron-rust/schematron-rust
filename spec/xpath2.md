@@ -23,8 +23,12 @@ actually used.
 needed it: sequence construction, ranges, `for`, `some`, `every`, and the
 functions that produce or consume sequences.
 
-**Phase 2b** — date and time types, and value comparisons (`eq`, `ne`, `lt`,
-`le`, `gt`, `ge`) — remains roadmap item 1 in [roadmap.md](roadmap.md).
+**Phase 2b** adds the **date and time types**, which is what lets a schema
+say the thing Schematron is most often quoted saying: that a date must be in
+the past.
+
+**Phase 2c** — value comparisons (`eq`, `ne`, `lt`, `le`, `gt`, `ge`) and the
+remaining type strictness — is roadmap item 1 in [roadmap.md](roadmap.md).
 
 ### The sequence type, and why XPath 1.0 is unaffected
 
@@ -100,17 +104,88 @@ cannot accidentally acquire 2.0 behaviour.
 | `distinct-values(sequence)` | Removes duplicates, keeping first-seen order |
 | `index-of(sequence, value)` | The one-based positions of matching items |
 | `count`, `exists`, `empty`, `min`, `max`, `avg`, `sum` | Accept a sequence as well as a node-set |
+| `current-date()`, `current-dateTime()`, `current-time()` | Stable for a whole validation run; see below |
+| `year-from-date`, `month-from-date`, `day-from-date` | Components of a date |
+| `year-from-dateTime`, `month-from-dateTime`, `day-from-dateTime` | Components of a dateTime |
+| `hours-from-dateTime`, `minutes-from-dateTime`, `seconds-from-dateTime` | Components of a dateTime |
+| `hours-from-time`, `minutes-from-time`, `seconds-from-time` | Components of a time |
+| `xs:date()`, `xs:dateTime()`, `xs:time()` | Constructors, when a prefix is bound to the XML Schema namespace |
+
+## Dates and times
+
+### The types
+
+`xs:date`, `xs:dateTime` and `xs:time`, in their XML Schema lexical forms:
+
+```
+2026-08-21              a date
+2026-08-21Z             a date in UTC
+2026-08-21+01:00        a date at an offset
+2026-08-21T10:30:00     a dateTime
+2026-08-21T10:30:00.5Z  a dateTime with fractional seconds
+10:30:00                a time
+```
+
+A value with no timezone is compared as if it were UTC. XPath 2.0 uses an
+*implicit timezone* taken from the evaluation context; treating that as UTC
+makes a validation run reproducible on any machine, which matters more here
+than matching a processor's local offset. This is recorded as a divergence
+below.
+
+### Comparing an untyped value to a date
+
+The point of the feature. An attribute in an XML document is untyped, so
+comparing it to a date casts it to a date first, exactly as XPath 2.0
+specifies for untyped atomic operands:
+
+```xml
+<assert test="xs:date(@ContractDate) &lt; current-date()">
+  A contract date must be in the past.
+</assert>
+```
+
+and equally, without the constructor, because the untyped operand takes its
+type from the other side:
+
+```xml
+<assert test="@ContractDate &lt; current-date()">
+  A contract date must be in the past.
+</assert>
+```
+
+An untyped value that does not parse as the other operand's type is an
+**error naming the value**, not a silently false test. A date typo should fail
+loudly; that is the whole reason for checking it.
+
+### The clock is captured once, and can be supplied
+
+`current-date()`, `current-dateTime()` and `current-time()` must return the
+same instant throughout one validation, which XPath 2.0 requires and which
+also stops a rule contradicting itself halfway down a document.
+
+The instant is therefore read **once per validation run**, not per call. And
+because a validator whose result depends on the wall clock cannot be tested
+or reproduced, it can be supplied:
+
+```rust
+let options = ValidateOptions::new().with_current_time(fixed_instant);
+```
+
+With no instant supplied, the system clock is read once at the start of the
+run. With one supplied, the run is deterministic — which is how this crate's
+own tests for date rules are written, and how a caller should write theirs.
 
 ## What is not implemented
 
 Every one of these is a **hard error naming the construct**, at schema-compile
 time. None of them silently does something else.
 
-| Construct | Why it needs phase 2b |
+| Construct | Why it needs phase 2c |
 |---|---|
 | Value comparisons: `eq`, `ne`, `lt`, `le`, `gt`, `ge` | Different semantics from `=`, `<`, and the rest |
 | `instance of`, `cast as`, `castable as`, `treat as` | Needs the type system |
-| Date and time types, `current-date()`, `current-dateTime()` | Needs those types and their arithmetic |
+| Durations, and date arithmetic that yields one | Needs the duration type |
+| `timezone-from-date()`, `adjust-*-to-timezone()` | Needs the implicit timezone to be configurable |
 | Sequence types in general — `element()`, `item()*` | Needs the type system |
 | `xslt3`, `xpath3`, `xpath31` bindings | Still refused; use `allow_unknown_query_binding` |
 
@@ -124,6 +199,7 @@ every case. They do not agree here:
 
 | Expression | XPath 1.0, and this crate | XPath 2.0 |
 |---|---|---|
+| A date with no timezone | Compared as UTC | Compared in the processor's implicit timezone |
 | `1 + 'a'` | `NaN`, so the test is false | Type error |
 | `'x' div 2` | `NaN` | Type error |
 | `string(a)` where `a` selects several nodes | The first node's string value | Type error |

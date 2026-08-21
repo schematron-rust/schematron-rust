@@ -52,6 +52,10 @@ impl From<String> for PhaseSelection {
 ///
 /// assert_eq!(options.max_failures, Some(10));
 /// ```
+// Fields will be added: a configurable implicit timezone is on the roadmap.
+// Marking it non-exhaustive now means that will not be a breaking change.
+// Every field has a `with_*` builder, so construction needs no literal.
+#[non_exhaustive]
 #[derive(Debug, Clone, Default)]
 pub struct ValidateOptions {
     /// Which phase to run.
@@ -81,6 +85,15 @@ pub struct ValidateOptions {
     /// schema gains nothing. Setting [`ValidateOptions::max_failures`] keeps
     /// evaluation sequential; see `spec/validation.md`.
     pub parallel_patterns: bool,
+    /// The instant `current-date()` and its companions report, in seconds
+    /// since the Unix epoch.
+    ///
+    /// `None` reads the system clock **once**, at the start of the run.
+    /// Supplying a value makes the run reproducible, which is how a test for
+    /// a date rule should be written — a validator whose result depends on
+    /// the wall clock cannot be tested, and its failures cannot be
+    /// reproduced. See `spec/xpath2.md`.
+    pub current_time: Option<f64>,
 }
 
 impl ValidateOptions {
@@ -92,6 +105,7 @@ impl ValidateOptions {
             max_failures: None,
             record_fired_rules: true,
             parallel_patterns: false,
+            current_time: None,
         }
     }
 
@@ -125,6 +139,25 @@ impl ValidateOptions {
     pub fn with_parallel_patterns(mut self, parallel: bool) -> Self {
         self.parallel_patterns = parallel;
         self
+    }
+
+    /// Fixes the instant the clock functions report, in seconds since the
+    /// Unix epoch, making a run with date rules reproducible.
+    #[must_use]
+    pub fn with_current_time(mut self, seconds: f64) -> Self {
+        self.current_time = Some(seconds);
+        self
+    }
+
+    /// The instant for this run, reading the system clock if none was given.
+    ///
+    /// Called once per run, never per expression.
+    pub(crate) fn resolve_current_time(&self) -> f64 {
+        self.current_time.unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0.0, |elapsed| elapsed.as_secs_f64())
+        })
     }
 
     /// Whether this run should actually use threads.

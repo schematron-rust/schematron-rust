@@ -154,8 +154,9 @@ fn constructs_still_needing_phase_two_b_say_so() {
 }
 
 #[test]
-fn constructs_needing_dates_say_so() {
-    let message = compile_error("xslt2", "@d &lt; current-date()");
+fn constructs_needing_the_duration_type_say_so() {
+    // What phase 2b did not add still names itself.
+    let message = compile_error("xslt2", "timezone-from-date(@d)");
     assert_contains!(message, "date and time");
     assert_contains!(message, "spec/xpath2.md");
 }
@@ -383,4 +384,171 @@ fn keywords_are_not_reserved_words() {
     // And a keyword directly followed by `(` is still the keyword.
     assert!(check("some $n in (1 to 3) satisfies $n = 2", "<a/>"));
     assert!(check("count(for $n in (1, 2) return ($n)) = 2", "<a/>"));
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2b: dates and times.
+// ---------------------------------------------------------------------------
+
+/// A fixed instant, so every date test below is reproducible: the seconds
+/// from the Unix epoch to 2026-08-21T12:00:00Z.
+const FIXED_NOW: f64 = 1_787_313_600.0;
+
+/// As `check`, but with the clock pinned to [`FIXED_NOW`].
+fn check_at_fixed_time(test: &str, document: &str) -> bool {
+    use schematron::validate::ValidateOptions;
+
+    let source = schema_with(
+        "xslt2",
+        &format!(
+            r#"<ns prefix="xs" uri="http://www.w3.org/2001/XMLSchema"/>
+               <pattern><rule context="a"><assert test="{test}">failed</assert></rule></pattern>"#
+        ),
+    );
+    let schema = Schema::from_str(&source)
+        .unwrap_or_else(|e| panic!("schema with test {test:?} should compile: {e}"));
+    let document = Document::from_str(document).expect("document should parse");
+    let options = ValidateOptions::new().with_current_time(FIXED_NOW);
+    schema
+        .validate_with(&document, &options)
+        .expect("validation should run")
+        .is_valid()
+}
+
+#[test]
+fn the_clock_reports_the_supplied_instant() {
+    assert!(check_at_fixed_time("current-date() = xs:date('2026-08-21Z')", "<a/>"));
+    assert!(check_at_fixed_time(
+        "current-dateTime() = xs:dateTime('2026-08-21T12:00:00Z')",
+        "<a/>"
+    ));
+    assert!(check_at_fixed_time("year-from-date(current-date()) = 2026", "<a/>"));
+}
+
+#[test]
+fn the_canonical_schematron_example_now_runs() {
+    // "ContractDate should be in the past, because future contracts are not
+    // allowed" — the example Schematron is most often quoted with, and which
+    // this crate could not run until dates existed.
+    let test = "@ContractDate &lt; current-date()";
+    assert!(check_at_fixed_time(test, r#"<a ContractDate="2020-01-01"/>"#));
+    assert!(!check_at_fixed_time(test, r#"<a ContractDate="2099-12-31"/>"#));
+}
+
+#[test]
+fn an_untyped_value_is_cast_to_the_other_operands_type() {
+    // The attribute is untyped, so the comparison casts it to a date rather
+    // than comparing strings.
+    assert!(check_at_fixed_time(
+        "@d = xs:date('2026-08-21')",
+        r#"<a d="2026-08-21"/>"#
+    ));
+    assert!(check_at_fixed_time(
+        "@d &gt; xs:date('2020-01-01')",
+        r#"<a d="2026-08-21"/>"#
+    ));
+}
+
+#[test]
+fn a_timezone_offset_is_honoured_rather_than_compared_as_text() {
+    // Lexically `00:00:00+01:00` sorts after `00:00:00Z`, but as an instant
+    // it is an hour earlier. Comparing as text would get this backwards.
+    assert!(check_at_fixed_time(
+        "xs:dateTime('2026-08-21T00:00:00+01:00') &lt; xs:dateTime('2026-08-21T00:00:00Z')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn date_components_can_be_read() {
+    let doc = r#"<a d="2026-08-21" t="10:30:05" dt="2026-08-21T10:30:05"/>"#;
+    assert!(check_at_fixed_time("year-from-date(@d) = 2026", doc));
+    assert!(check_at_fixed_time("month-from-date(@d) = 8", doc));
+    assert!(check_at_fixed_time("day-from-date(@d) = 21", doc));
+    assert!(check_at_fixed_time("hours-from-time(@t) = 10", doc));
+    assert!(check_at_fixed_time("minutes-from-time(@t) = 30", doc));
+    assert!(check_at_fixed_time("seconds-from-time(@t) = 5", doc));
+    assert!(check_at_fixed_time("hours-from-dateTime(@dt) = 10", doc));
+}
+
+#[test]
+fn a_malformed_date_is_an_error_not_a_false_test() {
+    // A date typo must fail loudly. A quietly false assertion would report
+    // the document as broken for the wrong reason, or pass it for one.
+    use schematron::validate::ValidateOptions;
+
+    let source = schema_with(
+        "xslt2",
+        r#"<pattern><rule context="a">
+             <assert test="@d &lt; current-date()">m</assert>
+           </rule></pattern>"#,
+    );
+    let schema = Schema::from_str(&source).expect("schema should compile");
+    let document = Document::from_str(r#"<a d="2026-02-30"/>"#).unwrap();
+    let options = ValidateOptions::new().with_current_time(FIXED_NOW);
+
+    let error = schema.validate_with(&document, &options).unwrap_err();
+    assert_contains!(error.to_string(), "2026-02-30");
+    assert_contains!(error.to_string(), "xs:date");
+}
+
+#[test]
+fn the_constructors_reject_impossible_values_when_the_schema_loads() {
+    // A literal argument is checked at evaluation, not compile, time — but it
+    // must still be an error.
+    use schematron::validate::ValidateOptions;
+
+    let source = schema_with(
+        "xslt2",
+        r#"<ns prefix="xs" uri="http://www.w3.org/2001/XMLSchema"/>
+           <pattern><rule context="a">
+             <assert test="xs:date('2026-13-01') &lt; current-date()">m</assert>
+           </rule></pattern>"#,
+    );
+    let schema = Schema::from_str(&source).expect("schema should compile");
+    let document = Document::from_str("<a/>").unwrap();
+    let options = ValidateOptions::new().with_current_time(FIXED_NOW);
+    let error = schema.validate_with(&document, &options).unwrap_err();
+    assert_contains!(error.to_string(), "2026-13-01");
+}
+
+#[test]
+fn the_clock_is_stable_across_a_whole_run() {
+    // Every call must agree, or one rule could contradict another halfway
+    // down a document.
+    assert!(check_at_fixed_time(
+        "current-date() = current-date() and current-dateTime() = current-dateTime()",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn a_run_without_a_supplied_instant_still_works() {
+    // The system clock is read once, so this must not error — only be
+    // non-reproducible, which is why the tests above pin it.
+    assert!(check("year-from-date(current-date()) > 2000", "<a/>"));
+}
+
+#[test]
+fn date_functions_are_refused_under_a_one_point_zero_binding() {
+    let message = compile_error("xslt", "current-date()");
+    assert_contains!(message, "XPath 2.0");
+    assert_contains!(message, "xslt2");
+}
+
+#[test]
+fn calling_the_clock_without_a_run_instant_is_an_error() {
+    // Evaluating XPath directly has no run, so an arbitrary instant would be
+    // silently non-reproducible.
+    use schematron::xpath::{evaluate, parse, EvalContext, Namespaces, Variables, XPathVersion};
+
+    let document = Document::from_str("<a/>").unwrap();
+    let expr = parse("current-date()").unwrap();
+    let variables = Variables::new();
+    let namespaces = Namespaces::new();
+    let context = EvalContext::new(&document, document.root(), &variables, &namespaces)
+        .with_version(XPathVersion::V2);
+
+    let error = evaluate(&expr, &context).unwrap_err();
+    assert_contains!(error.message, "instant");
 }

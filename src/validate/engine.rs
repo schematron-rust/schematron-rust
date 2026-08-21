@@ -36,6 +36,8 @@ const MAX_DOCUMENT_PASSES: usize = 8;
 #[derive(Clone, Copy)]
 struct Run<'a> {
     schema: &'a Schema,
+    /// The instant the clock functions report, read once for the whole run.
+    current_time: f64,
     /// The tree being validated. This is the target document for a pattern
     /// with `@documents`, not necessarily the instance.
     document: &'a Document,
@@ -54,6 +56,7 @@ impl<'a> Run<'a> {
         EvalContext::new(self.document, node, variables, self.schema.namespaces())
             .with_documents(self.documents)
             .with_version(self.schema.version())
+            .with_current_time(self.current_time)
     }
 }
 
@@ -130,6 +133,7 @@ fn validate_once(
 ) -> Result<Report> {
     let run = Run {
         schema,
+        current_time: options.resolve_current_time(),
         document,
         documents,
         options,

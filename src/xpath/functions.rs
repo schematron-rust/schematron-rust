@@ -9,6 +9,7 @@
 
 use super::context::EvalContext;
 use super::eval::EvalError;
+use super::temporal::{from_unix_seconds, Temporal, TemporalKind};
 use super::value::{parse_number, Item, Value};
 use super::version::XPathVersion;
 use crate::xml::{Document, NodeId, NodeKind};
@@ -68,6 +69,24 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("tokenize", 2, Some(3)),
     ("distinct-values", 1, Some(1)),
     ("index-of", 2, Some(2)),
+    ("current-date", 0, Some(0)),
+    ("current-dateTime", 0, Some(0)),
+    ("current-time", 0, Some(0)),
+    ("year-from-date", 1, Some(1)),
+    ("month-from-date", 1, Some(1)),
+    ("day-from-date", 1, Some(1)),
+    ("year-from-dateTime", 1, Some(1)),
+    ("month-from-dateTime", 1, Some(1)),
+    ("day-from-dateTime", 1, Some(1)),
+    ("hours-from-dateTime", 1, Some(1)),
+    ("minutes-from-dateTime", 1, Some(1)),
+    ("seconds-from-dateTime", 1, Some(1)),
+    ("hours-from-time", 1, Some(1)),
+    ("minutes-from-time", 1, Some(1)),
+    ("seconds-from-time", 1, Some(1)),
+    ("xs:date", 1, Some(1)),
+    ("xs:dateTime", 1, Some(1)),
+    ("xs:time", 1, Some(1)),
 ];
 
 /// XPath 2.0 functions this crate does **not** implement, and why.
@@ -86,17 +105,16 @@ const V2_FUNCTIONS_NEEDING_SEQUENCES: &[&str] = &[
 /// XPath 2.0 functions this crate does not implement because they need the
 /// date and time types.
 const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &[
-    "current-date",
-    "current-dateTime",
-    "current-time",
-    "year-from-date",
-    "month-from-date",
-    "day-from-date",
-    "hours-from-time",
-    "minutes-from-time",
-    "seconds-from-time",
     "implicit-timezone",
-    "dateTime",
+    "adjust-date-to-timezone",
+    "adjust-dateTime-to-timezone",
+    "adjust-time-to-timezone",
+    "timezone-from-date",
+    "timezone-from-dateTime",
+    "timezone-from-time",
+    "years-from-duration",
+    "months-from-duration",
+    "days-from-duration",
 ];
 
 /// Other XPath 2.0 functions that are simply not implemented yet.
@@ -431,6 +449,21 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             Ok(Value::Sequence(out))
         }
 
+        "current-date" => clock(TemporalKind::Date, context),
+        "current-dateTime" => clock(TemporalKind::DateTime, context),
+        "current-time" => clock(TemporalKind::Time, context),
+
+        "xs:date" => cast_temporal(args, TemporalKind::Date, document),
+        "xs:dateTime" => cast_temporal(args, TemporalKind::DateTime, document),
+        "xs:time" => cast_temporal(args, TemporalKind::Time, document),
+
+        _ if name.ends_with("-from-date")
+            || name.ends_with("-from-dateTime")
+            || name.ends_with("-from-time") =>
+        {
+            component_of(name, args, document)
+        }
+
         "index-of" => {
             let items = items_of(name, args, 0, context.version)?;
             let wanted = args[1].to_xpath_string(document);
@@ -513,6 +546,89 @@ fn two_strings(args: &[Value], document: &Document) -> (String, String) {
         args[0].to_xpath_string(document),
         args[1].to_xpath_string(document),
     )
+}
+
+/// `current-date()` and its companions.
+///
+/// The instant comes from the run, not from the clock, so every call in a
+/// validation agrees — which XPath 2.0 requires. With no instant supplied the
+/// function is an error rather than an arbitrary time, so a caller evaluating
+/// XPath directly cannot get a silently non-reproducible answer.
+fn clock(kind: TemporalKind, context: &EvalContext<'_>) -> Result<Value, EvalError> {
+    let Some(seconds) = context.current_time else {
+        return Err(EvalError::new(
+            "current-date() and its companions need the run's instant, which the              validator supplies and a direct call to evaluate() does not; see              EvalContext::with_current_time",
+        ));
+    };
+    Ok(Value::Sequence(vec![Item::Temporal(from_unix_seconds(
+        kind, seconds,
+    ))]))
+}
+
+/// `xs:date()`, `xs:dateTime()`, `xs:time()`.
+fn cast_temporal(
+    args: &[Value],
+    kind: TemporalKind,
+    document: &Document,
+) -> Result<Value, EvalError> {
+    // An argument that is already this type passes through unchanged.
+    if let Some([Item::Temporal(temporal)]) = args[0].as_sequence() {
+        if temporal.kind() == kind {
+            return Ok(args[0].clone());
+        }
+    }
+    let text = args[0].to_xpath_string(document);
+    let parsed = Temporal::parse(&text, kind).map_err(EvalError::new)?;
+    Ok(Value::Sequence(vec![Item::Temporal(parsed)]))
+}
+
+/// The `*-from-date`, `*-from-dateTime` and `*-from-time` accessors.
+fn component_of(
+    name: &str,
+    args: &[Value],
+    document: &Document,
+) -> Result<Value, EvalError> {
+    let (component, type_name) = name
+        .split_once("-from-")
+        .ok_or_else(|| EvalError::new(format!("unknown function {name}()")))?;
+    let kind = match type_name {
+        "date" => TemporalKind::Date,
+        "dateTime" => TemporalKind::DateTime,
+        "time" => TemporalKind::Time,
+        other => return Err(EvalError::new(format!("unknown component type {other:?}"))),
+    };
+
+    // The argument may already be typed, or be an untyped value to cast.
+    let temporal = match args[0].as_sequence().and_then(|items| match items {
+        [Item::Temporal(temporal)] => Some(*temporal),
+        _ => None,
+    }) {
+        Some(temporal) => temporal,
+        None => Temporal::parse(&args[0].to_xpath_string(document), kind)
+            .map_err(EvalError::new)?,
+    };
+
+    let value = match component {
+        "year" => as_f64_signed(temporal.year()),
+        "month" => f64::from(temporal.month()),
+        "day" => f64::from(temporal.day()),
+        "hours" => f64::from(temporal.hour()),
+        "minutes" => f64::from(temporal.minute()),
+        "seconds" => temporal.second(),
+        other => {
+            return Err(EvalError::new(format!(
+                "{other:?} is not a component of {}",
+                kind.as_str()
+            )))
+        }
+    };
+    Ok(Value::Number(value))
+}
+
+/// Converts a year to `f64`; years are far below the precision limit.
+#[allow(clippy::cast_precision_loss)]
+fn as_f64_signed(value: i64) -> f64 {
+    value as f64
 }
 
 /// The numeric values of a node-set argument, for `min`, `max`, and `avg`.
@@ -815,8 +931,26 @@ mod tests {
         let sequences = check_function("subsequence", 2, XPathVersion::V2).unwrap_err();
         assert!(sequences.contains("sequence"), "{sequences}");
 
-        let dates = check_function("current-date", 0, XPathVersion::V2).unwrap_err();
+        let dates = check_function("timezone-from-date", 1, XPathVersion::V2).unwrap_err();
         assert!(dates.contains("date and time"), "{dates}");
+    }
+
+    #[test]
+    fn the_date_functions_are_available_now_that_dates_exist() {
+        for (name, arity) in [
+            ("current-date", 0),
+            ("current-dateTime", 0),
+            ("year-from-date", 1),
+            ("hours-from-time", 1),
+            ("xs:date", 1),
+        ] {
+            assert!(
+                check_function(name, arity, XPathVersion::V2).is_ok(),
+                "{name}() should be available"
+            );
+        }
+        // Still an XPath 2.0 function, so an XPath 1.0 binding refuses it.
+        assert!(check_function("current-date", 0, XPathVersion::V1).is_err());
     }
 
     #[test]
@@ -833,7 +967,11 @@ mod tests {
     #[test]
     fn the_two_point_zero_library_has_the_documented_names() {
         let names = function_names_v2();
-        assert_eq!(names.len(), 15, "{names:?}");
+        // Growing this number is expected; the point of the check is that the
+        // list and the documentation move together, which
+        // `tests/docs.rs::the_xpath_two_function_list_in_the_spec_matches_the_engine`
+        // enforces.
+        assert_eq!(names.len(), 33, "{names:?}");
         for expected in [
             "matches",
             "replace",
@@ -843,6 +981,9 @@ mod tests {
             "tokenize",
             "distinct-values",
             "index-of",
+            "current-date",
+            "year-from-date",
+            "xs:date",
         ] {
             assert!(names.contains(&expected), "{expected} is missing");
         }

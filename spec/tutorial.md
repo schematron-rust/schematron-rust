@@ -267,7 +267,40 @@ And URIs go through the resolver, which by default reads local files and
 refuses `http:` and `https:`. Nothing fetches over the network unless your
 application supplies a resolver that does.
 
-## 12. Using the library
+## 12. Dates
+
+Under an `xslt2` query binding, a schema can compare dates as dates rather
+than as text:
+
+```xml
+<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+  <ns prefix="xs" uri="http://www.w3.org/2001/XMLSchema"/>
+  <pattern>
+    <rule context="contract">
+      <assert test="@signed &lt; current-date()">
+        A contract cannot be signed in the future.
+      </assert>
+      <assert test="year-from-date(@signed) &gt;= 2000">
+        Contracts before 2000 are not on file.
+      </assert>
+    </rule>
+  </pattern>
+</schema>
+```
+
+`@signed` is untyped, as everything in an XML document is, so the comparison
+casts it to a date. A value that will not cast — `2026-02-30`, say — is an
+**error naming it**, not a quietly false test: a date typo should fail loudly.
+
+Two things to know about the clock. `current-date()` is read once per
+validation run, so every rule in a run agrees. And it can be supplied, which
+is how to test a schema with date rules without the result changing tomorrow:
+
+```rust
+let options = ValidateOptions::new().with_current_time(seconds_since_epoch);
+```
+
+## 13. Using the library
 
 ```rust
 use schematron::{Document, Schema};
@@ -288,7 +321,7 @@ fn main() -> schematron::Result<()> {
 Compile the schema once and reuse it. `Schema` is `Send + Sync`, so validating
 a directory of documents in parallel needs no extra machinery.
 
-## 13. When a schema seems to do nothing
+## 14. When a schema seems to do nothing
 
 This happens to everyone once. There are two causes, and the CLI distinguishes
 them:
@@ -304,7 +337,7 @@ schematron -s rules.sch --explain            # what will this schema do?
   pattern claimed the node. See step 4. `--explain` flags every rule that can
   only see leftovers.
 
-## 14. Where to go next
+## 15. Where to go next
 
 - [validation.md](validation.md) — the exact algorithm, if a result surprises you
 - [xpath.md](xpath.md) — what the expression language does and does not have

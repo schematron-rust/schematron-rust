@@ -228,6 +228,10 @@ impl Variables {
 ///
 /// Built fresh for each evaluation; the parts that are expensive to build —
 /// variables, namespaces — are borrowed rather than cloned.
+// Fields will be added: a configurable implicit timezone is on the roadmap.
+// Marking it non-exhaustive now means that will not be a breaking change.
+// `new`, `focus`, and the `with_*` builders cover every field.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy)]
 pub struct EvalContext<'a> {
     /// The document the context node lives in.
@@ -252,6 +256,15 @@ pub struct EvalContext<'a> {
     /// Defaults to [`XPathVersion::V1`]; the validator sets it from the
     /// schema's query binding.
     pub version: XPathVersion,
+    /// The instant `current-date()` and its companions report, in seconds
+    /// since the Unix epoch.
+    ///
+    /// Read once per validation run rather than per call, which XPath 2.0
+    /// requires and which also stops one rule contradicting another halfway
+    /// down a document. `None` makes the three functions an error, so a
+    /// caller evaluating XPath directly cannot silently get an arbitrary
+    /// instant.
+    pub current_time: Option<f64>,
     /// The documents `document()` can reach, when the caller supplies any.
     ///
     /// `None` — the default from [`EvalContext::new`] — makes `document()` an
@@ -278,8 +291,16 @@ impl<'a> EvalContext<'a> {
             namespaces,
             current: node,
             version: XPathVersion::V1,
+            current_time: None,
             documents: None,
         }
+    }
+
+    /// The same context, with the instant the clock functions report.
+    #[must_use]
+    pub fn with_current_time(mut self, seconds: f64) -> Self {
+        self.current_time = Some(seconds);
+        self
     }
 
     /// The same context, evaluating as a particular XPath version.

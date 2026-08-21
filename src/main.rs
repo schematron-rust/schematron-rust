@@ -202,15 +202,19 @@ fn run(cli: &Cli) -> Result<u8, Exit> {
         ));
     }
 
-    let validate_options = ValidateOptions {
-        phase: cli
-            .phase
-            .as_deref()
-            .map_or(PhaseSelection::Default, PhaseSelection::from),
-        max_failures: cli.max_failures,
-        record_fired_rules: cli.verbose || cli.format == Format::Svrl,
-        parallel_patterns: cli.parallel,
-    };
+    let mut validate_options = ValidateOptions::new()
+        .with_phase(
+            cli.phase
+                .as_deref()
+                .map_or(PhaseSelection::Default, PhaseSelection::from),
+        )
+        // SVRL carries `fired-rule` events, so they are recorded for it even
+        // when the run is not verbose.
+        .with_record_fired_rules(cli.verbose || cli.format == Format::Svrl)
+        .with_parallel_patterns(cli.parallel);
+    if let Some(limit) = cli.max_failures {
+        validate_options = validate_options.with_max_failures(limit);
+    }
 
     let mut rendered = String::new();
     let mut failures = 0;

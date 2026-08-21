@@ -22,15 +22,19 @@
 - XPath 2.0 phase 2a: the sequence type, and with it sequence construction,
   ranges, `for`, `some`, `every`, `tokenize()`, `distinct-values()` and
   `index-of()`
+- XPath 2.0 phase 2b: the date, dateTime and time types, the `xs:` constructors
+  and component accessors, and a clock that is captured once per run and can
+  be supplied
 - Fuzz targets, criterion benchmarks, clippy pedantic, corpus test suite,
   runnable examples, and this specification
 
 ## Next
 
-1. **XPath 2.0 phase 2b** — the parts phase 2a deliberately left out, listed
-   in [xpath2.md](xpath2.md): the date and time types, and value comparisons
-   (`eq`, `ne`, `lt`, `le`, `gt`, `ge`). Closing the semantic divergences
-   phase 1 documents belongs here too, since those exist only because shared
+1. **XPath 2.0 phase 2c** — value comparisons (`eq`, `ne`, `lt`, `le`, `gt`,
+   `ge`), the duration type and the date arithmetic that yields one, and the
+   configurable implicit timezone that `timezone-from-date()` and the
+   `adjust-*` functions need. Closing the semantic divergences phase 1
+   documents belongs here too, since those exist only because shared
    constructs still evaluate on the XPath 1.0 engine.
 2. **XSLT key emulation** — `<sch:key>` and the `key()` function, which some
    1.5-era schemas and some large industry schemas rely on for cross-reference

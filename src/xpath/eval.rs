@@ -8,6 +8,7 @@
 use super::ast::{Axis, BinaryOp, Expr, NodeTest, PathExpr, PathStart, Quantifier, Step};
 use super::context::EvalContext;
 use super::functions;
+use super::temporal::{Temporal, TemporalKind};
 use super::value::{flatten_into_sequence, Item, Value};
 use crate::xml::{Document, NodeId, NodeKind};
 
@@ -185,12 +186,39 @@ fn evaluate_binary(
             ))),
         },
 
-        BinaryOp::Equal => Ok(Value::Boolean(compare_equality(&left, &right, document, true))),
-        BinaryOp::NotEqual => Ok(Value::Boolean(compare_equality(
-            &left, &right, document, false,
-        ))),
+        BinaryOp::Equal | BinaryOp::NotEqual => {
+            let want_equal = op == BinaryOp::Equal;
+            // XPath 2.0: a comparison involving a date compares instants, not
+            // strings, so an offset is honoured and an untyped operand is
+            // cast. Unreachable under XPath 1.0, which has no temporal type.
+            if has_temporal(&left) || has_temporal(&right) {
+                let kind = temporal_kind_of(&left, &right);
+                let a = temporal_operands(&left, kind, document)?;
+                let b = temporal_operands(&right, kind, document)?;
+                let equal = a.iter().any(|x| b.iter().any(|y| x == y));
+                return Ok(Value::Boolean(equal == want_equal));
+            }
+            Ok(Value::Boolean(compare_equality(
+                &left, &right, document, want_equal,
+            )))
+        }
 
         BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
+            if has_temporal(&left) || has_temporal(&right) {
+                let kind = temporal_kind_of(&left, &right);
+                let a = temporal_operands(&left, kind, document)?;
+                let b = temporal_operands(&right, kind, document)?;
+                let holds = a.iter().any(|x| {
+                    b.iter().any(|y| match op {
+                        BinaryOp::Less => x < y,
+                        BinaryOp::LessEqual => x <= y,
+                        BinaryOp::Greater => x > y,
+                        BinaryOp::GreaterEqual => x >= y,
+                        _ => unreachable!("outer match limits the operators"),
+                    })
+                });
+                return Ok(Value::Boolean(holds));
+            }
             Ok(Value::Boolean(compare_relational(op, &left, &right, document)))
         }
 
@@ -377,7 +405,57 @@ fn item_to_value(item: Item) -> Value {
         Item::String(text) => Value::String(text),
         Item::Number(number) => Value::Number(number),
         Item::Boolean(boolean) => Value::Boolean(boolean),
+        // A temporal has no scalar `Value` of its own; XPath 2.0 treats every
+        // value as a sequence, and this is a one-item one.
+        Item::Temporal(_) => Value::Sequence(vec![item]),
     }
+}
+
+/// Whether a value carries any date, dateTime, or time item.
+///
+/// Only XPath 2.0 can produce one, so this is always false under XPath 1.0
+/// and the temporal comparison path below is unreachable there.
+fn has_temporal(value: &Value) -> bool {
+    value
+        .as_sequence()
+        .is_some_and(|items| items.iter().any(|item| item.as_temporal().is_some()))
+}
+
+/// The temporal operands a value contributes to a comparison.
+///
+/// A temporal item is used as it is. Anything else is *untyped* — an
+/// attribute or element in an XML document has no type — and is cast to
+/// `kind`, which XPath 2.0 requires when an untyped operand meets a typed
+/// one. A value that will not cast is an error naming it, because a date
+/// typo should fail loudly rather than make a test quietly false.
+fn temporal_operands(
+    value: &Value,
+    kind: TemporalKind,
+    document: &Document,
+) -> Result<Vec<Temporal>, EvalError> {
+    let mut out = Vec::new();
+    for item in value.clone().into_items() {
+        if let Some(temporal) = item.as_temporal() {
+            out.push(*temporal);
+            continue;
+        }
+        let text = item.to_xpath_string(document);
+        let parsed = Temporal::parse(&text, kind).map_err(EvalError::new)?;
+        out.push(parsed);
+    }
+    Ok(out)
+}
+
+/// The type a temporal comparison should cast untyped operands to.
+fn temporal_kind_of(left: &Value, right: &Value) -> TemporalKind {
+    for value in [left, right] {
+        if let Some(items) = value.as_sequence() {
+            if let Some(temporal) = items.iter().find_map(Item::as_temporal) {
+                return temporal.kind();
+            }
+        }
+    }
+    TemporalKind::DateTime
 }
 
 /// The largest `to` range that will be materialised.

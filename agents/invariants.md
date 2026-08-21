@@ -105,6 +105,28 @@ Every pattern gets its own pass over the document.
 
 - Corpus: `tests/corpus/patterns-are-independent/`
 
+### Validation is reproducible, including the clock
+
+`current-date()` and its companions read the run's instant, not the system
+clock. The instant is taken **once** per validation — XPath 2.0 requires that
+much — and can be supplied through `ValidateOptions::with_current_time`, which
+is what makes a schema with date rules testable at all.
+
+Evaluating XPath directly, with no run, makes the clock functions an error
+rather than an arbitrary time. A validator that quietly returns a different
+answer tomorrow is worse than one that refuses.
+
+- Test: `tests/xpath2.rs::the_clock_is_stable_across_a_whole_run`
+- Test: `tests/xpath2.rs::calling_the_clock_without_a_run_instant_is_an_error`
+
+### A malformed date is an error, not a false test
+
+Casting an untyped value to a date is how `@signed &lt; current-date()` works.
+A value that will not cast is an error naming it. A quietly false assertion
+would report a document as broken for the wrong reason, or pass it for one.
+
+- Test: `tests/xpath2.rs::a_malformed_date_is_an_error_not_a_false_test`
+
 ### `Value::Sequence` is unreachable under XPath 1.0
 
 Nothing in the XPath 1.0 grammar or function library constructs a sequence, so
