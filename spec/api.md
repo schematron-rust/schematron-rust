@@ -95,6 +95,8 @@ external fetch a schema can make.
 | `max_failures` | none | Stop after N failed assertions |
 | `record_fired_rules` | `true` | Set false to skip bookkeeping for rules that found nothing |
 | `parallel_patterns` | `false` | Evaluate patterns on separate threads; the report is unchanged. See [validation.md](validation.md) |
+| `current_time` | system clock, read once | The instant `current-date()` reports. Set it to make a run with date rules reproducible |
+| `implicit_timezone` | UTC | The timezone a date with no offset is read as being in. See [xpath2.md](xpath2.md) |
 
 `PhaseSelection::from("#ALL")`, `from("#DEFAULT")`, and `from("my-phase")` all
 do what you would expect, so a string from a config file can be passed

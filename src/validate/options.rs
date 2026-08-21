@@ -94,6 +94,13 @@ pub struct ValidateOptions {
     /// the wall clock cannot be tested, and its failures cannot be
     /// reproduced. See `spec/xpath2.md`.
     pub current_time: Option<f64>,
+    /// The timezone a date or time with no offset is read as being in, in
+    /// minutes from UTC.
+    ///
+    /// `None` means UTC, which keeps a validation run reproducible on any
+    /// machine — XPath 2.0 would take the machine's local offset. Set it when
+    /// local semantics are what the documents mean. See `spec/xpath2.md`.
+    pub implicit_timezone: Option<i32>,
 }
 
 impl ValidateOptions {
@@ -106,6 +113,7 @@ impl ValidateOptions {
             record_fired_rules: true,
             parallel_patterns: false,
             current_time: None,
+            implicit_timezone: None,
         }
     }
 
@@ -146,6 +154,14 @@ impl ValidateOptions {
     #[must_use]
     pub fn with_current_time(mut self, seconds: f64) -> Self {
         self.current_time = Some(seconds);
+        self
+    }
+
+    /// Sets the timezone a date or time with no offset is read as being in,
+    /// in minutes from UTC.
+    #[must_use]
+    pub fn with_implicit_timezone(mut self, minutes: i32) -> Self {
+        self.implicit_timezone = Some(minutes);
         self
     }
 

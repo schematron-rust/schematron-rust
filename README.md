@@ -215,7 +215,7 @@ states the limits and deliberate divergences in full.
 | SVRL output | Full |
 | XPath 1.0 — 13 axes, 27 core functions, exact conversion semantics | Full |
 | XPath `document()`, with cross-document node-sets | Full |
-| XPath 2.0 sequences, dates, `for`, `some`, `every`, ranges, regular expressions | Subset — see [spec/xpath2.md](spec/xpath2.md) |
+| XPath 2.0 sequences, dates, durations, value and node comparisons, `for`, `some`, `every`, ranges, regular expressions | Subset — see [spec/xpath2.md](spec/xpath2.md) |
 | `queryBinding="xslt"`, `"xpath"`, or absent | Supported |
 | `queryBinding="xslt2"`, `"xpath2"` | Partly — see [spec/xpath2.md](spec/xpath2.md) |
 | `queryBinding="xslt3"` and later | Refused by default |
@@ -283,7 +283,7 @@ be read:
 | Document | What it covers |
 |---|---|
 | [spec/index.md](spec/index.md) | Overview and design principles |
-| [spec/tutorial.md](spec/tutorial.md) | **Start here** — fifteen steps from first rule to real schema |
+| [spec/tutorial.md](spec/tutorial.md) | **Start here** — sixteen steps from first rule to real schema |
 | [spec/data-model.md](spec/data-model.md) | Every Schematron element and its Rust type |
 | [spec/validation.md](spec/validation.md) | The validation algorithm, exactly |
 | [spec/xpath.md](spec/xpath.md) | The XPath 1.0 engine |

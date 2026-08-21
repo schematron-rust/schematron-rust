@@ -313,7 +313,21 @@ impl Schema {
             // where the scope is actually known.
             Expr::Literal(_) | Expr::Number(_) | Expr::Variable(_) => {}
             Expr::Negate(inner) => self.check_expression(inner, source, location)?,
-            Expr::Binary(_, left, right) => {
+            Expr::Binary(op, left, right) => {
+                if op.is_value_comparison() {
+                    self.require_v2(
+                        &format!("the `{}` value comparison", op.as_str()),
+                        source,
+                        location,
+                    )?;
+                }
+                if op.is_node_comparison() {
+                    self.require_v2(
+                        &format!("the `{}` node comparison", op.as_str()),
+                        source,
+                        location,
+                    )?;
+                }
                 self.check_expression(left, source, location)?;
                 self.check_expression(right, source, location)?;
             }

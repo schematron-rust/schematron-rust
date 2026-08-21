@@ -9,7 +9,7 @@
 
 use super::context::EvalContext;
 use super::eval::EvalError;
-use super::temporal::{from_unix_seconds, Temporal, TemporalKind};
+use super::temporal::{from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind};
 use super::value::{parse_number, Item, Value};
 use super::version::XPathVersion;
 use crate::xml::{Document, NodeId, NodeKind};
@@ -87,6 +87,18 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("xs:date", 1, Some(1)),
     ("xs:dateTime", 1, Some(1)),
     ("xs:time", 1, Some(1)),
+    ("xs:dayTimeDuration", 1, Some(1)),
+    ("xs:yearMonthDuration", 1, Some(1)),
+    ("days-from-duration", 1, Some(1)),
+    ("hours-from-duration", 1, Some(1)),
+    ("minutes-from-duration", 1, Some(1)),
+    ("seconds-from-duration", 1, Some(1)),
+    ("years-from-duration", 1, Some(1)),
+    ("months-from-duration", 1, Some(1)),
+    ("timezone-from-date", 1, Some(1)),
+    ("timezone-from-dateTime", 1, Some(1)),
+    ("timezone-from-time", 1, Some(1)),
+    ("implicit-timezone", 0, Some(0)),
 ];
 
 /// XPath 2.0 functions this crate does **not** implement, and why.
@@ -105,16 +117,10 @@ const V2_FUNCTIONS_NEEDING_SEQUENCES: &[&str] = &[
 /// XPath 2.0 functions this crate does not implement because they need the
 /// date and time types.
 const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &[
-    "implicit-timezone",
+    "duration",
     "adjust-date-to-timezone",
     "adjust-dateTime-to-timezone",
     "adjust-time-to-timezone",
-    "timezone-from-date",
-    "timezone-from-dateTime",
-    "timezone-from-time",
-    "years-from-duration",
-    "months-from-duration",
-    "days-from-duration",
 ];
 
 /// Other XPath 2.0 functions that are simply not implemented yet.
@@ -449,6 +455,19 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             Ok(Value::Sequence(out))
         }
 
+        _ => call_v2_temporal(name, args, context),
+    }
+}
+
+/// The XPath 2.0 date, time and duration functions, split out so that each
+/// dispatch stays readable.
+fn call_v2_temporal(
+    name: &str,
+    args: &[Value],
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let document = context.document;
+    match name {
         "current-date" => clock(TemporalKind::Date, context),
         "current-dateTime" => clock(TemporalKind::DateTime, context),
         "current-time" => clock(TemporalKind::Time, context),
@@ -457,6 +476,17 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
         "xs:dateTime" => cast_temporal(args, TemporalKind::DateTime, document),
         "xs:time" => cast_temporal(args, TemporalKind::Time, document),
 
+        "xs:dayTimeDuration" => cast_duration(args, DurationKind::DayTime, document),
+        "xs:yearMonthDuration" => cast_duration(args, DurationKind::YearMonth, document),
+
+        _ if name.ends_with("-from-duration") => duration_component(name, args, document),
+
+        "implicit-timezone" => Ok(Value::Sequence(vec![Item::Duration(
+            Duration::from_seconds(f64::from(context.implicit_timezone) * 60.0),
+        )])),
+
+        _ if name.starts_with("timezone-from-") => timezone_of(name, args, document),
+
         _ if name.ends_with("-from-date")
             || name.ends_with("-from-dateTime")
             || name.ends_with("-from-time") =>
@@ -464,6 +494,14 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             component_of(name, args, document)
         }
 
+        _ => call_v2_rest(name, args, context),
+    }
+}
+
+/// The remaining XPath 2.0 functions.
+fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
+    let document = context.document;
+    match name {
         "index-of" => {
             let items = items_of(name, args, 0, context.version)?;
             let wanted = args[1].to_xpath_string(document);
@@ -580,6 +618,113 @@ fn cast_temporal(
     let text = args[0].to_xpath_string(document);
     let parsed = Temporal::parse(&text, kind).map_err(EvalError::new)?;
     Ok(Value::Sequence(vec![Item::Temporal(parsed)]))
+}
+
+/// `xs:dayTimeDuration()` and `xs:yearMonthDuration()`.
+fn cast_duration(
+    args: &[Value],
+    kind: DurationKind,
+    document: &Document,
+) -> Result<Value, EvalError> {
+    if let Some([Item::Duration(duration)]) = args[0].as_sequence() {
+        if duration.kind() == kind {
+            return Ok(args[0].clone());
+        }
+    }
+    let text = args[0].to_xpath_string(document);
+    let parsed = Duration::parse(&text, kind).map_err(EvalError::new)?;
+    Ok(Value::Sequence(vec![Item::Duration(parsed)]))
+}
+
+/// The `*-from-duration` accessors.
+///
+/// XPath 2.0 defines each as the component it would occupy in the normalised
+/// lexical form, so the days of `P1DT36H` are two, not one.
+fn duration_component(
+    name: &str,
+    args: &[Value],
+    document: &Document,
+) -> Result<Value, EvalError> {
+    let component = name
+        .strip_suffix("-from-duration")
+        .ok_or_else(|| EvalError::new(format!("unknown function {name}()")))?;
+
+    // Years and months belong to one subtype, the rest to the other.
+    let kind = match component {
+        "years" | "months" => DurationKind::YearMonth,
+        _ => DurationKind::DayTime,
+    };
+    let duration = match args[0].as_sequence().and_then(|items| match items {
+        [Item::Duration(duration)] => Some(*duration),
+        _ => None,
+    }) {
+        Some(duration) => duration,
+        None => Duration::parse(&args[0].to_xpath_string(document), kind)
+            .map_err(EvalError::new)?,
+    };
+
+    if duration.kind() != kind {
+        return Err(EvalError::new(format!(
+            "{name}() takes a {}, not a {}",
+            kind.as_str(),
+            duration.kind().as_str()
+        )));
+    }
+
+    // Each component is signed the same way as the duration as a whole.
+    let sign = if duration.is_negative() { -1.0 } else { 1.0 };
+    let value = match kind {
+        DurationKind::YearMonth => {
+            let months = duration.to_months().abs();
+            match component {
+                "years" => as_f64_signed(months / 12),
+                _ => as_f64_signed(months % 12),
+            }
+        }
+        DurationKind::DayTime => {
+            let total = duration.to_seconds().abs();
+            match component {
+                "days" => (total / 86_400.0).floor(),
+                "hours" => ((total % 86_400.0) / 3_600.0).floor(),
+                "minutes" => ((total % 3_600.0) / 60.0).floor(),
+                _ => total % 60.0,
+            }
+        }
+    };
+    Ok(Value::Number(value * sign))
+}
+
+/// `timezone-from-date()` and its companions.
+///
+/// Returns the value's **own** timezone as a dayTimeDuration, or the empty
+/// sequence when it carries none — not the implicit timezone, which is a
+/// property of the evaluation rather than of the value.
+fn timezone_of(name: &str, args: &[Value], document: &Document) -> Result<Value, EvalError> {
+    let type_name = name
+        .strip_prefix("timezone-from-")
+        .ok_or_else(|| EvalError::new(format!("unknown function {name}()")))?;
+    let kind = match type_name {
+        "date" => TemporalKind::Date,
+        "dateTime" => TemporalKind::DateTime,
+        "time" => TemporalKind::Time,
+        other => return Err(EvalError::new(format!("unknown type {other:?}"))),
+    };
+
+    let temporal = match args[0].as_sequence().and_then(|items| match items {
+        [Item::Temporal(temporal)] => Some(*temporal),
+        _ => None,
+    }) {
+        Some(temporal) => temporal,
+        None => Temporal::parse(&args[0].to_xpath_string(document), kind)
+            .map_err(EvalError::new)?,
+    };
+
+    Ok(match temporal.offset_minutes() {
+        None => Value::Sequence(Vec::new()),
+        Some(minutes) => Value::Sequence(vec![Item::Duration(Duration::from_seconds(
+            f64::from(minutes) * 60.0,
+        ))]),
+    })
 }
 
 /// The `*-from-date`, `*-from-dateTime` and `*-from-time` accessors.
@@ -931,7 +1076,7 @@ mod tests {
         let sequences = check_function("subsequence", 2, XPathVersion::V2).unwrap_err();
         assert!(sequences.contains("sequence"), "{sequences}");
 
-        let dates = check_function("timezone-from-date", 1, XPathVersion::V2).unwrap_err();
+        let dates = check_function("adjust-date-to-timezone", 2, XPathVersion::V2).unwrap_err();
         assert!(dates.contains("date and time"), "{dates}");
     }
 
@@ -954,6 +1099,22 @@ mod tests {
     }
 
     #[test]
+    fn the_duration_functions_are_available_now_that_durations_exist() {
+        for (name, arity) in [
+            ("xs:dayTimeDuration", 1),
+            ("xs:yearMonthDuration", 1),
+            ("days-from-duration", 1),
+            ("months-from-duration", 1),
+        ] {
+            assert!(
+                check_function(name, arity, XPathVersion::V2).is_ok(),
+                "{name}() should be available"
+            );
+        }
+        assert!(check_function("xs:dayTimeDuration", 1, XPathVersion::V1).is_err());
+    }
+
+    #[test]
     fn the_sequence_functions_are_available_now_that_sequences_exist() {
         // These moved out of the "needs sequences" list in phase 2a.
         for (name, arity) in [("tokenize", 2), ("distinct-values", 1), ("index-of", 2)] {
@@ -971,7 +1132,7 @@ mod tests {
         // list and the documentation move together, which
         // `tests/docs.rs::the_xpath_two_function_list_in_the_spec_matches_the_engine`
         // enforces.
-        assert_eq!(names.len(), 33, "{names:?}");
+        assert_eq!(names.len(), 45, "{names:?}");
         for expected in [
             "matches",
             "replace",
@@ -984,6 +1145,12 @@ mod tests {
             "current-date",
             "year-from-date",
             "xs:date",
+            "xs:dayTimeDuration",
+            "xs:yearMonthDuration",
+            "days-from-duration",
+            "years-from-duration",
+            "timezone-from-date",
+            "implicit-timezone",
         ] {
             assert!(names.contains(&expected), "{expected} is missing");
         }

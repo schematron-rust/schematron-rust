@@ -68,7 +68,9 @@ pub use ast::{
     Axis, BinaryOp, Expr, NameTest, NodeTest, PathExpr, PathStart, Quantifier, Step,
 };
 pub use context::{Documents, EvalContext, Namespaces, Variables};
-pub use temporal::{from_unix_seconds, Temporal, TemporalKind};
+pub use temporal::{
+    add_months, add_seconds, from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind,
+};
 pub use version::XPathVersion;
 pub use eval::{evaluate, EvalError};
 pub use functions::{check_function, check_regex, function_names, function_names_v2};

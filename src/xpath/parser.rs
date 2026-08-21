@@ -300,6 +300,11 @@ impl Parser {
             let op = match self.peek() {
                 Some(TokenKind::Equal) => BinaryOp::Equal,
                 Some(TokenKind::NotEqual) => BinaryOp::NotEqual,
+                Some(TokenKind::ValueEqual) => BinaryOp::ValueEqual,
+                Some(TokenKind::ValueNotEqual) => BinaryOp::ValueNotEqual,
+                Some(TokenKind::NodeIs) => BinaryOp::NodeIs,
+                Some(TokenKind::NodeBefore) => BinaryOp::NodeBefore,
+                Some(TokenKind::NodeAfter) => BinaryOp::NodeAfter,
                 _ => break,
             };
             self.index += 1;
@@ -318,6 +323,10 @@ impl Parser {
                 Some(TokenKind::LessEqual) => BinaryOp::LessEqual,
                 Some(TokenKind::Greater) => BinaryOp::Greater,
                 Some(TokenKind::GreaterEqual) => BinaryOp::GreaterEqual,
+                Some(TokenKind::ValueLess) => BinaryOp::ValueLess,
+                Some(TokenKind::ValueLessEqual) => BinaryOp::ValueLessEqual,
+                Some(TokenKind::ValueGreater) => BinaryOp::ValueGreater,
+                Some(TokenKind::ValueGreaterEqual) => BinaryOp::ValueGreaterEqual,
                 _ => break,
             };
             self.index += 1;

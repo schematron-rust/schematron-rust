@@ -154,9 +154,10 @@ fn constructs_still_needing_phase_two_b_say_so() {
 }
 
 #[test]
-fn constructs_needing_the_duration_type_say_so() {
-    // What phase 2b did not add still names itself.
-    let message = compile_error("xslt2", "timezone-from-date(@d)");
+fn constructs_still_needing_the_type_system_say_so() {
+    // What the subset does not reach still names itself rather than
+    // misbehaving.
+    let message = compile_error("xslt2", "adjust-date-to-timezone(@d, @z)");
     assert_contains!(message, "date and time");
     assert_contains!(message, "spec/xpath2.md");
 }
@@ -551,4 +552,454 @@ fn calling_the_clock_without_a_run_instant_is_an_error() {
 
     let error = evaluate(&expr, &context).unwrap_err();
     assert_contains!(error.message, "instant");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2c: value comparisons.
+// ---------------------------------------------------------------------------
+
+/// The evaluation error for a test under `xslt2`, if it produces one.
+fn eval_error(test: &str, document: &str) -> String {
+    let source = schema_with(
+        "xslt2",
+        &format!(
+            r#"<ns prefix="xs" uri="http://www.w3.org/2001/XMLSchema"/>
+               <pattern><rule context="a"><assert test="{test}">m</assert></rule></pattern>"#
+        ),
+    );
+    let schema = Schema::from_str(&source)
+        .unwrap_or_else(|e| panic!("schema with test {test:?} should compile: {e}"));
+    let document = Document::from_str(document).expect("document should parse");
+    schema.validate(&document).map_or_else(
+        |error| error.to_string(),
+        |_| panic!("test {test:?} unexpectedly evaluated without error"),
+    )
+}
+
+#[test]
+fn value_comparisons_compare_two_values() {
+    assert!(check("'a' eq 'a'", "<a/>"));
+    assert!(!check("'a' eq 'b'", "<a/>"));
+    assert!(check("'a' ne 'b'", "<a/>"));
+    assert!(check("1 lt 2", "<a/>"));
+    assert!(check("2 le 2", "<a/>"));
+    assert!(check("3 gt 2", "<a/>"));
+    assert!(check("2 ge 2", "<a/>"));
+}
+
+#[test]
+fn a_node_atomizes_to_its_string_value() {
+    assert!(check("@x eq 'open'", r#"<a x="open"/>"#));
+    assert!(check("b eq 'text'", "<a><b>text</b></a>"));
+    // Strings order lexically.
+    assert!(check("@x lt 'M'", r#"<a x="ABC"/>"#));
+}
+
+#[test]
+fn more_than_one_item_is_an_error_where_a_general_comparison_is_not() {
+    // The whole reason to reach for `eq`: `=` would quietly pick whichever
+    // pair happened to match.
+    let doc = r#"<a><b q="1"/><b q="2"/></a>"#;
+    assert!(check("b/@q = 1", doc));
+
+    let message = eval_error("b/@q eq '1'", doc);
+    assert_contains!(message, "2 items");
+    assert_contains!(message, "exactly one");
+    // And it points at the operator that would have worked.
+    assert_contains!(message, "=");
+}
+
+#[test]
+fn mismatched_types_are_an_error() {
+    // Everything in an XML document is untyped, so it counts as a string.
+    let message = eval_error("@n eq 1", r#"<a n="1"/>"#);
+    assert_contains!(message, "string");
+    assert_contains!(message, "number");
+
+    // Which the schema author fixes by saying what they meant.
+    assert!(check("number(@n) eq 1", r#"<a n="1"/>"#));
+    assert!(check("@n eq '1'", r#"<a n="1"/>"#));
+}
+
+#[test]
+fn an_untyped_value_is_not_coerced_to_a_date() {
+    // A general comparison would cast it; a value comparison will not.
+    let message = eval_error("@d eq xs:date('2020-01-01')", r#"<a d="2020-01-01"/>"#);
+    assert_contains!(message, "xs:date");
+
+    // Cast it explicitly and the comparison is fine.
+    assert!(check(
+        "xs:date(@d) eq xs:date('2020-01-01')",
+        r#"<a d="2020-01-01"/>"#
+    ));
+}
+
+#[test]
+fn dates_compare_by_instant() {
+    assert!(check(
+        "xs:date('2020-01-01') lt xs:date('2026-08-21')",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:dateTime('2026-08-21T00:00:00+01:00') lt xs:dateTime('2026-08-21T00:00:00Z')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn an_empty_operand_yields_the_empty_sequence() {
+    // Nothing to compare, so nothing is claimed — false in a boolean
+    // position, and not an error.
+    assert!(!check("missing eq 'x'", "<a/>"));
+    assert!(!check("missing ne 'x'", "<a/>"));
+    assert!(!check("'x' eq missing", "<a/>"));
+    assert!(!check("missing lt 1", "<a/>"));
+}
+
+#[test]
+fn value_comparisons_are_refused_under_a_one_point_zero_binding() {
+    for op in ["eq", "ne", "lt", "le", "gt", "ge"] {
+        let message = compile_error("xslt", &format!("'a' {op} 'b'"));
+        assert_contains!(message, "value comparison");
+        assert_contains!(message, "xslt2");
+    }
+}
+
+#[test]
+fn the_operator_names_are_still_element_names_in_name_position() {
+    // `eq`, `lt` and the rest are not reserved words, so a document may use
+    // them as element names.
+    assert!(check("count(eq) = 1", "<a><eq/></a>"));
+    assert!(check("count(lt) = 1", "<a><lt/></a>"));
+    assert!(check("count(a/ge) = 0", "<a/>"));
+}
+
+#[test]
+fn booleans_compare_with_false_below_true() {
+    assert!(check("false() lt true()", "<a/>"));
+    assert!(check("true() eq true()", "<a/>"));
+    assert!(check("false() ne true()", "<a/>"));
+}
+
+#[test]
+fn nan_is_never_equal_and_never_ordered() {
+    // Consistent with IEEE 754, and with the rest of the engine.
+    assert!(!check("number('x') eq number('x')", "<a/>"));
+    assert!(!check("number('x') lt 1", "<a/>"));
+    assert!(!check("number('x') ge 1", "<a/>"));
+    assert!(check("number('x') ne number('x')", "<a/>"));
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2d: durations and date arithmetic.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn subtracting_two_dates_measures_the_distance() {
+    assert!(check(
+        "xs:date('2026-08-21') - xs:date('2026-01-01') eq xs:dayTimeDuration('P232D')",
+        "<a/>"
+    ));
+    assert!(check(
+        "days-from-duration(xs:date('2026-08-21') - xs:date('2026-01-01')) = 232",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn the_constraint_a_schema_actually_wants_to_write() {
+    let test = "xs:date(@end) - xs:date(@start) le xs:dayTimeDuration('P90D')";
+    assert!(check(test, r#"<a start="2026-01-01" end="2026-03-01"/>"#));
+    assert!(!check(test, r#"<a start="2026-01-01" end="2026-08-21"/>"#));
+}
+
+#[test]
+fn a_duration_moves_a_date() {
+    assert!(check(
+        "xs:date('2026-01-01') + xs:dayTimeDuration('P90D') eq xs:date('2026-04-01')",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:date('2026-04-01') - xs:dayTimeDuration('P90D') eq xs:date('2026-01-01')",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:date('2026-01-01') + xs:yearMonthDuration('P1Y6M') eq xs:date('2027-07-01')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn adding_months_clamps_the_day_rather_than_overflowing() {
+    // XML Schema requires 31 January plus one month to be 28 February.
+    assert!(check(
+        "xs:date('2026-01-31') + xs:yearMonthDuration('P1M') eq xs:date('2026-02-28')",
+        "<a/>"
+    ));
+    // And 29 February in a leap year.
+    assert!(check(
+        "xs:date('2024-01-31') + xs:yearMonthDuration('P1M') eq xs:date('2024-02-29')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn durations_add_and_subtract_within_a_subtype() {
+    assert!(check(
+        "xs:dayTimeDuration('P1D') + xs:dayTimeDuration('P2D') eq xs:dayTimeDuration('P3D')",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:yearMonthDuration('P1Y') - xs:yearMonthDuration('P6M') eq xs:yearMonthDuration('P6M')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn mixing_the_two_duration_subtypes_is_an_error() {
+    // Whether a month exceeds thirty days has no answer, which is why the
+    // subtypes are separate in the first place.
+    let message = eval_error(
+        "xs:yearMonthDuration('P1M') + xs:dayTimeDuration('P30D') eq xs:dayTimeDuration('P30D')",
+        "<a/>",
+    );
+    assert_contains!(message, "xs:yearMonthDuration");
+    assert_contains!(message, "xs:dayTimeDuration");
+}
+
+#[test]
+fn durations_of_different_subtypes_do_not_compare() {
+    let message = eval_error(
+        "xs:yearMonthDuration('P1M') lt xs:dayTimeDuration('P30D')",
+        "<a/>",
+    );
+    assert_contains!(message, "same type");
+}
+
+#[test]
+fn duration_components_can_be_read() {
+    assert!(check(
+        "days-from-duration(xs:dayTimeDuration('P1DT2H30M15S')) = 1",
+        "<a/>"
+    ));
+    assert!(check(
+        "hours-from-duration(xs:dayTimeDuration('P1DT2H30M15S')) = 2",
+        "<a/>"
+    ));
+    assert!(check(
+        "minutes-from-duration(xs:dayTimeDuration('P1DT2H30M15S')) = 30",
+        "<a/>"
+    ));
+    assert!(check(
+        "seconds-from-duration(xs:dayTimeDuration('P1DT2H30M15S')) = 15",
+        "<a/>"
+    ));
+    assert!(check("years-from-duration(xs:yearMonthDuration('P1Y6M')) = 1", "<a/>"));
+    assert!(check("months-from-duration(xs:yearMonthDuration('P1Y6M')) = 6", "<a/>"));
+}
+
+#[test]
+fn a_negative_duration_signs_every_component() {
+    assert!(check(
+        "days-from-duration(xs:dayTimeDuration('-P3D')) = -3",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:date('2026-01-01') - xs:date('2026-01-04') eq xs:dayTimeDuration('-P3D')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn a_component_accessor_refuses_the_wrong_subtype() {
+    let message = eval_error("days-from-duration(xs:yearMonthDuration('P1M')) = 0", "<a/>");
+    assert_contains!(message, "xs:dayTimeDuration");
+}
+
+#[test]
+fn adding_two_dates_is_an_error() {
+    // XPath 2.0 gives it no meaning, and inventing one would hide a mistake.
+    let message = eval_error(
+        "xs:date('2026-01-01') + xs:date('2026-01-02') eq xs:date('2026-01-01')",
+        "<a/>",
+    );
+    assert_contains!(message, "cannot be added");
+}
+
+#[test]
+fn a_malformed_duration_is_an_error() {
+    let message = eval_error("xs:dayTimeDuration('P1X') eq xs:dayTimeDuration('P1D')", "<a/>");
+    assert_contains!(message, "P1X");
+
+    // A month field in a dayTimeDuration is not a dayTimeDuration.
+    let message = eval_error("xs:dayTimeDuration('P1M') eq xs:dayTimeDuration('P1D')", "<a/>");
+    assert_contains!(message, "P1M");
+}
+
+#[test]
+fn duration_constructors_are_refused_under_a_one_point_zero_binding() {
+    let message = compile_error("xslt", "xs:dayTimeDuration('P1D')");
+    assert_contains!(message, "XPath 2.0");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2e: node comparisons, duration scaling, implicit timezone.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn is_asks_about_identity_not_content() {
+    // Two elements with the same content are equal, and are not the same node.
+    let doc = "<a><b>x</b><c>x</c></a>";
+    assert!(check("b = c", doc));
+    assert!(!check("b is c", doc));
+    assert!(check("b is b", doc));
+    assert!(check("b[1] is b[1]", doc));
+}
+
+#[test]
+fn document_order_operators() {
+    let doc = "<a><b/><c/></a>";
+    assert!(check("b << c", doc));
+    assert!(!check("c << b", doc));
+    assert!(check("c >> b", doc));
+    assert!(!check("b >> c", doc));
+    // A node neither precedes nor follows itself.
+    assert!(!check("b << b", doc));
+    assert!(!check("b >> b", doc));
+}
+
+#[test]
+fn a_node_comparison_takes_exactly_one_node() {
+    let doc = "<a><b/><b/></a>";
+    let message = eval_error("b is b", doc);
+    assert_contains!(message, "2 nodes");
+    assert_contains!(message, "exactly one");
+
+    // An atomic operand is a type error, not a coercion.
+    let message = eval_error("'x' is 'x'", "<a/>");
+    assert_contains!(message, "node comparison");
+}
+
+#[test]
+fn an_empty_node_operand_yields_the_empty_sequence() {
+    assert!(!check("missing is missing", "<a/>"));
+    assert!(!check("missing << b", "<a><b/></a>"));
+}
+
+#[test]
+fn node_comparisons_are_refused_under_a_one_point_zero_binding() {
+    for test in ["b is c", "b << c", "b >> c"] {
+        let message = compile_error("xslt", test);
+        assert_contains!(message, "node comparison");
+        assert_contains!(message, "xslt2");
+    }
+}
+
+#[test]
+fn is_is_still_an_element_name_in_name_position() {
+    assert!(check("count(is) = 1", "<a><is/></a>"));
+}
+
+#[test]
+fn a_duration_scales_by_a_number() {
+    assert!(check(
+        "xs:dayTimeDuration('P1D') * 3 eq xs:dayTimeDuration('P3D')",
+        "<a/>"
+    ));
+    assert!(check(
+        "3 * xs:dayTimeDuration('P1D') eq xs:dayTimeDuration('P3D')",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:dayTimeDuration('P6D') div 2 eq xs:dayTimeDuration('P3D')",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:yearMonthDuration('P1Y') * 2 eq xs:yearMonthDuration('P2Y')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn dividing_two_durations_gives_a_number() {
+    assert!(check(
+        "xs:dayTimeDuration('P90D') div xs:dayTimeDuration('P30D') = 3",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:yearMonthDuration('P1Y') div xs:yearMonthDuration('P3M') = 4",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn multiplying_two_durations_is_an_error() {
+    let message = eval_error(
+        "xs:dayTimeDuration('P1D') * xs:dayTimeDuration('P1D') eq xs:dayTimeDuration('P1D')",
+        "<a/>",
+    );
+    assert_contains!(message, "cannot be multiplied");
+}
+
+#[test]
+fn months_scale_as_whole_months() {
+    // There is no such thing as half a month, so the result rounds.
+    assert!(check(
+        "xs:yearMonthDuration('P1M') * 1.5 eq xs:yearMonthDuration('P2M')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn the_implicit_timezone_defaults_to_utc() {
+    // A value with no offset reads as UTC, so it equals the same value
+    // written with Z.
+    assert!(check(
+        "xs:dateTime('2026-08-21T00:00:00') eq xs:dateTime('2026-08-21T00:00:00Z')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn the_implicit_timezone_can_be_set() {
+    use schematron::validate::ValidateOptions;
+
+    let source = schema_with(
+        "xslt2",
+        r#"<ns prefix="xs" uri="http://www.w3.org/2001/XMLSchema"/>
+           <pattern><rule context="a">
+             <assert test="xs:dateTime('2026-08-21T00:00:00') eq xs:dateTime('2026-08-21T05:00:00Z')">m</assert>
+           </rule></pattern>"#,
+    );
+    let schema = Schema::from_str(&source).expect("schema should compile");
+    let document = Document::from_str("<a/>").unwrap();
+
+    // Under UTC the two are five hours apart.
+    assert!(!schema.validate(&document).unwrap().is_valid());
+
+    // Read as UTC-5, the offsetless value is the same instant.
+    let options = ValidateOptions::new().with_implicit_timezone(-5 * 60);
+    assert!(schema.validate_with(&document, &options).unwrap().is_valid());
+}
+
+#[test]
+fn timezone_from_a_value_reports_its_own_offset() {
+    assert!(check(
+        "timezone-from-dateTime(xs:dateTime('2026-08-21T00:00:00+01:00')) eq xs:dayTimeDuration('PT1H')",
+        "<a/>"
+    ));
+    assert!(check(
+        "timezone-from-date(xs:date('2026-08-21Z')) eq xs:dayTimeDuration('PT0S')",
+        "<a/>"
+    ));
+    // A value with no offset has no timezone, which is the empty sequence.
+    assert!(check(
+        "empty(timezone-from-date(xs:date('2026-08-21')))",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn implicit_timezone_reports_the_runs_setting() {
+    assert!(check("implicit-timezone() eq xs:dayTimeDuration('PT0S')", "<a/>"));
 }

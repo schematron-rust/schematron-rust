@@ -265,6 +265,12 @@ pub struct EvalContext<'a> {
     /// caller evaluating XPath directly cannot silently get an arbitrary
     /// instant.
     pub current_time: Option<f64>,
+    /// The timezone a date or time with no offset is read as being in,
+    /// in minutes from UTC.
+    ///
+    /// Defaults to zero, which keeps a validation run reproducible on any
+    /// machine. See `spec/xpath2.md`.
+    pub implicit_timezone: i32,
     /// The documents `document()` can reach, when the caller supplies any.
     ///
     /// `None` — the default from [`EvalContext::new`] — makes `document()` an
@@ -292,8 +298,17 @@ impl<'a> EvalContext<'a> {
             current: node,
             version: XPathVersion::V1,
             current_time: None,
+            implicit_timezone: 0,
             documents: None,
         }
+    }
+
+    /// The same context, with the timezone that a date or time carrying no
+    /// offset is read as being in.
+    #[must_use]
+    pub fn with_implicit_timezone(mut self, minutes: i32) -> Self {
+        self.implicit_timezone = minutes;
+        self
     }
 
     /// The same context, with the instant the clock functions report.

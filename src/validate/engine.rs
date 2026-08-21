@@ -38,6 +38,8 @@ struct Run<'a> {
     schema: &'a Schema,
     /// The instant the clock functions report, read once for the whole run.
     current_time: f64,
+    /// The timezone a date with no offset is read as being in.
+    implicit_timezone: i32,
     /// The tree being validated. This is the target document for a pattern
     /// with `@documents`, not necessarily the instance.
     document: &'a Document,
@@ -57,6 +59,7 @@ impl<'a> Run<'a> {
             .with_documents(self.documents)
             .with_version(self.schema.version())
             .with_current_time(self.current_time)
+            .with_implicit_timezone(self.implicit_timezone)
     }
 }
 
@@ -134,6 +137,7 @@ fn validate_once(
     let run = Run {
         schema,
         current_time: options.resolve_current_time(),
+        implicit_timezone: options.implicit_timezone.unwrap_or(0),
         document,
         documents,
         options,

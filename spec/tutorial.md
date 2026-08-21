@@ -300,7 +300,58 @@ is how to test a schema with date rules without the result changing tomorrow:
 let options = ValidateOptions::new().with_current_time(seconds_since_epoch);
 ```
 
-## 13. Using the library
+### Measuring between dates
+
+Subtracting two dates gives a duration, which can be compared against one you
+write out — so the constraint a contract schema actually wants is writable:
+
+```xml
+<assert test="xs:date(@end) - xs:date(@start) le xs:dayTimeDuration('P90D')">
+  A contract may not run for more than ninety days.
+</assert>
+```
+
+Adding a duration moves a date, and adding months clamps the day rather than
+overflowing: 31 January plus one month is 28 February.
+
+There are two duration types, `xs:dayTimeDuration` and
+`xs:yearMonthDuration`, and mixing them is an error. That is not an
+oversight — whether one month exceeds thirty days depends on the month, so
+XPath 2.0 keeps them apart rather than answering a question that has no
+answer.
+
+## 13. `=` is not `eq`
+
+XPath 2.0 has two families of comparison, and the difference is the most
+useful thing it offers a schema author.
+
+`=` asks whether **some** pair of values matches. `eq` asks whether **these
+two** match, and reports an error when there are not exactly two:
+
+```xml
+<!-- true when ANY line has qty 1 -->
+<assert test="line/@qty = 1">…</assert>
+
+<!-- an error unless there is exactly one line -->
+<assert test="line/@qty eq 1">…</assert>
+```
+
+The second is stricter on purpose. If you meant "the one line", `eq` tells you
+when the document has two; `=` quietly succeeds on whichever matched.
+
+The other strictness catches a subtler mistake. Everything in an XML document
+is untyped, so a value comparison treats it as a string:
+
+| Where `@n` is `"1"` | Result |
+|---|---|
+| `@n = 1` | true — coerced to a number |
+| `@n eq '1'` | true — both strings |
+| `@n eq 1` | **error** — string against number |
+
+`@n eq 1` failing is `eq` pointing out that the comparison written is not the
+one meant. Say `number(@n) eq 1`, or use `=`.
+
+## 14. Using the library
 
 ```rust
 use schematron::{Document, Schema};
@@ -321,7 +372,7 @@ fn main() -> schematron::Result<()> {
 Compile the schema once and reuse it. `Schema` is `Send + Sync`, so validating
 a directory of documents in parallel needs no extra machinery.
 
-## 14. When a schema seems to do nothing
+## 15. When a schema seems to do nothing
 
 This happens to everyone once. There are two causes, and the CLI distinguishes
 them:
@@ -337,7 +388,7 @@ schematron -s rules.sch --explain            # what will this schema do?
   pattern claimed the node. See step 4. `--explain` flags every rule that can
   only see leftovers.
 
-## 15. Where to go next
+## 16. Where to go next
 
 - [validation.md](validation.md) — the exact algorithm, if a result surprises you
 - [xpath.md](xpath.md) — what the expression language does and does not have

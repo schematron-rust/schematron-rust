@@ -8,7 +8,9 @@
 use super::ast::{Axis, BinaryOp, Expr, NodeTest, PathExpr, PathStart, Quantifier, Step};
 use super::context::EvalContext;
 use super::functions;
-use super::temporal::{Temporal, TemporalKind};
+use super::temporal::{
+    add_months, add_seconds, Duration, DurationKind, Temporal, TemporalKind,
+};
 use super::value::{flatten_into_sequence, Item, Value};
 use crate::xml::{Document, NodeId, NodeKind};
 
@@ -186,17 +188,26 @@ fn evaluate_binary(
             ))),
         },
 
+        BinaryOp::NodeIs | BinaryOp::NodeBefore | BinaryOp::NodeAfter => {
+            compare_by_node(op, &left, &right, document)
+        }
+
+        BinaryOp::ValueEqual
+        | BinaryOp::ValueNotEqual
+        | BinaryOp::ValueLess
+        | BinaryOp::ValueLessEqual
+        | BinaryOp::ValueGreater
+        | BinaryOp::ValueGreaterEqual => {
+            compare_by_value(op, &left, &right, document, context.implicit_timezone)
+        }
+
         BinaryOp::Equal | BinaryOp::NotEqual => {
             let want_equal = op == BinaryOp::Equal;
             // XPath 2.0: a comparison involving a date compares instants, not
             // strings, so an offset is honoured and an untyped operand is
             // cast. Unreachable under XPath 1.0, which has no temporal type.
             if has_temporal(&left) || has_temporal(&right) {
-                let kind = temporal_kind_of(&left, &right);
-                let a = temporal_operands(&left, kind, document)?;
-                let b = temporal_operands(&right, kind, document)?;
-                let equal = a.iter().any(|x| b.iter().any(|y| x == y));
-                return Ok(Value::Boolean(equal == want_equal));
+                return compare_temporals(op, &left, &right, context);
             }
             Ok(Value::Boolean(compare_equality(
                 &left, &right, document, want_equal,
@@ -205,21 +216,23 @@ fn evaluate_binary(
 
         BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
             if has_temporal(&left) || has_temporal(&right) {
-                let kind = temporal_kind_of(&left, &right);
-                let a = temporal_operands(&left, kind, document)?;
-                let b = temporal_operands(&right, kind, document)?;
-                let holds = a.iter().any(|x| {
-                    b.iter().any(|y| match op {
-                        BinaryOp::Less => x < y,
-                        BinaryOp::LessEqual => x <= y,
-                        BinaryOp::Greater => x > y,
-                        BinaryOp::GreaterEqual => x >= y,
-                        _ => unreachable!("outer match limits the operators"),
-                    })
-                });
-                return Ok(Value::Boolean(holds));
+                return compare_temporals(op, &left, &right, context);
             }
             Ok(Value::Boolean(compare_relational(op, &left, &right, document)))
+        }
+
+        BinaryOp::Add | BinaryOp::Subtract
+            if lone_temporal(&left).is_some()
+                || lone_duration(&left).is_some()
+                || lone_duration(&right).is_some() =>
+        {
+            temporal_arithmetic(op, &left, &right)
+        }
+
+        BinaryOp::Multiply | BinaryOp::Divide
+            if lone_duration(&left).is_some() || lone_duration(&right).is_some() =>
+        {
+            scale_duration(op, &left, &right, document)
         }
 
         BinaryOp::Add
@@ -405,9 +418,403 @@ fn item_to_value(item: Item) -> Value {
         Item::String(text) => Value::String(text),
         Item::Number(number) => Value::Number(number),
         Item::Boolean(boolean) => Value::Boolean(boolean),
-        // A temporal has no scalar `Value` of its own; XPath 2.0 treats every
-        // value as a sequence, and this is a one-item one.
-        Item::Temporal(_) => Value::Sequence(vec![item]),
+        // Neither a temporal nor a duration has a scalar `Value` of its own;
+        // XPath 2.0 treats every value as a sequence, and these are one-item
+        // ones.
+        Item::Temporal(_) | Item::Duration(_) => Value::Sequence(vec![item]),
+    }
+}
+
+/// A general comparison where either side holds a date, dateTime, or time.
+///
+/// Compares instants rather than strings, so a timezone offset is honoured,
+/// and casts an untyped operand to the other side's type — which is what lets
+/// `@ContractDate < current-date()` be written without a constructor.
+fn compare_temporals(
+    op: BinaryOp,
+    left: &Value,
+    right: &Value,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    use std::cmp::Ordering;
+
+    let kind = temporal_kind_of(left, right);
+    let a = temporal_operands(left, kind, context.document)?;
+    let b = temporal_operands(right, kind, context.document)?;
+    let zone = context.implicit_timezone;
+
+    let holds = a.iter().any(|x| {
+        b.iter().any(|y| {
+            let ordering = x.compare_in(y, zone);
+            match op {
+                BinaryOp::Equal => ordering == Some(Ordering::Equal),
+                BinaryOp::NotEqual => ordering != Some(Ordering::Equal),
+                BinaryOp::Less => ordering == Some(Ordering::Less),
+                BinaryOp::LessEqual => {
+                    matches!(ordering, Some(Ordering::Less | Ordering::Equal))
+                }
+                BinaryOp::Greater => ordering == Some(Ordering::Greater),
+                BinaryOp::GreaterEqual => {
+                    matches!(ordering, Some(Ordering::Greater | Ordering::Equal))
+                }
+                _ => unreachable!("caller limits the operators"),
+            }
+        })
+    });
+    Ok(Value::Boolean(holds))
+}
+
+/// Multiplying or dividing a duration.
+///
+/// A duration scaled by a number stays a duration; a duration divided by
+/// another of the same subtype is a number — how many of the second fit in
+/// the first. Anything else is a type error.
+///
+/// Months are scaled as whole months, rounding half away from zero, because
+/// XPath 2.0 defines `xs:yearMonthDuration` as an integer number of months
+/// and there is no such thing as half a month.
+fn scale_duration(
+    op: BinaryOp,
+    left: &Value,
+    right: &Value,
+    document: &Document,
+) -> Result<Value, EvalError> {
+    let item = |item: Item| Ok(Value::Sequence(vec![item]));
+    let divide = op == BinaryOp::Divide;
+
+    // duration div duration, of the same subtype, gives a plain number.
+    if let (Some(a), Some(b)) = (lone_duration(left), lone_duration(right)) {
+        if !divide {
+            return Err(EvalError::new(
+                "two durations cannot be multiplied; divide them to ask how many \
+                 of one fit in the other",
+            ));
+        }
+        if a.kind() != b.kind() {
+            return Err(EvalError::new(format!(
+                "cannot divide a {} by a {}",
+                a.kind().as_str(),
+                b.kind().as_str()
+            )));
+        }
+        return Ok(Value::Number(match a.kind() {
+            DurationKind::YearMonth => as_f64_i64(a.to_months()) / as_f64_i64(b.to_months()),
+            DurationKind::DayTime => a.to_seconds() / b.to_seconds(),
+        }));
+    }
+
+    // Otherwise one side is a duration and the other must be a number.
+    let (duration, factor) = match (lone_duration(left), lone_duration(right)) {
+        (Some(duration), None) => (duration, right.to_number(document)),
+        // `2 * P1D` is legal; `2 div P1D` is not.
+        (None, Some(duration)) if !divide => (duration, left.to_number(document)),
+        _ => {
+            return Err(EvalError::new(format!(
+                "`{}` has no meaning for these operands; a duration may be \
+                 multiplied or divided by a number",
+                op.as_str()
+            )))
+        }
+    };
+
+    if factor.is_nan() {
+        return Err(EvalError::new(
+            "a duration can only be scaled by a number",
+        ));
+    }
+    let factor = if divide { 1.0 / factor } else { factor };
+
+    item(Item::Duration(match duration.kind() {
+        DurationKind::YearMonth => {
+            let months = as_f64_i64(duration.to_months()) * factor;
+            #[allow(clippy::cast_possible_truncation)]
+            let rounded = months.abs().round().copysign(months) as i64;
+            Duration::from_months(rounded)
+        }
+        DurationKind::DayTime => Duration::from_seconds(duration.to_seconds() * factor),
+    }))
+}
+
+/// Converts a month count to `f64`; month counts are far below the precision
+/// limit.
+#[allow(clippy::cast_precision_loss)]
+fn as_f64_i64(value: i64) -> f64 {
+    value as f64
+}
+
+/// XPath 2.0's node comparisons: `is`, `<<`, `>>`.
+///
+/// `is` asks about identity, not content: two elements with the same string
+/// value are equal by `=` and are not the same node. `<<` and `>>` ask about
+/// document order.
+///
+/// Each takes exactly one node on either side. An empty operand yields the
+/// empty sequence, so the comparison is false; anything else is a type error,
+/// the same strictness as the value comparisons and for the same reason.
+fn compare_by_node(
+    op: BinaryOp,
+    left: &Value,
+    right: &Value,
+    document: &Document,
+) -> Result<Value, EvalError> {
+    let node_of = |value: &Value, side: &str| -> Result<Option<NodeId>, EvalError> {
+        let items = value.clone().into_items();
+        match items.as_slice() {
+            [] => Ok(None),
+            [Item::Node(node)] => Ok(Some(*node)),
+            [other] => Err(EvalError::new(format!(
+                "the {side} operand of `{}` is a {}, and a node comparison takes a \
+                 node",
+                op.as_str(),
+                other.type_name()
+            ))),
+            many => Err(EvalError::new(format!(
+                "the {side} operand of `{}` has {} nodes, and a node comparison \
+                 takes exactly one",
+                op.as_str(),
+                many.len()
+            ))),
+        }
+    };
+
+    let (Some(a), Some(b)) = (node_of(left, "left")?, node_of(right, "right")?) else {
+        // Nothing to compare, so nothing is claimed.
+        return Ok(Value::Sequence(Vec::new()));
+    };
+
+    Ok(Value::Boolean(match op {
+        BinaryOp::NodeIs => a == b,
+        BinaryOp::NodeBefore => document.order(a) < document.order(b),
+        BinaryOp::NodeAfter => document.order(a) > document.order(b),
+        _ => unreachable!("caller limits the operators"),
+    }))
+}
+
+/// The single temporal a value holds, if that is all it holds.
+fn lone_temporal(value: &Value) -> Option<Temporal> {
+    match value.as_sequence()? {
+        [Item::Temporal(temporal)] => Some(*temporal),
+        _ => None,
+    }
+}
+
+/// The single duration a value holds, if that is all it holds.
+fn lone_duration(value: &Value) -> Option<Duration> {
+    match value.as_sequence()? {
+        [Item::Duration(duration)] => Some(*duration),
+        _ => None,
+    }
+}
+
+/// Arithmetic involving a date or a duration.
+///
+/// Subtracting two dates measures the distance between them; adding a
+/// duration to a date moves it. Anything else — a date plus a date, or two
+/// durations of different subtypes — is a type error rather than a number,
+/// because XPath 2.0 gives it no meaning and inventing one would hide a
+/// mistake. See `spec/xpath2.md`.
+fn temporal_arithmetic(op: BinaryOp, left: &Value, right: &Value) -> Result<Value, EvalError> {
+    let subtract = op == BinaryOp::Subtract;
+    let item = |item: Item| Ok(Value::Sequence(vec![item]));
+
+    match (
+        lone_temporal(left),
+        lone_temporal(right),
+        lone_duration(left),
+        lone_duration(right),
+    ) {
+        // date - date, yielding the distance between them.
+        (Some(a), Some(b), _, _) => {
+            if !subtract {
+                return Err(EvalError::new(format!(
+                    "two {} values cannot be added; subtract them to measure the \
+                     distance between them",
+                    a.kind().as_str()
+                )));
+            }
+            if a.kind() != b.kind() {
+                return Err(EvalError::new(format!(
+                    "cannot subtract a {} from a {}",
+                    b.kind().as_str(),
+                    a.kind().as_str()
+                )));
+            }
+            item(Item::Duration(Duration::from_seconds(
+                a.to_seconds() - b.to_seconds(),
+            )))
+        }
+
+        // date +/- duration, moving the date.
+        (Some(temporal), None, _, Some(duration)) => {
+            let signed = if subtract { -1 } else { 1 };
+            item(Item::Temporal(match duration.kind() {
+                DurationKind::YearMonth => {
+                    add_months(&temporal, duration.to_months() * i64::from(signed))
+                }
+                DurationKind::DayTime => {
+                    add_seconds(&temporal, duration.to_seconds() * f64::from(signed))
+                }
+            }))
+        }
+
+        // duration +/- duration, of the same subtype.
+        (None, None, Some(a), Some(b)) => {
+            if a.kind() != b.kind() {
+                return Err(EvalError::new(format!(
+                    "cannot combine a {} with a {}: the two are separate types \
+                     because whether a month exceeds thirty days has no answer",
+                    a.kind().as_str(),
+                    b.kind().as_str()
+                )));
+            }
+            let sign = if subtract { -1.0 } else { 1.0 };
+            item(Item::Duration(match a.kind() {
+                DurationKind::YearMonth => Duration::from_months(
+                    a.to_months() + b.to_months() * if subtract { -1 } else { 1 },
+                ),
+                DurationKind::DayTime => {
+                    Duration::from_seconds(a.to_seconds() + b.to_seconds() * sign)
+                }
+            }))
+        }
+
+        // duration + date is legal in XPath 2.0; the operands commute.
+        (None, Some(temporal), Some(duration), None) if !subtract => {
+            item(Item::Temporal(match duration.kind() {
+                DurationKind::YearMonth => add_months(&temporal, duration.to_months()),
+                DurationKind::DayTime => add_seconds(&temporal, duration.to_seconds()),
+            }))
+        }
+
+        _ => Err(EvalError::new(format!(
+            "`{}` has no meaning for these operands; see spec/xpath2.md for the \
+             date and duration arithmetic that is defined",
+            op.as_str()
+        ))),
+    }
+}
+
+/// XPath 2.0's value comparisons: `eq`, `ne`, `lt`, `le`, `gt`, `ge`.
+///
+/// Where a general comparison asks whether *some* pair of items matches, a
+/// value comparison compares exactly two values — and says so when it cannot.
+/// Three rules follow, and each is a deliberate strictness rather than a
+/// limitation:
+///
+/// - An empty operand yields the empty sequence, which is false in a boolean
+///   position. Nothing to compare, so nothing is claimed.
+/// - An operand of two or more items is a **type error**. `=` would quietly
+///   pick whichever pair happened to match.
+/// - Operands of different types are a **type error**. An untyped value — and
+///   everything in an XML document is untyped — counts as a string, so
+///   `@n eq 1` is an error even when `@n` is `"1"`. That is `eq` reporting
+///   that the comparison written is not the one meant.
+///
+/// See `spec/xpath2.md`.
+fn compare_by_value(
+    op: BinaryOp,
+    left: &Value,
+    right: &Value,
+    document: &Document,
+    implicit_timezone: i32,
+) -> Result<Value, EvalError> {
+    let left_items = left.clone().into_items();
+    let right_items = right.clone().into_items();
+
+    // An empty operand makes the whole comparison the empty sequence.
+    if left_items.is_empty() || right_items.is_empty() {
+        return Ok(Value::Sequence(Vec::new()));
+    }
+
+    let single = |items: &[Item], side: &str| -> Result<Item, EvalError> {
+        match items {
+            [only] => Ok(only.clone()),
+            _ => Err(EvalError::new(format!(
+                "the {side} operand of `{}` has {} items, and a value comparison \
+                 takes exactly one; use `{}` for an existential comparison",
+                op.as_str(),
+                items.len(),
+                general_counterpart(op)
+            ))),
+        }
+    };
+
+    let a = single(&left_items, "left")?;
+    let b = single(&right_items, "right")?;
+    let ordering = compare_items(&a, &b, op, document, implicit_timezone)?;
+
+    Ok(Value::Boolean(match op {
+        BinaryOp::ValueEqual => ordering == Some(std::cmp::Ordering::Equal),
+        BinaryOp::ValueNotEqual => ordering != Some(std::cmp::Ordering::Equal),
+        BinaryOp::ValueLess => ordering == Some(std::cmp::Ordering::Less),
+        BinaryOp::ValueLessEqual => {
+            matches!(
+                ordering,
+                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            )
+        }
+        BinaryOp::ValueGreater => ordering == Some(std::cmp::Ordering::Greater),
+        BinaryOp::ValueGreaterEqual => {
+            matches!(
+                ordering,
+                Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
+            )
+        }
+        _ => unreachable!("caller limits the operators"),
+    }))
+}
+
+/// Orders two atomic items of the same type.
+///
+/// `None` means the two are incomparable but not an error, which happens only
+/// for NaN.
+fn compare_items(
+    a: &Item,
+    b: &Item,
+    op: BinaryOp,
+    document: &Document,
+    implicit_timezone: i32,
+) -> Result<Option<std::cmp::Ordering>, EvalError> {
+    // A node atomizes to its string value, which is untyped and therefore
+    // compares as a string — the rule that makes `@n eq 1` an error.
+    let atomize = |item: &Item| -> Item {
+        match item {
+            Item::Node(node) => Item::String(document.string_value(*node)),
+            other => other.clone(),
+        }
+    };
+    let (a, b) = (atomize(a), atomize(b));
+
+    match (&a, &b) {
+        (Item::String(x), Item::String(y)) => Ok(Some(x.cmp(y))),
+        (Item::Number(x), Item::Number(y)) => Ok(x.partial_cmp(y)),
+        (Item::Boolean(x), Item::Boolean(y)) => Ok(Some(x.cmp(y))),
+        (Item::Temporal(x), Item::Temporal(y)) if x.kind() == y.kind() => {
+            Ok(x.compare_in(y, implicit_timezone))
+        }
+        (Item::Duration(x), Item::Duration(y)) if x.kind() == y.kind() => Ok(x.partial_cmp(y)),
+        _ => Err(EvalError::new(format!(
+            "`{}` compares a {} with a {}, and a value comparison requires the \
+             same type on both sides. Everything in an XML document is untyped \
+             and so counts as a string; cast it, or use `{}`, which coerces.",
+            op.as_str(),
+            a.type_name(),
+            b.type_name(),
+            general_counterpart(op)
+        ))),
+    }
+}
+
+/// The general comparison an error message should point the reader at.
+const fn general_counterpart(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::ValueNotEqual => "!=",
+        BinaryOp::ValueLess => "<",
+        BinaryOp::ValueLessEqual => "<=",
+        BinaryOp::ValueGreater => ">",
+        BinaryOp::ValueGreaterEqual => ">=",
+        // `eq`, and anything else this is ever called with.
+        _ => "=",
     }
 }
 

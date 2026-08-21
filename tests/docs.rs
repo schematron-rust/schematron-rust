@@ -68,13 +68,21 @@ fn xml_blocks(source: &str) -> Vec<(usize, String)> {
 /// Fragments — a lone `<pattern>`, a lone `<rule>` — are shown deliberately,
 /// and cannot be compiled on their own.
 fn is_whole_schema(block: &str) -> bool {
-    let body = block.trim_start_matches(|c: char| c.is_whitespace());
-    let body = if body.starts_with("<?xml") {
-        body.split_once("?>").map_or(body, |(_, rest)| rest).trim_start()
-    } else {
-        body
-    };
-    body.starts_with("<schema") || body.starts_with("<!--")
+    let mut body = block.trim_start();
+
+    // Skip an XML declaration and any leading comments, so that a schema
+    // introduced by a comment still counts — and a bare fragment introduced
+    // by one does not.
+    if let Some(rest) = body.strip_prefix("<?xml") {
+        body = rest.split_once("?>").map_or(rest, |(_, tail)| tail).trim_start();
+    }
+    while let Some(rest) = body.strip_prefix("<!--") {
+        let Some((_, tail)) = rest.split_once("-->") else {
+            return false;
+        };
+        body = tail.trim_start();
+    }
+    body.starts_with("<schema")
 }
 
 #[test]

@@ -105,6 +105,41 @@ Every pattern gets its own pass over the document.
 
 - Corpus: `tests/corpus/patterns-are-independent/`
 
+### `is` is identity, not equality
+
+`b = c` asks whether some pair of nodes has matching content; `b is c` asks
+whether they are the same node. Conflating them would make the operator
+pointless, since `=` already exists.
+
+- Test: `tests/xpath2.rs::is_asks_about_identity_not_content`
+
+### Arithmetic that has no meaning is an error
+
+XPath 2.0 defines date and duration arithmetic narrowly: a date minus a date
+is a duration, a date plus a duration is a date. A date plus a date, or a
+yearMonthDuration plus a dayTimeDuration, has no defined result — and gets an
+error naming the operands, never a number.
+
+The two duration subtypes are kept apart for the same reason: whether one
+month exceeds thirty days depends on the month, so `xs:duration` is only
+partially ordered and this crate implements the subtypes instead.
+
+- Test: `tests/xpath2.rs::adding_two_dates_is_an_error`
+- Test: `tests/xpath2.rs::mixing_the_two_duration_subtypes_is_an_error`
+
+### A value comparison reports rather than guesses
+
+`eq` and its family exist to be stricter than `=`. Two or more items on either
+side is a type error; mismatched types are a type error. Both are cases where
+`=` quietly succeeds, and turning either into a silent answer would remove the
+only reason to write `eq` at all.
+
+Error messages here name the general counterpart — `=` for `eq`, `<` for `lt`
+— so the reader is told what would have worked.
+
+- Test: `tests/xpath2.rs::more_than_one_item_is_an_error_where_a_general_comparison_is_not`
+- Test: `tests/xpath2.rs::mismatched_types_are_an_error`
+
 ### Validation is reproducible, including the clock
 
 `current-date()` and its companions read the run's instant, not the system

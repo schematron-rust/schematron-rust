@@ -27,8 +27,19 @@ functions that produce or consume sequences.
 say the thing Schematron is most often quoted saying: that a date must be in
 the past.
 
-**Phase 2c** — value comparisons (`eq`, `ne`, `lt`, `le`, `gt`, `ge`) and the
-remaining type strictness — is roadmap item 1 in [roadmap.md](roadmap.md).
+**Phase 2c** adds the **value comparisons** — `eq`, `ne`, `lt`, `le`, `gt`,
+`ge` — which are how XPath 2.0 says "compare exactly these two values", as
+opposed to `=` and its family, which ask whether *some* pair matches.
+
+**Phase 2d** adds **durations and date arithmetic**, so a schema can measure
+the distance between two dates rather than only order them.
+
+**Phase 2e** completes the subset: node comparisons, duration scaling, and a
+configurable implicit timezone.
+
+**Phase 3** — `instance of`, `cast as`, sequence types, and the remaining type
+strictness, all of which need the type system — is roadmap item 1 in
+[roadmap.md](roadmap.md).
 
 ### The sequence type, and why XPath 1.0 is unaffected
 
@@ -84,6 +95,9 @@ cannot accidentally acquire 2.0 behaviour.
 | `for $v in E return E` | Iterates a sequence or node-set, yielding a sequence |
 | `some $v in E satisfies E` | True when any item satisfies the test |
 | `every $v in E satisfies E` | True when every item does; true for an empty input |
+| `E eq E`, `ne`, `lt`, `le`, `gt`, `ge` | Value comparisons; see below |
+| `E is E` | Whether two expressions select the *same node* |
+| `E << E`, `E >> E` | Whether one node precedes or follows another in document order |
 
 ### Functions
 
@@ -110,6 +124,130 @@ cannot accidentally acquire 2.0 behaviour.
 | `hours-from-dateTime`, `minutes-from-dateTime`, `seconds-from-dateTime` | Components of a dateTime |
 | `hours-from-time`, `minutes-from-time`, `seconds-from-time` | Components of a time |
 | `xs:date()`, `xs:dateTime()`, `xs:time()` | Constructors, when a prefix is bound to the XML Schema namespace |
+| `xs:dayTimeDuration()`, `xs:yearMonthDuration()` | Duration constructors |
+| `days-from-duration`, `hours-from-duration`, `minutes-from-duration`, `seconds-from-duration` | Components of a dayTimeDuration |
+| `years-from-duration`, `months-from-duration` | Components of a yearMonthDuration |
+| `timezone-from-date`, `timezone-from-dateTime`, `timezone-from-time` | The value's own timezone, as a dayTimeDuration, or the empty sequence |
+| `implicit-timezone()` | The run's implicit timezone, as a dayTimeDuration |
+
+## Durations and date arithmetic
+
+### Two duration types, not one
+
+XPath 2.0 has `xs:duration`, and also splits it into two subtypes:
+
+| Type | Lexical form | Holds |
+|---|---|---|
+| `xs:yearMonthDuration` | `P1Y6M` | A number of months |
+| `xs:dayTimeDuration` | `P90DT12H30M` | A number of seconds |
+
+The split exists because a general `xs:duration` is **not totally ordered**:
+is one month longer than thirty days? It depends which month. XPath 2.0
+therefore leaves `xs:duration` only partially ordered, and this crate
+implements the two subtypes rather than the general type — comparing values
+that cannot be compared is worse than not offering the type.
+
+Both may be negative, written `-P1D`.
+
+### What the arithmetic does
+
+| Expression | Result |
+|---|---|
+| date − date, dateTime − dateTime, time − time | `xs:dayTimeDuration` |
+| date + dayTimeDuration, date − dayTimeDuration | the same date type |
+| date + yearMonthDuration, date − yearMonthDuration | the same date type |
+| duration + duration, duration − duration | the same duration type |
+| duration × number, number × duration, duration ÷ number | the same duration type |
+| duration ÷ duration | a number: how many of the second fit in the first |
+
+So the constraint a schema actually wants to write is now writable:
+
+```xml
+<assert test="xs:date(@end) - xs:date(@start) le xs:dayTimeDuration('P90D')">
+  A contract may not run for more than ninety days.
+</assert>
+```
+
+Adding months clamps the day rather than overflowing, which is what XML
+Schema requires: 31 January plus one month is 28 February, or 29 February in
+a leap year.
+
+Mixing the two duration types in one operation is a **type error**, for the
+same reason the types are separate.
+
+## Node comparisons
+
+Three operators that ask about nodes rather than values:
+
+| Operator | True when |
+|---|---|
+| `A is B` | Both select the **same node** — identity, not equal content |
+| `A << B` | `A` precedes `B` in document order |
+| `A >> B` | `A` follows `B` in document order |
+
+`is` is the one worth knowing. Two elements with identical content are equal
+by `=` and are *not* the same node:
+
+```xml
+<!-- true: some b has the same string value as some c -->
+<assert test="b = c">…</assert>
+
+<!-- true only if they are literally the same element -->
+<assert test="b is c">…</assert>
+```
+
+All three take exactly one node on each side. An empty operand yields the
+empty sequence, so the comparison is false. More than one node, or anything
+that is not a node, is a type error — the same strictness as the value
+comparisons, for the same reason.
+
+## Value comparisons
+
+`=` and `eq` are not spellings of the same thing, and the difference is the
+most useful part of XPath 2.0 for a schema author.
+
+| | `=` (general) | `eq` (value) |
+|---|---|---|
+| Operands | Any number of items | Exactly one each |
+| Question asked | Does *some* pair match? | Do *these two* match? |
+| Several items | Existential, so `(1, 2) = 1` is true | **Type error** |
+| Empty operand | False | The empty sequence, so false |
+| Mismatched types | Coerced | **Type error** |
+
+The reason to reach for `eq` is that it *fails* where `=` quietly succeeds:
+
+```xml
+<!-- true if ANY line has qty 1, which may not be what you meant -->
+<assert test="line/@qty = 1">…</assert>
+
+<!-- an error unless there is exactly one line, which is what you meant -->
+<assert test="line/@qty eq 1">…</assert>
+```
+
+### Untyped operands are cast to string, not coerced
+
+This is the rule that surprises people, and it is deliberate. A general
+comparison casts an untyped operand to the *other* operand's type. A value
+comparison casts it to `xs:string` and then requires the types to match:
+
+| Expression, where `@n` is `"1"` | Result |
+|---|---|
+| `@n = 1` | true — `@n` is cast to a number |
+| `@n eq "1"` | true — both are strings |
+| `@n eq 1` | **type error** — string against number |
+| `@d eq xs:date('2020-01-01')` | **type error** — string against date |
+
+Everything in an XML document is untyped, so comparing an attribute to a
+number with `eq` is an error. That is not a limitation to work around; it is
+`eq` telling you the comparison you wrote is not the one you meant. Write
+`number(@n) eq 1`, or use `=`.
+
+### Chained comparisons
+
+XPath 2.0 makes comparisons non-associative, so `a eq b eq c` is a syntax
+error. This crate parses it left-associatively, as `(a eq b) eq c`, which then
+fails at evaluation as a boolean compared against something else. The outcome
+is an error either way; only the message differs.
 
 ## Dates and times
 
@@ -126,11 +264,18 @@ cannot accidentally acquire 2.0 behaviour.
 10:30:00                a time
 ```
 
-A value with no timezone is compared as if it were UTC. XPath 2.0 uses an
-*implicit timezone* taken from the evaluation context; treating that as UTC
-makes a validation run reproducible on any machine, which matters more here
-than matching a processor's local offset. This is recorded as a divergence
-below.
+A value with no timezone is compared as if it were in the **implicit
+timezone**, which defaults to UTC and can be set:
+
+```rust
+let options = ValidateOptions::new().with_implicit_timezone(-5 * 60);
+```
+
+XPath 2.0 takes the implicit timezone from the evaluation context, which for
+most processors means the machine's local offset. Defaulting to UTC instead
+makes a validation run reproducible on any machine — the same reason the clock
+is captured once and can be supplied — while leaving the choice available to a
+caller who needs local semantics.
 
 ### Comparing an untyped value to a date
 
@@ -180,13 +325,12 @@ own tests for date rules are written, and how a caller should write theirs.
 Every one of these is a **hard error naming the construct**, at schema-compile
 time. None of them silently does something else.
 
-| Construct | Why it needs phase 2c |
+| Construct | Why it needs phase 3 |
 |---|---|
-| Value comparisons: `eq`, `ne`, `lt`, `le`, `gt`, `ge` | Different semantics from `=`, `<`, and the rest |
 | `instance of`, `cast as`, `castable as`, `treat as` | Needs the type system |
-| Durations, and date arithmetic that yields one | Needs the duration type |
-| `timezone-from-date()`, `adjust-*-to-timezone()` | Needs the implicit timezone to be configurable |
-| Sequence types in general — `element()`, `item()*` | Needs the type system |
+| Sequence types — `element()`, `item()*`, `node()?` | Needs the type system |
+| The general `xs:duration` | Only partially ordered; see above |
+| `adjust-date-to-timezone()` and its companions | Needs a timezone-bearing cast |
 | `xslt3`, `xpath3`, `xpath31` bindings | Still refused; use `allow_unknown_query_binding` |
 
 ## Divergences: where 2.0 still behaves like 1.0
@@ -199,7 +343,7 @@ every case. They do not agree here:
 
 | Expression | XPath 1.0, and this crate | XPath 2.0 |
 |---|---|---|
-| A date with no timezone | Compared as UTC | Compared in the processor's implicit timezone |
+| A date with no timezone | Compared in the implicit timezone, which **defaults to UTC** rather than to the machine's local offset | Compared in the processor's implicit timezone |
 | `1 + 'a'` | `NaN`, so the test is false | Type error |
 | `'x' div 2` | `NaN` | Type error |
 | `string(a)` where `a` selects several nodes | The first node's string value | Type error |

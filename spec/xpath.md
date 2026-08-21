@@ -51,7 +51,11 @@ precedence chain below.
 
 The full XPath 1.0 grammar is implemented, at standard precedence:
 
-Under an XPath 2.0 binding the top production is
+Under an XPath 2.0 binding the value comparisons `eq` and `ne` are parsed at
+the equality level and `lt`, `le`, `gt`, `ge` at the relational level, which
+keeps the XPath 1.0 grammar untouched. XPath 2.0 puts all of them at one
+non-associative level; the difference shows only for a chained comparison such
+as `a eq b eq c`, which is an error either way. The top production is
 `Expr := ExprSingle ("," ExprSingle)*`, where the comma builds a sequence, and
 function arguments and predicates take an `ExprSingle` so that a comma there
 still separates arguments. See [xpath2.md](xpath2.md).

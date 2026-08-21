@@ -25,16 +25,22 @@
 - XPath 2.0 phase 2b: the date, dateTime and time types, the `xs:` constructors
   and component accessors, and a clock that is captured once per run and can
   be supplied
+- XPath 2.0 phase 2c: the value comparisons `eq`, `ne`, `lt`, `le`, `gt` and
+  `ge`, which compare exactly two values and report when they cannot
+- XPath 2.0 phase 2d: the `xs:dayTimeDuration` and `xs:yearMonthDuration`
+  types, and the date arithmetic that produces and consumes them
+- XPath 2.0 phase 2e: the node comparisons `is`, `<<` and `>>`; duration
+  scaling; and a configurable implicit timezone, with `timezone-from-*`
 - Fuzz targets, criterion benchmarks, clippy pedantic, corpus test suite,
   runnable examples, and this specification
 
 ## Next
 
-1. **XPath 2.0 phase 2c** — value comparisons (`eq`, `ne`, `lt`, `le`, `gt`,
-   `ge`), the duration type and the date arithmetic that yields one, and the
-   configurable implicit timezone that `timezone-from-date()` and the
-   `adjust-*` functions need. Closing the semantic divergences phase 1
-   documents belongs here too, since those exist only because shared
+1. **XPath 2.0 phase 3: the type system** — `instance of`, `cast as`,
+   `castable as`, `treat as`, and the sequence types those need
+   (`element()`, `item()*`, `node()?`). With a type system, the `adjust-*`
+   functions and the general `xs:duration` follow, and so does closing the
+   semantic divergences phase 1 documents — those exist only because shared
    constructs still evaluate on the XPath 1.0 engine.
 2. **XSLT key emulation** — `<sch:key>` and the `key()` function, which some
    1.5-era schemas and some large industry schemas rely on for cross-reference

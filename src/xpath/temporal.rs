@@ -15,6 +15,329 @@
 
 use std::fmt;
 
+/// Which of the two duration subtypes a [`Duration`] holds.
+///
+/// XPath 2.0 splits `xs:duration` in two because the general type is not
+/// totally ordered: whether one month exceeds thirty days depends on the
+/// month. Implementing the subtypes, and not the general type, means every
+/// duration this crate produces can be compared with every other of its kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DurationKind {
+    /// `xs:yearMonthDuration`, counted in months.
+    YearMonth,
+    /// `xs:dayTimeDuration`, counted in seconds.
+    DayTime,
+}
+
+impl DurationKind {
+    /// The type name, as a schema author writes it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            DurationKind::YearMonth => "xs:yearMonthDuration",
+            DurationKind::DayTime => "xs:dayTimeDuration",
+        }
+    }
+}
+
+/// A duration: a number of months, or a number of seconds.
+///
+/// # Examples
+///
+/// ```
+/// use schematron::xpath::{Duration, DurationKind};
+///
+/// let ninety_days = Duration::parse("P90D", DurationKind::DayTime).unwrap();
+/// assert_eq!(ninety_days.to_seconds(), 90.0 * 86_400.0);
+///
+/// let quarter = Duration::parse("P3M", DurationKind::YearMonth).unwrap();
+/// assert_eq!(quarter.to_months(), 3);
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct Duration {
+    kind: DurationKind,
+    /// Months, for a yearMonthDuration.
+    months: i64,
+    /// Seconds, for a dayTimeDuration.
+    seconds: f64,
+}
+
+impl Duration {
+    /// The subtype this value has.
+    #[must_use]
+    pub const fn kind(&self) -> DurationKind {
+        self.kind
+    }
+
+    /// The number of months, for a yearMonthDuration.
+    #[must_use]
+    pub const fn to_months(&self) -> i64 {
+        self.months
+    }
+
+    /// The number of seconds, for a dayTimeDuration.
+    #[must_use]
+    pub const fn to_seconds(&self) -> f64 {
+        self.seconds
+    }
+
+    /// Builds a duration of a number of months.
+    #[must_use]
+    pub const fn from_months(months: i64) -> Self {
+        Self {
+            kind: DurationKind::YearMonth,
+            months,
+            seconds: 0.0,
+        }
+    }
+
+    /// Builds a duration of a number of seconds.
+    #[must_use]
+    pub const fn from_seconds(seconds: f64) -> Self {
+        Self {
+            kind: DurationKind::DayTime,
+            months: 0,
+            seconds,
+        }
+    }
+
+    /// Whether the duration runs backwards.
+    #[must_use]
+    pub fn is_negative(&self) -> bool {
+        match self.kind {
+            DurationKind::YearMonth => self.months < 0,
+            DurationKind::DayTime => self.seconds < 0.0,
+        }
+    }
+
+    /// Parses a lexical form, `PnYnM` or `PnDTnHnMnS`, with an optional
+    /// leading `-`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message naming the value and the type it failed to parse as.
+    pub fn parse(text: &str, kind: DurationKind) -> Result<Duration, String> {
+        let trimmed = text.trim();
+        let reject = || format!("{trimmed:?} is not a valid {} value", kind.as_str());
+
+        let (negative, rest) = match trimmed.strip_prefix('-') {
+            Some(rest) => (true, rest),
+            None => (false, trimmed),
+        };
+        let rest = rest.strip_prefix('P').ok_or_else(reject)?;
+        if rest.is_empty() {
+            return Err(reject());
+        }
+
+        let (date_part, time_part) = match rest.split_once('T') {
+            Some((date, time)) => {
+                // A `T` must be followed by at least one component.
+                if time.is_empty() {
+                    return Err(reject());
+                }
+                (date, Some(time))
+            }
+            None => (rest, None),
+        };
+
+        let date_fields = parse_duration_fields(date_part, "YMD").ok_or_else(reject)?;
+        let time_fields = match time_part {
+            Some(time) => parse_duration_fields(time, "HMS").ok_or_else(reject)?,
+            None => Vec::new(),
+        };
+        if date_fields.is_empty() && time_fields.is_empty() {
+            return Err(reject());
+        }
+
+        // `M` means months before the `T` and minutes after it, so the two
+        // parts are summed separately rather than by unit letter.
+        let mut months = 0_i64;
+        let mut seconds = 0.0_f64;
+        #[allow(clippy::cast_possible_truncation)] // Year and month counts are small.
+        for (value, unit) in &date_fields {
+            match unit {
+                'Y' => months += *value as i64 * 12,
+                'M' => months += *value as i64,
+                'D' => seconds += value * 86_400.0,
+                _ => return Err(reject()),
+            }
+        }
+        for (value, unit) in &time_fields {
+            match unit {
+                'H' => seconds += value * 3_600.0,
+                'M' => seconds += value * 60.0,
+                'S' => seconds += value,
+                _ => return Err(reject()),
+            }
+        }
+
+        // Each subtype accepts only its own fields.
+        match kind {
+            DurationKind::YearMonth if seconds != 0.0 => return Err(reject()),
+            DurationKind::DayTime if months != 0 => return Err(reject()),
+            _ => {}
+        }
+
+        let sign = if negative { -1.0 } else { 1.0 };
+        Ok(match kind {
+            DurationKind::YearMonth => {
+                Duration::from_months(if negative { -months } else { months })
+            }
+            DurationKind::DayTime => Duration::from_seconds(seconds * sign),
+        })
+    }
+
+    /// The lexical form, as XPath's `string()` would render it.
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    pub fn to_lexical(&self) -> String {
+        let mut out = String::new();
+        if self.is_negative() {
+            out.push('-');
+        }
+        out.push('P');
+
+        match self.kind {
+            DurationKind::YearMonth => {
+                let months = self.months.abs();
+                let (years, months) = (months / 12, months % 12);
+                if years != 0 {
+                    out.push_str(&format!("{years}Y"));
+                }
+                if months != 0 || years == 0 {
+                    out.push_str(&format!("{months}M"));
+                }
+            }
+            DurationKind::DayTime => {
+                let total = self.seconds.abs();
+                let days = (total / 86_400.0).floor();
+                let rest = total - days * 86_400.0;
+                let hours = (rest / 3_600.0).floor();
+                let minutes = ((rest % 3_600.0) / 60.0).floor();
+                let seconds = rest % 60.0;
+
+                if days != 0.0 {
+                    out.push_str(&format!("{}D", days as i64));
+                }
+                if hours != 0.0 || minutes != 0.0 || seconds != 0.0 {
+                    out.push('T');
+                    if hours != 0.0 {
+                        out.push_str(&format!("{}H", hours as i64));
+                    }
+                    if minutes != 0.0 {
+                        out.push_str(&format!("{}M", minutes as i64));
+                    }
+                    if seconds != 0.0 {
+                        if seconds.fract() == 0.0 {
+                            out.push_str(&format!("{}S", seconds as i64));
+                        } else {
+                            out.push_str(&format!("{seconds}S"));
+                        }
+                    }
+                } else if days == 0.0 {
+                    out.push_str("T0S");
+                }
+            }
+        }
+        out
+    }
+}
+
+impl fmt::Display for Duration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.to_lexical())
+    }
+}
+
+impl PartialEq for Duration {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.months == other.months && self.seconds == other.seconds
+    }
+}
+
+impl PartialOrd for Duration {
+    /// Orders two durations of the same subtype.
+    ///
+    /// `None` for two of different subtypes: whether a month exceeds thirty
+    /// days has no answer, which is why the subtypes are separate.
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if self.kind != other.kind {
+            return None;
+        }
+        match self.kind {
+            DurationKind::YearMonth => Some(self.months.cmp(&other.months)),
+            DurationKind::DayTime => self.seconds.partial_cmp(&other.seconds),
+        }
+    }
+}
+
+/// Splits `1Y2M3D` into its `(value, unit)` fields, checking the unit order.
+///
+/// `units` gives the permitted letters in the order they must appear, which
+/// is what rejects `P1M1Y`.
+fn parse_duration_fields(text: &str, units: &str) -> Option<Vec<(f64, char)>> {
+    if text.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut fields = Vec::new();
+    let mut digits = String::new();
+    let mut next_unit = 0;
+
+    for c in text.chars() {
+        if c.is_ascii_digit() || c == '.' {
+            digits.push(c);
+            continue;
+        }
+        let position = units.find(c)?;
+        if position < next_unit || digits.is_empty() {
+            return None;
+        }
+        next_unit = position + 1;
+        fields.push((digits.parse().ok()?, c));
+        digits.clear();
+    }
+    // Trailing digits with no unit.
+    if !digits.is_empty() {
+        return None;
+    }
+    Some(fields)
+}
+
+/// Adds a number of months to a date, clamping the day.
+///
+/// XML Schema requires the clamp: 31 January plus one month is 28 February,
+/// or 29 February in a leap year, rather than overflowing into March.
+#[must_use]
+pub fn add_months(temporal: &Temporal, months: i64) -> Temporal {
+    let total = temporal.year() * 12 + i64::from(temporal.month()) - 1 + months;
+    let year = total.div_euclid(12);
+    let month = u32::try_from(total.rem_euclid(12) + 1).unwrap_or(1);
+    let day = temporal.day().min(days_in_month(year, month));
+
+    Temporal {
+        kind: temporal.kind(),
+        year,
+        month,
+        day,
+        hour: temporal.hour(),
+        minute: temporal.minute(),
+        second: temporal.second(),
+        offset_minutes: temporal.offset_minutes(),
+    }
+}
+
+/// Adds a number of seconds to a date or time.
+#[must_use]
+pub fn add_seconds(temporal: &Temporal, seconds: f64) -> Temporal {
+    let offset = f64::from(temporal.offset_minutes().unwrap_or(0)) * 60.0;
+    let shifted = from_unix_seconds(temporal.kind(), temporal.to_seconds() + seconds + offset);
+    Temporal {
+        offset_minutes: temporal.offset_minutes(),
+        ..shifted
+    }
+}
+
 /// The date an `xs:time` is placed on, so that two times compare by their
 /// time of day alone.
 ///
@@ -217,19 +540,38 @@ impl Temporal {
         None
     }
 
-    /// The instant this value denotes, in seconds from 1970-01-01T00:00:00Z.
+    /// The instant this value denotes, in seconds from 1970-01-01T00:00:00Z,
+    /// reading a value with no timezone as UTC.
     ///
-    /// A value with no timezone is read as UTC.
+    /// Use [`Temporal::to_seconds_in`] where the implicit timezone matters.
+    #[must_use]
+    pub fn to_seconds(&self) -> f64 {
+        self.to_seconds_in(0)
+    }
+
+    /// The instant this value denotes, reading a value with no timezone as
+    /// being in `implicit_minutes`.
+    ///
+    /// XPath 2.0 takes the implicit timezone from the evaluation context. See
+    /// `spec/xpath2.md` for why this crate defaults it to UTC.
     #[must_use]
     #[allow(clippy::cast_precision_loss)] // Day counts are far below 2^53.
-    pub fn to_seconds(&self) -> f64 {
+    pub fn to_seconds_in(&self, implicit_minutes: i32) -> f64 {
         let days = days_from_civil(self.year, self.month, self.day);
-        let offset = f64::from(self.offset_minutes.unwrap_or(0)) * 60.0;
+        let offset = f64::from(self.offset_minutes.unwrap_or(implicit_minutes)) * 60.0;
         (days as f64) * 86_400.0
             + f64::from(self.hour) * 3_600.0
             + f64::from(self.minute) * 60.0
             + self.second
             - offset
+    }
+
+    /// Orders two values, reading a value with no timezone as being in
+    /// `implicit_minutes`.
+    #[must_use]
+    pub fn compare_in(&self, other: &Temporal, implicit_minutes: i32) -> Option<std::cmp::Ordering> {
+        self.to_seconds_in(implicit_minutes)
+            .partial_cmp(&other.to_seconds_in(implicit_minutes))
     }
 
     /// The lexical form, as XPath's `string()` would render it.
@@ -626,5 +968,141 @@ mod tests {
             TemporalKind::Time
         );
         assert!(Temporal::parse_any("nonsense").is_none());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::cast_precision_loss)]
+mod duration_tests {
+    use super::*;
+
+    #[test]
+    fn parses_day_time_durations() {
+        let d = Duration::parse("P90D", DurationKind::DayTime).unwrap();
+        assert_eq!(d.to_seconds(), 90.0 * 86_400.0);
+
+        let d = Duration::parse("P1DT2H30M15S", DurationKind::DayTime).unwrap();
+        assert_eq!(d.to_seconds(), 86_400.0 + 7_200.0 + 1_800.0 + 15.0);
+
+        let d = Duration::parse("PT90M", DurationKind::DayTime).unwrap();
+        assert_eq!(d.to_seconds(), 5_400.0);
+    }
+
+    #[test]
+    fn parses_year_month_durations() {
+        assert_eq!(
+            Duration::parse("P1Y6M", DurationKind::YearMonth).unwrap().to_months(),
+            18
+        );
+        assert_eq!(
+            Duration::parse("P3M", DurationKind::YearMonth).unwrap().to_months(),
+            3
+        );
+        assert_eq!(
+            Duration::parse("P2Y", DurationKind::YearMonth).unwrap().to_months(),
+            24
+        );
+    }
+
+    #[test]
+    fn m_means_months_before_the_t_and_minutes_after_it() {
+        // The one genuinely ambiguous letter in the lexical form.
+        assert_eq!(
+            Duration::parse("P1M", DurationKind::YearMonth).unwrap().to_months(),
+            1
+        );
+        assert_eq!(
+            Duration::parse("PT1M", DurationKind::DayTime).unwrap().to_seconds(),
+            60.0
+        );
+    }
+
+    #[test]
+    fn parses_negative_durations() {
+        assert_eq!(
+            Duration::parse("-P1D", DurationKind::DayTime).unwrap().to_seconds(),
+            -86_400.0
+        );
+        assert!(Duration::parse("-P1D", DurationKind::DayTime).unwrap().is_negative());
+        assert_eq!(
+            Duration::parse("-P6M", DurationKind::YearMonth).unwrap().to_months(),
+            -6
+        );
+    }
+
+    #[test]
+    fn each_subtype_rejects_the_others_fields() {
+        // A dayTimeDuration has no months, and a yearMonthDuration no days.
+        assert!(Duration::parse("P1M", DurationKind::DayTime).is_err());
+        assert!(Duration::parse("P1D", DurationKind::YearMonth).is_err());
+        assert!(Duration::parse("P1Y", DurationKind::DayTime).is_err());
+    }
+
+    #[test]
+    fn rejects_malformed_durations() {
+        for bad in ["", "P", "1D", "PD", "P1X", "PT", "P1DT", "P1M1Y", "PT1S1H", "P1"] {
+            assert!(
+                Duration::parse(bad, DurationKind::DayTime).is_err()
+                    && Duration::parse(bad, DurationKind::YearMonth).is_err(),
+                "{bad:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn orders_durations_of_the_same_subtype() {
+        let short = Duration::parse("P1D", DurationKind::DayTime).unwrap();
+        let long = Duration::parse("P90D", DurationKind::DayTime).unwrap();
+        assert!(short < long);
+        assert_eq!(short, Duration::parse("PT24H", DurationKind::DayTime).unwrap());
+    }
+
+    #[test]
+    fn durations_of_different_subtypes_are_incomparable() {
+        // Whether a month exceeds thirty days has no answer.
+        let months = Duration::from_months(1);
+        let days = Duration::from_seconds(30.0 * 86_400.0);
+        assert!(months.partial_cmp(&days).is_none());
+        assert_ne!(months, days);
+    }
+
+    #[test]
+    fn lexical_form_round_trips() {
+        for (text, kind) in [
+            ("P90D", DurationKind::DayTime),
+            ("P1DT2H30M15S", DurationKind::DayTime),
+            ("-P1D", DurationKind::DayTime),
+            ("P1Y6M", DurationKind::YearMonth),
+            ("P3M", DurationKind::YearMonth),
+        ] {
+            let parsed = Duration::parse(text, kind).unwrap();
+            assert_eq!(parsed.to_lexical(), text, "{text}");
+        }
+    }
+
+    #[test]
+    fn adding_months_clamps_the_day() {
+        // XML Schema requires the clamp rather than an overflow into March.
+        let january = Temporal::parse("2026-01-31", TemporalKind::Date).unwrap();
+        assert_eq!(add_months(&january, 1).to_lexical(), "2026-02-28");
+
+        let leap = Temporal::parse("2024-01-31", TemporalKind::Date).unwrap();
+        assert_eq!(add_months(&leap, 1).to_lexical(), "2024-02-29");
+    }
+
+    #[test]
+    fn adding_months_crosses_years_in_both_directions() {
+        let date = Temporal::parse("2026-08-21", TemporalKind::Date).unwrap();
+        assert_eq!(add_months(&date, 12).to_lexical(), "2027-08-21");
+        assert_eq!(add_months(&date, -12).to_lexical(), "2025-08-21");
+        assert_eq!(add_months(&date, 5).to_lexical(), "2027-01-21");
+        assert_eq!(add_months(&date, -8).to_lexical(), "2025-12-21");
+    }
+
+    #[test]
+    fn adding_seconds_moves_a_date() {
+        let date = Temporal::parse("2026-08-21", TemporalKind::Date).unwrap();
+        assert_eq!(add_seconds(&date, 86_400.0).to_lexical(), "2026-08-22");
+        assert_eq!(add_seconds(&date, -86_400.0).to_lexical(), "2026-08-20");
     }
 }

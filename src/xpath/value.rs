@@ -5,7 +5,7 @@
 //! including the number-to-string format, which is the detail engines most
 //! often get wrong.
 
-use super::temporal::Temporal;
+use super::temporal::{Duration, Temporal};
 use crate::xml::{Document, NodeId};
 
 /// An XPath 1.0 value.
@@ -62,6 +62,8 @@ pub enum Item {
     Boolean(bool),
     /// An `xs:date`, `xs:dateTime`, or `xs:time`.
     Temporal(Temporal),
+    /// An `xs:dayTimeDuration` or `xs:yearMonthDuration`.
+    Duration(Duration),
 }
 
 impl Item {
@@ -74,6 +76,7 @@ impl Item {
             Item::Number(number) => format_number(*number),
             Item::Boolean(boolean) => if *boolean { "true" } else { "false" }.to_string(),
             Item::Temporal(temporal) => temporal.to_lexical(),
+            Item::Duration(duration) => duration.to_lexical(),
         }
     }
 
@@ -85,9 +88,10 @@ impl Item {
             Item::String(text) => parse_number(text),
             Item::Number(number) => *number,
             Item::Boolean(boolean) => f64::from(u8::from(*boolean)),
-            // A date has no numeric value in XPath 2.0; NaN keeps every
-            // numeric comparison against it false rather than inventing one.
-            Item::Temporal(_) => f64::NAN,
+            // Neither a date nor a duration has a numeric value in XPath 2.0;
+            // NaN keeps every numeric comparison against one false rather
+            // than inventing an answer.
+            Item::Temporal(_) | Item::Duration(_) => f64::NAN,
         }
     }
 
@@ -100,6 +104,16 @@ impl Item {
             Item::Number(_) => "number",
             Item::Boolean(_) => "boolean",
             Item::Temporal(temporal) => temporal.kind().as_str(),
+            Item::Duration(duration) => duration.kind().as_str(),
+        }
+    }
+
+    /// The duration, if this item is one.
+    #[must_use]
+    pub const fn as_duration(&self) -> Option<&Duration> {
+        match self {
+            Item::Duration(duration) => Some(duration),
+            _ => None,
         }
     }
 

@@ -62,6 +62,24 @@ pub(crate) enum TokenKind {
     Or,
     Div,
     Mod,
+    /// `eq` — XPath 2.0 value comparison.
+    ValueEqual,
+    /// `ne`
+    ValueNotEqual,
+    /// `lt`
+    ValueLess,
+    /// `le`
+    ValueLessEqual,
+    /// `gt`
+    ValueGreater,
+    /// `ge`
+    ValueGreaterEqual,
+    /// `is` — XPath 2.0 node identity.
+    NodeIs,
+    /// `<<` — precedes in document order.
+    NodeBefore,
+    /// `>>` — follows in document order.
+    NodeAfter,
 }
 
 impl fmt::Display for TokenKind {
@@ -99,6 +117,15 @@ impl fmt::Display for TokenKind {
             TokenKind::Or => f.write_str("or"),
             TokenKind::Div => f.write_str("div"),
             TokenKind::Mod => f.write_str("mod"),
+            TokenKind::ValueEqual => f.write_str("eq"),
+            TokenKind::ValueNotEqual => f.write_str("ne"),
+            TokenKind::ValueLess => f.write_str("lt"),
+            TokenKind::ValueLessEqual => f.write_str("le"),
+            TokenKind::ValueGreater => f.write_str("gt"),
+            TokenKind::ValueGreaterEqual => f.write_str("ge"),
+            TokenKind::NodeIs => f.write_str("is"),
+            TokenKind::NodeBefore => f.write_str("<<"),
+            TokenKind::NodeAfter => f.write_str(">>"),
         }
     }
 }
@@ -188,6 +215,15 @@ impl<'a> Lexer<'a> {
                     | TokenKind::Or
                     | TokenKind::Div
                     | TokenKind::Mod
+                    | TokenKind::ValueEqual
+                    | TokenKind::ValueNotEqual
+                    | TokenKind::ValueLess
+                    | TokenKind::ValueLessEqual
+                    | TokenKind::ValueGreater
+                    | TokenKind::ValueGreaterEqual
+                    | TokenKind::NodeIs
+                    | TokenKind::NodeBefore
+                    | TokenKind::NodeAfter
             ),
         }
     }
@@ -278,6 +314,10 @@ impl<'a> Lexer<'a> {
                     if self.peek_at(1) == Some(b'=') {
                         self.position += 2;
                         self.push(TokenKind::LessEqual, start);
+                    } else if self.peek_at(1) == Some(b'<') {
+                        // XPath 2.0's document-order operator.
+                        self.position += 2;
+                        self.push(TokenKind::NodeBefore, start);
                     } else {
                         self.position += 1;
                         self.push(TokenKind::Less, start);
@@ -287,6 +327,9 @@ impl<'a> Lexer<'a> {
                     if self.peek_at(1) == Some(b'=') {
                         self.position += 2;
                         self.push(TokenKind::GreaterEqual, start);
+                    } else if self.peek_at(1) == Some(b'>') {
+                        self.position += 2;
+                        self.push(TokenKind::NodeAfter, start);
                     } else {
                         self.position += 1;
                         self.push(TokenKind::Greater, start);
@@ -443,6 +486,18 @@ impl<'a> Lexer<'a> {
                 "or" => Some(TokenKind::Or),
                 "div" => Some(TokenKind::Div),
                 "mod" => Some(TokenKind::Mod),
+                // XPath 2.0's value comparisons. Lexed here whatever the
+                // query binding, because two juxtaposed names are a syntax
+                // error in XPath 1.0 anyway — so recognising them lets the
+                // compiler say "that is XPath 2.0" instead of "unexpected
+                // name", which is the more useful message.
+                "eq" => Some(TokenKind::ValueEqual),
+                "ne" => Some(TokenKind::ValueNotEqual),
+                "lt" => Some(TokenKind::ValueLess),
+                "le" => Some(TokenKind::ValueLessEqual),
+                "gt" => Some(TokenKind::ValueGreater),
+                "ge" => Some(TokenKind::ValueGreaterEqual),
+                "is" => Some(TokenKind::NodeIs),
                 _ => None,
             };
             if let Some(kind) = kind {

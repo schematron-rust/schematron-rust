@@ -128,6 +128,79 @@ pub enum BinaryOp {
     Modulo,
     /// `|`
     Union,
+    /// `eq` — XPath 2.0 value comparison: exactly one item each, no coercion.
+    ValueEqual,
+    /// `ne`
+    ValueNotEqual,
+    /// `lt`
+    ValueLess,
+    /// `le`
+    ValueLessEqual,
+    /// `gt`
+    ValueGreater,
+    /// `ge`
+    ValueGreaterEqual,
+    /// `is` — whether both operands select the same node.
+    NodeIs,
+    /// `<<` — whether the left node precedes the right in document order.
+    NodeBefore,
+    /// `>>` — whether it follows.
+    NodeAfter,
+}
+
+impl BinaryOp {
+    /// Whether this is one of XPath 2.0's node comparisons.
+    #[must_use]
+    pub const fn is_node_comparison(self) -> bool {
+        matches!(
+            self,
+            BinaryOp::NodeIs | BinaryOp::NodeBefore | BinaryOp::NodeAfter
+        )
+    }
+
+    /// Whether this is one of XPath 2.0's value comparisons.
+    #[must_use]
+    pub const fn is_value_comparison(self) -> bool {
+        matches!(
+            self,
+            BinaryOp::ValueEqual
+                | BinaryOp::ValueNotEqual
+                | BinaryOp::ValueLess
+                | BinaryOp::ValueLessEqual
+                | BinaryOp::ValueGreater
+                | BinaryOp::ValueGreaterEqual
+        )
+    }
+
+    /// The operator as written, for error messages.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            BinaryOp::Or => "or",
+            BinaryOp::And => "and",
+            BinaryOp::Equal => "=",
+            BinaryOp::NotEqual => "!=",
+            BinaryOp::Less => "<",
+            BinaryOp::LessEqual => "<=",
+            BinaryOp::Greater => ">",
+            BinaryOp::GreaterEqual => ">=",
+            BinaryOp::Add => "+",
+            BinaryOp::Subtract => "-",
+            BinaryOp::Multiply => "*",
+            BinaryOp::Divide => "div",
+            BinaryOp::Modulo => "mod",
+            BinaryOp::Union => "|",
+            BinaryOp::ValueEqual => "eq",
+            BinaryOp::ValueNotEqual => "ne",
+            BinaryOp::ValueLess => "lt",
+            BinaryOp::ValueLessEqual => "le",
+            BinaryOp::ValueGreater => "gt",
+            BinaryOp::ValueGreaterEqual => "ge",
+            BinaryOp::NodeIs => "is",
+            BinaryOp::NodeBefore => "<<",
+            BinaryOp::NodeAfter => ">>",
+        }
+    }
 }
 
 /// A location path: a starting point plus a sequence of steps.
