@@ -1,0 +1,1 @@
+assert | /*:invoice[1] | An invoice needs a total.

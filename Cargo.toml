@@ -1,0 +1,78 @@
+[package]
+name = "schematron"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.94"  # Policy: current stable minus three. See spec/rust-msrv-n-minus-3.md.
+authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
+description = "Schematron: pure Rust implementation of ISO/IEC 19757-3 rule-based XML validation, with its own XML parser, XPath 1.0 engine, XPath 2.0 subset, schema linting, and SVRL reporting. By SixArm.com."
+documentation = "https://docs.rs/schematron"
+homepage = "https://github.com/schematron-rust/schematron-rust"
+repository = "https://github.com/schematron-rust/schematron-rust"
+readme = "README.md"
+license = "MIT OR Apache-2.0 OR GPL-2.0-only OR GPL-3.0-only"
+keywords = ["schematron", "xml", "xpath", "validation", "svrl"]
+categories = ["parser-implementations", "command-line-utilities", "data-structures", "text-processing"]
+exclude = ["target/*", "fuzz/*"]
+
+[dependencies]
+quick-xml = "0.37"
+thiserror = "2"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+# XPath 2.0's matches() and replace() need a regular expression engine, and
+# writing one is out of scope. Pure Rust; default features trimmed to what
+# XML Schema regular expressions actually use.
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "unicode-gencat"] }
+
+[dev-dependencies]
+assertables = "10"
+criterion = "0.5"
+
+[features]
+default = ["serde", "cli"]
+serde = ["dep:serde", "dep:serde_json"]
+cli = ["dep:clap"]
+
+[[bin]]
+name = "schematron"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[[bench]]
+name = "bench_xml_parse"
+harness = false
+
+[[bench]]
+name = "bench_xpath"
+harness = false
+
+[[bench]]
+name = "bench_validate"
+harness = false
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+# The prose in this crate names standards — XPath, XSLT, SVRL, DSDL — as
+# words, not as code identifiers, so backticking them would be wrong.
+doc_markdown = "allow"
+
+# XPath 1.0 defines its numeric type as an IEEE 754 double and specifies
+# equality on it exactly. Comparing with an epsilon here would make the engine
+# disagree with every other conformant Schematron processor.
+float_cmp = "allow"
+
+# Named after the module on purpose: `schema::Schema`, `xml::Document`.
+module_name_repetitions = "allow"
+
+# `write!` into a String returns an infallible Result, so the alternative is
+# a `let _ =` on every line for no gain in either speed or clarity.
+format_push_string = "allow"
+
+[profile.release]
+lto = true
+codegen-units = 1

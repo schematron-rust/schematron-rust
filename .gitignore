@@ -1,0 +1,9 @@
+/target
+/fuzz/target
+
+# libFuzzer's working files. The corpus is regenerable — it is seeded from
+# tests/corpus/, which is committed — and grows to tens of megabytes of
+# machine-generated input during a run. Artifacts are crash reproducers,
+# which belong in a test as a named regression, not in the repository.
+/fuzz/corpus
+/fuzz/artifacts

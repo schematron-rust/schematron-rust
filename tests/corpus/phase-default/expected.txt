@@ -1,0 +1,2 @@
+# No phase file, so @defaultPhase applies and the business pattern is skipped.
+assert | /*:a[1] | structure

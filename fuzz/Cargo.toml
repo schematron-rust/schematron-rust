@@ -1,0 +1,46 @@
+[package]
+name = "schematron-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.schematron]
+path = ".."
+
+[[bin]]
+name = "fuzz_xml"
+path = "fuzz_targets/fuzz_xml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_xpath"
+path = "fuzz_targets/fuzz_xpath.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_schema"
+path = "fuzz_targets/fuzz_schema.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_validate"
+path = "fuzz_targets/fuzz_validate.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1

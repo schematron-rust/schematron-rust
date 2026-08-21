@@ -1,0 +1,1 @@
+# A valid document produces no findings at all.

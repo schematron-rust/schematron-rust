@@ -1,0 +1,5 @@
+<order>
+  <line type="discount" amount="5"/>
+  <line amount="-5"/>
+  <line amount="5"/>
+</order>

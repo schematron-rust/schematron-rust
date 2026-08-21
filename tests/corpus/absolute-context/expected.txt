@@ -1,0 +1,2 @@
+# An absolute context is not searched across the whole document.
+assert | /*:root[1]/*:a[1] | only the top-level a

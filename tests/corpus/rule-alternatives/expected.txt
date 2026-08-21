@@ -1,0 +1,2 @@
+assert | /*:order[1]/*:line[1] | A discount must be negative.
+assert | /*:order[1]/*:line[2] | A normal line must not be negative.

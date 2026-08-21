@@ -1,0 +1,3 @@
+# Substitution is textual, so $child reaches inside the string literal too.
+assert | /*:r[1]/*:invoice[1] | A invoice must contain a total.
+assert | /*:r[1]/*:order[1] | A order must contain a date.

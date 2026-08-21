@@ -1,0 +1,2 @@
+# The broad rule claims the node, so the narrower rule after it is dead code.
+assert | /*:a[1] | claimed by the broad rule

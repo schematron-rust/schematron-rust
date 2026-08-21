@@ -1,0 +1,3 @@
+# Schema, pattern, and rule scopes all resolve, and the rule scope sees the
+# node the rule fired on.
+assert | /*:r[1]/*:a[2] | 50 exceeds 20

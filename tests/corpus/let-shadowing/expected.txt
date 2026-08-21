@@ -1,0 +1,2 @@
+# The innermost binding wins.
+assert | /*:a[1] | rule

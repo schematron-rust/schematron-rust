@@ -1,0 +1,4 @@
+# #ALL overrides @defaultPhase and runs every pattern, including one that no
+# phase lists at all.
+assert | /*:a[1] | structure
+assert | /*:a[1] | unlisted by every phase

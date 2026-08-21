@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<invoice>
+  <line qty="-2" amount="10.00"/>
+  <line type="discount" qty="1" amount="5.00"/>
+  <total>99.00</total>
+</invoice>

@@ -1,0 +1,3 @@
+# The phase scope sits between schema and pattern, so a phase-level let
+# shadows the schema-level binding of the same name.
+assert | /*:a[1] | limit is 100
