@@ -31,17 +31,21 @@
   types, and the date arithmetic that produces and consumes them
 - XPath 2.0 phase 2e: the node comparisons `is`, `<<` and `>>`; duration
   scaling; and a configurable implicit timezone, with `timezone-from-*`
+- XPath 2.0 phase 3: the type operators `instance of`, `castable as`,
+  `cast as` and `treat as`, with the sequence types they take
 - Fuzz targets, criterion benchmarks, clippy pedantic, corpus test suite,
   runnable examples, and this specification
 
 ## Next
 
-1. **XPath 2.0 phase 3: the type system** — `instance of`, `cast as`,
-   `castable as`, `treat as`, and the sequence types those need
-   (`element()`, `item()*`, `node()?`). With a type system, the `adjust-*`
-   functions and the general `xs:duration` follow, and so does closing the
-   semantic divergences phase 1 documents — those exist only because shared
-   constructs still evaluate on the XPath 1.0 engine.
+1. **XPath 2.0 phase 4: the numeric hierarchy** — tracking whether a number
+   arrived as `xs:integer`, `xs:decimal`, `xs:float` or `xs:double`, rather
+   than holding every number as a double. That is what would make
+   `1 instance of xs:integer` true, and it is the last of the gaps
+   [xpath2.md](xpath2.md) records. Kind tests as path node tests
+   (`a/element()`) belong here too, as does closing the semantic divergences
+   phase 1 documents — those exist only because shared constructs still
+   evaluate on the XPath 1.0 engine.
 2. **XSLT key emulation** — `<sch:key>` and the `key()` function, which some
    1.5-era schemas and some large industry schemas rely on for cross-reference
    checks that are otherwise quadratic.

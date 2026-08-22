@@ -26,7 +26,7 @@ that is a defect in one of them.
 | Document | Covers |
 |---|---|
 | [spec/index.md](spec/index.md) | Overview, design principles, reading order |
-| [spec/tutorial.md](spec/tutorial.md) | Sixteen steps from one rule to a real schema |
+| [spec/tutorial.md](spec/tutorial.md) | Seventeen steps from one rule to a real schema |
 | [spec/data-model.md](spec/data-model.md) | Every Schematron element and its Rust type |
 | [spec/validation.md](spec/validation.md) | The validation algorithm, exactly |
 | [spec/xpath.md](spec/xpath.md) | The XPath 1.0 engine |

@@ -350,6 +350,10 @@ impl Schema {
                 self.check_expression(then_branch, source, location)?;
                 self.check_expression(else_branch, source, location)?;
             }
+            Expr::TypeOp { op, value, .. } => {
+                self.require_v2(&format!("`{}`", op.as_str()), source, location)?;
+                self.check_expression(value, source, location)?;
+            }
             Expr::Sequence(members) => {
                 self.require_v2("a sequence written with `,`", source, location)?;
                 for member in members {
@@ -746,6 +750,7 @@ fn calls_document_function(expr: &Expr) -> bool {
                 || calls_document_function(then_branch)
                 || calls_document_function(else_branch)
         }
+        Expr::TypeOp { value, .. } => calls_document_function(value),
         Expr::Sequence(members) => members.iter().any(calls_document_function),
         Expr::Range(from, to) => {
             calls_document_function(from) || calls_document_function(to)

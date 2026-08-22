@@ -80,6 +80,8 @@ pub(crate) enum TokenKind {
     NodeBefore,
     /// `>>` — follows in document order.
     NodeAfter,
+    /// `?` — the zero-or-one occurrence indicator of a sequence type.
+    QuestionMark,
 }
 
 impl fmt::Display for TokenKind {
@@ -126,6 +128,7 @@ impl fmt::Display for TokenKind {
             TokenKind::NodeIs => f.write_str("is"),
             TokenKind::NodeBefore => f.write_str("<<"),
             TokenKind::NodeAfter => f.write_str(">>"),
+            TokenKind::QuestionMark => f.write_str("?"),
         }
     }
 }
@@ -289,6 +292,10 @@ impl<'a> Lexer<'a> {
                 b'|' => {
                     self.position += 1;
                     self.push(TokenKind::Pipe, start);
+                }
+                b'?' => {
+                    self.position += 1;
+                    self.push(TokenKind::QuestionMark, start);
                 }
                 b'+' => {
                     self.position += 1;

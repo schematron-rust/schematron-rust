@@ -5,7 +5,10 @@
 //! 1.0's existential node-set semantics differ from what most readers expect
 //! and are implemented literally rather than "fixed".
 
-use super::ast::{Axis, BinaryOp, Expr, NodeTest, PathExpr, PathStart, Quantifier, Step};
+use super::ast::{
+    Axis, BinaryOp, Expr, ItemType, NodeTest, Occurrence, PathExpr, PathStart, Quantifier,
+    SequenceType, Step, TypeOp,
+};
 use super::context::EvalContext;
 use super::functions;
 use super::temporal::{
@@ -97,6 +100,15 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
         }
 
         Expr::Path(path) => Ok(Value::NodeSet(evaluate_path(path, context)?)),
+
+        Expr::TypeOp {
+            op,
+            value,
+            sequence_type,
+        } => {
+            let value = evaluate(value, context)?;
+            evaluate_type_op(*op, &value, sequence_type, context)
+        }
 
         Expr::Sequence(members) => {
             let mut values = Vec::with_capacity(members.len());
@@ -540,6 +552,245 @@ fn scale_duration(
 #[allow(clippy::cast_precision_loss)]
 fn as_f64_i64(value: i64) -> f64 {
     value as f64
+}
+
+/// `instance of`, `castable as`, `cast as`, `treat as`.
+fn evaluate_type_op(
+    op: TypeOp,
+    value: &Value,
+    sequence_type: &SequenceType,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let items = value.clone().into_items();
+
+    match op {
+        TypeOp::InstanceOf => Ok(Value::Boolean(matches_sequence_type(
+            &items,
+            sequence_type,
+            context,
+        ))),
+
+        TypeOp::TreatAs => {
+            if matches_sequence_type(&items, sequence_type, context) {
+                return Ok(value.clone());
+            }
+            Err(EvalError::new(format!(
+                "`treat as {}` was given a value that is not one",
+                sequence_type.as_written()
+            )))
+        }
+
+        TypeOp::CastableAs | TypeOp::CastAs => {
+            let casting = op == TypeOp::CastAs;
+            // An empty operand is false for `castable as`, and the empty
+            // sequence for `cast as` — but only when the type admits it.
+            if items.is_empty() {
+                if sequence_type.occurrence == Occurrence::ZeroOrOne {
+                    return Ok(if casting {
+                        Value::Sequence(Vec::new())
+                    } else {
+                        Value::Boolean(true)
+                    });
+                }
+                return if casting {
+                    Err(EvalError::new(format!(
+                        "`cast as {}` was given nothing to cast; write `{}?` to \
+                         allow that",
+                        sequence_type.as_written(),
+                        sequence_type.as_written()
+                    )))
+                } else {
+                    Ok(Value::Boolean(false))
+                };
+            }
+            let [item] = items.as_slice() else {
+                return if casting {
+                    Err(EvalError::new(format!(
+                        "`cast as {}` takes one value, and was given {}",
+                        sequence_type.as_written(),
+                        items.len()
+                    )))
+                } else {
+                    Ok(Value::Boolean(false))
+                };
+            };
+
+            let ItemType::Atomic(name) = &sequence_type.item_type else {
+                return Err(EvalError::new(format!(
+                    "`{}` takes an atomic type",
+                    op.as_str()
+                )));
+            };
+
+            match cast_item(item, name, context.document) {
+                Ok(cast) => Ok(if casting {
+                    Value::Sequence(vec![cast])
+                } else {
+                    Value::Boolean(true)
+                }),
+                Err(message) => {
+                    if casting {
+                        Err(EvalError::new(message))
+                    } else {
+                        Ok(Value::Boolean(false))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Whether a sequence matches a sequence type.
+fn matches_sequence_type(
+    items: &[Item],
+    sequence_type: &SequenceType,
+    context: &EvalContext<'_>,
+) -> bool {
+    if sequence_type.item_type == ItemType::EmptySequence {
+        return items.is_empty();
+    }
+    if !sequence_type.occurrence.admits(items.len()) {
+        return false;
+    }
+    items
+        .iter()
+        .all(|item| matches_item_type(item, &sequence_type.item_type, context))
+}
+
+/// Whether one item matches an item type.
+fn matches_item_type(item: &Item, item_type: &ItemType, context: &EvalContext<'_>) -> bool {
+    match item_type {
+        ItemType::AnyItem => true,
+        ItemType::EmptySequence => false,
+
+        ItemType::Node { kind, name } => {
+            let Item::Node(node) = item else {
+                return false;
+            };
+            let document = context.document;
+            if let Some(wanted) = kind {
+                if document.kind(*node) != *wanted {
+                    return false;
+                }
+            }
+            match name {
+                None => true,
+                Some(wanted) => {
+                    let uri = match &wanted.prefix {
+                        Some(prefix) => match context.namespaces.resolve(prefix) {
+                            Some(uri) => Some(uri),
+                            None => return false,
+                        },
+                        None => None,
+                    };
+                    document
+                        .name(*node)
+                        .is_some_and(|actual| actual.matches_parts(uri, &wanted.local))
+                }
+            }
+        }
+
+        ItemType::Atomic(name) => {
+            let local = name.rsplit(':').next().unwrap_or(name);
+            match item {
+                // A node is not an atomic value; it would have to be
+                // atomized first, which `instance of` does not do.
+                Item::Node(_) => false,
+                Item::String(_) => matches!(local, "string" | "anyAtomicType" | "untypedAtomic"),
+                Item::Boolean(_) => matches!(local, "boolean" | "anyAtomicType"),
+                // Every number here is a double; see `spec/xpath2.md`.
+                Item::Number(_) => matches!(local, "double" | "anyAtomicType"),
+                Item::Temporal(temporal) => {
+                    local == "anyAtomicType"
+                        || local
+                            == temporal
+                                .kind()
+                                .as_str()
+                                .rsplit(':')
+                                .next()
+                                .unwrap_or_default()
+                }
+                Item::Duration(duration) => {
+                    local == "anyAtomicType"
+                        || local == "duration"
+                        || local
+                            == duration
+                                .kind()
+                                .as_str()
+                                .rsplit(':')
+                                .next()
+                                .unwrap_or_default()
+                }
+            }
+        }
+    }
+}
+
+/// Casts one item to an atomic type, by its lexical form.
+///
+/// Reading the lexical form is what XML Schema specifies for untyped input,
+/// and untyped is what a Schematron schema nearly always has in front of it.
+fn cast_item(item: &Item, type_name: &str, document: &Document) -> Result<Item, String> {
+    let local = type_name.rsplit(':').next().unwrap_or(type_name);
+    let text = item.to_xpath_string(document);
+    let reject = || format!("{text:?} cannot be cast to {type_name}");
+
+    Ok(match local {
+        "string" | "untypedAtomic" | "anyAtomicType" => Item::String(text),
+        "boolean" => match text.trim() {
+            "true" | "1" => Item::Boolean(true),
+            "false" | "0" => Item::Boolean(false),
+            _ => return Err(reject()),
+        },
+        "double" | "float" => {
+            let number = super::value::parse_number(&text);
+            if number.is_nan() && text.trim() != "NaN" {
+                return Err(reject());
+            }
+            Item::Number(number)
+        }
+        "decimal" => {
+            let number = super::value::parse_number(&text);
+            if number.is_nan() || number.is_infinite() {
+                return Err(reject());
+            }
+            Item::Number(number)
+        }
+        "integer" | "long" | "int" | "short" | "byte" => {
+            let number = super::value::parse_number(&text);
+            if number.is_nan() || number.fract() != 0.0 {
+                return Err(reject());
+            }
+            Item::Number(number)
+        }
+        // The parse errors carry the specific reason; the framing is added
+        // here so that every failed cast reads the same way whatever the
+        // target type.
+        "date" => Item::Temporal(
+            Temporal::parse(&text, TemporalKind::Date).map_err(|why| detailed(&reject(), &why))?,
+        ),
+        "dateTime" => Item::Temporal(
+            Temporal::parse(&text, TemporalKind::DateTime)
+                .map_err(|why| detailed(&reject(), &why))?,
+        ),
+        "time" => Item::Temporal(
+            Temporal::parse(&text, TemporalKind::Time).map_err(|why| detailed(&reject(), &why))?,
+        ),
+        "dayTimeDuration" => Item::Duration(
+            Duration::parse(&text, DurationKind::DayTime)
+                .map_err(|why| detailed(&reject(), &why))?,
+        ),
+        "yearMonthDuration" => Item::Duration(
+            Duration::parse(&text, DurationKind::YearMonth)
+                .map_err(|why| detailed(&reject(), &why))?,
+        ),
+        other => return Err(format!("{other} is not a type this crate can cast to")),
+    })
+}
+
+/// Joins a cast's framing to the specific reason it failed.
+fn detailed(framing: &str, why: &str) -> String {
+    format!("{framing}: {why}")
 }
 
 /// XPath 2.0's node comparisons: `is`, `<<`, `>>`.

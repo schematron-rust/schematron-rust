@@ -1003,3 +1003,168 @@ fn timezone_from_a_value_reports_its_own_offset() {
 fn implicit_timezone_reports_the_runs_setting() {
     assert!(check("implicit-timezone() eq xs:dayTimeDuration('PT0S')", "<a/>"));
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3: the type operators.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn castable_as_reports_instead_of_aborting() {
+    // The whole point of the operator. Before it, asking whether an attribute
+    // held a date meant calling xs:date(), which raises an error and stops the
+    // run — so a schema could not report a bad date as a finding.
+    assert!(check("@d castable as xs:date", r#"<a d="2026-08-21"/>"#));
+    assert!(!check("@d castable as xs:date", r#"<a d="2026-02-30"/>"#));
+    assert!(!check("@d castable as xs:date", r#"<a d="not-a-date"/>"#));
+
+    // And the guarded form a schema actually writes.
+    let guarded = "not(@d castable as xs:date) or xs:date(@d) lt xs:date('2030-01-01')";
+    assert!(check(guarded, r#"<a d="2026-08-21"/>"#));
+    assert!(check(guarded, r#"<a d="rubbish"/>"#));
+}
+
+#[test]
+fn castable_as_checks_the_lexical_form() {
+    assert!(check("'12' castable as xs:integer", "<a/>"));
+    assert!(!check("'12.5' castable as xs:integer", "<a/>"));
+    assert!(check("'12.5' castable as xs:decimal", "<a/>"));
+    assert!(!check("'x' castable as xs:double", "<a/>"));
+    assert!(check("'true' castable as xs:boolean", "<a/>"));
+    assert!(!check("'yes' castable as xs:boolean", "<a/>"));
+    assert!(check("'P90D' castable as xs:dayTimeDuration", "<a/>"));
+    assert!(!check("'P90D' castable as xs:yearMonthDuration", "<a/>"));
+}
+
+#[test]
+fn cast_as_converts_and_the_result_is_usable() {
+    assert!(check("'2026-08-21' cast as xs:date eq xs:date('2026-08-21')", "<a/>"));
+    assert!(check("'12' cast as xs:integer = 12", "<a/>"));
+    assert!(check("@n cast as xs:double + 1 = 3", r#"<a n="2"/>"#));
+    assert!(check("'true' cast as xs:boolean", "<a/>"));
+}
+
+#[test]
+fn cast_as_errors_where_castable_as_reports_false() {
+    // The two are the same test; only the failure mode differs.
+    assert!(!check("'x' castable as xs:date", "<a/>"));
+    let message = eval_error("'x' cast as xs:date eq xs:date('2026-08-21')", "<a/>");
+    assert_contains!(message, "cannot be cast");
+}
+
+#[test]
+fn an_empty_operand_needs_the_optional_marker() {
+    assert!(!check("missing castable as xs:date", "<a/>"));
+    assert!(check("missing castable as xs:date?", "<a/>"));
+
+    let message = eval_error("(missing cast as xs:date) eq xs:date('2026-08-21')", "<a/>");
+    assert_contains!(message, "nothing to cast");
+}
+
+#[test]
+fn instance_of_matches_node_kinds() {
+    let doc = "<a><b/>text<!--c--></a>";
+    assert!(check(". instance of element()", doc));
+    assert!(check(". instance of node()", doc));
+    assert!(check(". instance of item()", doc));
+    assert!(check("b instance of element()", doc));
+    assert!(check("text() instance of text()", doc));
+    assert!(check("comment() instance of comment()", doc));
+    assert!(!check("b instance of attribute()", doc));
+}
+
+#[test]
+fn instance_of_matches_a_named_element() {
+    let doc = "<a><b/></a>";
+    assert!(check("b instance of element(b)", doc));
+    assert!(!check("b instance of element(c)", doc));
+}
+
+#[test]
+fn instance_of_matches_atomic_types() {
+    assert!(check("'x' instance of xs:string", "<a/>"));
+    assert!(check("true() instance of xs:boolean", "<a/>"));
+    assert!(check("xs:date('2026-08-21') instance of xs:date", "<a/>"));
+    assert!(check(
+        "xs:dayTimeDuration('P1D') instance of xs:dayTimeDuration",
+        "<a/>"
+    ));
+    assert!(check("'x' instance of xs:anyAtomicType", "<a/>"));
+    // A node is not an atomic value; `instance of` does not atomize.
+    assert!(!check("@n instance of xs:string", r#"<a n="1"/>"#));
+}
+
+#[test]
+fn every_number_reports_as_a_double() {
+    // Documented in spec/xpath2.md: the crate holds every number as an IEEE
+    // 754 double and does not track how it arrived. Asserting it here means
+    // the documentation cannot drift from the behaviour.
+    assert!(check("1 instance of xs:double", "<a/>"));
+    assert!(!check("1 instance of xs:integer", "<a/>"));
+    // Casting is unaffected, because it reads the lexical form.
+    assert!(check("'1' castable as xs:integer", "<a/>"));
+}
+
+#[test]
+fn occurrence_indicators_bound_the_length() {
+    let doc = "<a><b/><b/></a>";
+    assert!(check("b instance of element()*", doc));
+    assert!(check("b instance of element()+", doc));
+    assert!(!check("b instance of element()", doc));
+    assert!(!check("b instance of element()?", doc));
+
+    assert!(check("missing instance of element()*", doc));
+    assert!(check("missing instance of element()?", doc));
+    assert!(!check("missing instance of element()+", doc));
+}
+
+#[test]
+fn empty_sequence_matches_only_nothing() {
+    assert!(check("missing instance of empty-sequence()", "<a/>"));
+    assert!(!check("b instance of empty-sequence()", "<a><b/></a>"));
+}
+
+#[test]
+fn treat_as_passes_through_or_errors() {
+    assert!(check("(b treat as element()) instance of element()", "<a><b/></a>"));
+
+    let message = eval_error("(b treat as attribute()) instance of node()", "<a><b/></a>");
+    assert_contains!(message, "treat as");
+}
+
+#[test]
+fn cast_as_refuses_a_node_or_sequence_type() {
+    // Casting a node has no meaning, so it is a syntax error rather than a
+    // silently odd result.
+    let message = compile_error("xslt2", "@d cast as element()");
+    assert_contains!(message, "atomic type");
+}
+
+#[test]
+fn type_operators_bind_tighter_than_comparison() {
+    // `x cast as xs:integer = 12` must group as `(x cast as xs:integer) = 12`.
+    assert!(check("'12' cast as xs:integer = 12", "<a/>"));
+    assert!(check("'12' castable as xs:integer = true()", "<a/>"));
+}
+
+#[test]
+fn type_operators_are_refused_under_a_one_point_zero_binding() {
+    for (test, fragment) in [
+        ("@d castable as xs:date", "castable as"),
+        ("@d cast as xs:date", "cast as"),
+        (". instance of element()", "instance of"),
+        (". treat as element()", "treat as"),
+    ] {
+        let message = compile_error("xslt", test);
+        assert_contains!(message, fragment);
+        assert_contains!(message, "xslt2");
+    }
+}
+
+#[test]
+fn the_keywords_are_still_element_names_in_name_position() {
+    // `cast`, `instance` and the rest are not reserved words. They are only
+    // operators when their partner word follows.
+    assert!(check("count(cast) = 1", "<a><cast/></a>"));
+    assert!(check("count(instance) = 1", "<a><instance/></a>"));
+    assert!(check("count(treat) = 1", "<a><treat/></a>"));
+}

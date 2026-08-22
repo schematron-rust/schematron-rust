@@ -65,7 +65,8 @@ mod value;
 mod version;
 
 pub use ast::{
-    Axis, BinaryOp, Expr, NameTest, NodeTest, PathExpr, PathStart, Quantifier, Step,
+    Axis, BinaryOp, Expr, ItemType, NameTest, NodeTest, Occurrence, PathExpr, PathStart,
+    Quantifier, SequenceType, Step, TypeOp,
 };
 pub use context::{Documents, EvalContext, Namespaces, Variables};
 pub use temporal::{

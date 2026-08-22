@@ -60,6 +60,15 @@ pub enum Expr {
         /// The test applied to each item.
         test: Box<Expr>,
     },
+    /// `E instance of T`, `E cast as T`, `E castable as T`, `E treat as T`.
+    TypeOp {
+        /// Which operator.
+        op: TypeOp,
+        /// The value being tested or converted.
+        value: Box<Expr>,
+        /// The type it is tested or converted against.
+        sequence_type: SequenceType,
+    },
     /// `if (E) then E else E`.
     ///
     /// XPath 2.0 only; an XPath 1.0 binding rejects it at compile time. Both
@@ -72,6 +81,140 @@ pub enum Expr {
         /// The value when it does not.
         else_branch: Box<Expr>,
     },
+}
+
+/// Which of XPath 2.0's four type operators an [`Expr::TypeOp`] applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TypeOp {
+    /// `instance of` — whether the value matches the type.
+    InstanceOf,
+    /// `castable as` — whether a cast would succeed, without performing it.
+    CastableAs,
+    /// `cast as` — converts, or raises an error.
+    CastAs,
+    /// `treat as` — passes the value through, or raises an error.
+    TreatAs,
+}
+
+impl TypeOp {
+    /// The operator as written, for error messages.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            TypeOp::InstanceOf => "instance of",
+            TypeOp::CastableAs => "castable as",
+            TypeOp::CastAs => "cast as",
+            TypeOp::TreatAs => "treat as",
+        }
+    }
+
+    /// Whether this operator takes a single type rather than a sequence type.
+    ///
+    /// Casting a sequence has no meaning, so `cast as` and `castable as`
+    /// accept only an atomic type with an optional `?`.
+    #[must_use]
+    pub const fn takes_single_type(self) -> bool {
+        matches!(self, TypeOp::CastAs | TypeOp::CastableAs)
+    }
+}
+
+/// How many items a [`SequenceType`] admits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum Occurrence {
+    /// Exactly one, written with no indicator.
+    #[default]
+    One,
+    /// `?` — zero or one.
+    ZeroOrOne,
+    /// `*` — zero or more.
+    ZeroOrMore,
+    /// `+` — one or more.
+    OneOrMore,
+}
+
+impl Occurrence {
+    /// Whether a sequence of this length is admitted.
+    #[must_use]
+    pub const fn admits(self, count: usize) -> bool {
+        match self {
+            Occurrence::One => count == 1,
+            Occurrence::ZeroOrOne => count <= 1,
+            Occurrence::ZeroOrMore => true,
+            Occurrence::OneOrMore => count >= 1,
+        }
+    }
+
+    /// The indicator as written.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Occurrence::One => "",
+            Occurrence::ZeroOrOne => "?",
+            Occurrence::ZeroOrMore => "*",
+            Occurrence::OneOrMore => "+",
+        }
+    }
+}
+
+/// What a single item must be for a [`SequenceType`] to match it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ItemType {
+    /// `item()` — anything.
+    AnyItem,
+    /// `node()`, `element()`, `text()` and the rest, optionally named.
+    Node {
+        /// Which kind of node, or `None` for `node()`.
+        kind: Option<crate::xml::NodeKind>,
+        /// The name the node must have, when one was written.
+        name: Option<NameTest>,
+    },
+    /// An atomic type, written with its prefix as in `xs:date`.
+    Atomic(String),
+    /// `empty-sequence()` — matches only the empty sequence.
+    EmptySequence,
+}
+
+/// A type as written after `instance of`, `cast as`, and their companions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SequenceType {
+    /// What each item must be.
+    pub item_type: ItemType,
+    /// How many items are admitted.
+    pub occurrence: Occurrence,
+}
+
+impl SequenceType {
+    /// The type as written, for error messages.
+    #[must_use]
+    pub fn as_written(&self) -> String {
+        let base = match &self.item_type {
+            ItemType::AnyItem => "item()".to_string(),
+            ItemType::EmptySequence => "empty-sequence()".to_string(),
+            ItemType::Atomic(name) => name.clone(),
+            ItemType::Node { kind, name } => {
+                let base = match kind {
+                    None => "node",
+                    Some(crate::xml::NodeKind::Element) => "element",
+                    Some(crate::xml::NodeKind::Attribute) => "attribute",
+                    Some(crate::xml::NodeKind::Text) => "text",
+                    Some(crate::xml::NodeKind::Comment) => "comment",
+                    Some(crate::xml::NodeKind::ProcessingInstruction) => {
+                        "processing-instruction"
+                    }
+                    Some(crate::xml::NodeKind::Root) => "document-node",
+                    Some(crate::xml::NodeKind::Namespace) => "namespace-node",
+                };
+                match name {
+                    Some(name) => format!("{base}({name})"),
+                    None => format!("{base}()"),
+                }
+            }
+        };
+        format!("{base}{}", self.occurrence.as_str())
+    }
 }
 
 /// Which quantifier an [`Expr::Quantified`] uses.

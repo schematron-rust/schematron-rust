@@ -6,7 +6,8 @@
 //! resolved XPath's context-sensitive token classes.
 
 use super::ast::{
-    Axis, BinaryOp, Expr, NameTest, NodeTest, PathExpr, PathStart, Quantifier, Step,
+    Axis, BinaryOp, Expr, ItemType, NameTest, NodeTest, Occurrence, PathExpr, PathStart,
+    Quantifier, SequenceType, Step, TypeOp,
 };
 use super::lexer::{tokenize, Token, TokenKind};
 
@@ -383,7 +384,7 @@ impl Parser {
         Ok(left)
     }
 
-    /// `UnaryExpr := '-'* UnionExpr`
+    /// `UnaryExpr := '-'* TypeExpr`
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
         if self.eat(&TokenKind::Minus) {
             self.enter()?;
@@ -391,7 +392,140 @@ impl Parser {
             self.leave();
             return Ok(Expr::Negate(Box::new(operand?)));
         }
-        self.parse_union()
+        self.parse_type_operators()
+    }
+
+    /// The XPath 2.0 type operators, innermost binding first.
+    ///
+    /// `cast as` binds tightest and `instance of` loosest, which is the order
+    /// XPath 2.0 gives them, so `$x cast as xs:string instance of xs:string`
+    /// means what it reads as.
+    fn parse_type_operators(&mut self) -> Result<Expr, ParseError> {
+        let mut value = self.parse_union()?;
+
+        // `cast as` and `castable as` take a single type; the other two take
+        // a sequence type.
+        for (first, second, op) in [
+            ("cast", "as", TypeOp::CastAs),
+            ("castable", "as", TypeOp::CastableAs),
+            ("treat", "as", TypeOp::TreatAs),
+            ("instance", "of", TypeOp::InstanceOf),
+        ] {
+            if !self.at_name(first) {
+                continue;
+            }
+            // The keyword is only a keyword when its partner follows; `cast`
+            // on its own is an ordinary name.
+            let partner = self
+                .tokens
+                .get(self.index + 1)
+                .map(|token| &token.kind);
+            let follows = matches!(
+                partner,
+                Some(TokenKind::Name(name) | TokenKind::FunctionName(name)) if name == second
+            );
+            if !follows {
+                continue;
+            }
+            self.index += 2;
+            let sequence_type = self.parse_sequence_type(op)?;
+            value = Expr::TypeOp {
+                op,
+                value: Box::new(value),
+                sequence_type,
+            };
+        }
+        Ok(value)
+    }
+
+    /// `SequenceType := 'empty-sequence()' | ItemType OccurrenceIndicator?`
+    fn parse_sequence_type(&mut self, op: TypeOp) -> Result<SequenceType, ParseError> {
+        let item_type = self.parse_item_type()?;
+
+        if item_type == ItemType::EmptySequence {
+            return Ok(SequenceType {
+                item_type,
+                occurrence: Occurrence::ZeroOrMore,
+            });
+        }
+
+        let occurrence = if self.eat(&TokenKind::QuestionMark) {
+            Occurrence::ZeroOrOne
+        } else if op.takes_single_type() {
+            // `cast as` and `castable as` admit only `?`.
+            Occurrence::One
+        } else if self.eat(&TokenKind::Star) || self.eat(&TokenKind::Multiply) {
+            Occurrence::ZeroOrMore
+        } else if self.eat(&TokenKind::Plus) {
+            Occurrence::OneOrMore
+        } else {
+            Occurrence::One
+        };
+
+        if op.takes_single_type() && !matches!(item_type, ItemType::Atomic(_)) {
+            return self.error(format!(
+                "`{}` takes an atomic type such as xs:date, because casting a node \
+                 or a sequence has no meaning",
+                op.as_str()
+            ));
+        }
+
+        Ok(SequenceType {
+            item_type,
+            occurrence,
+        })
+    }
+
+    /// `ItemType := KindTest | 'item()' | AtomicType`
+    fn parse_item_type(&mut self) -> Result<ItemType, ParseError> {
+        use crate::xml::NodeKind;
+
+        match self.advance() {
+            // A kind test: a node type name followed by parentheses.
+            Some(TokenKind::NodeType(name) | TokenKind::FunctionName(name)) => {
+                self.expect(&TokenKind::LeftParen)?;
+                let kind = match name.as_str() {
+                    "item" => {
+                        self.expect(&TokenKind::RightParen)?;
+                        return Ok(ItemType::AnyItem);
+                    }
+                    "empty-sequence" => {
+                        self.expect(&TokenKind::RightParen)?;
+                        return Ok(ItemType::EmptySequence);
+                    }
+                    "node" => None,
+                    "element" => Some(NodeKind::Element),
+                    "attribute" => Some(NodeKind::Attribute),
+                    "text" => Some(NodeKind::Text),
+                    "comment" => Some(NodeKind::Comment),
+                    "processing-instruction" => Some(NodeKind::ProcessingInstruction),
+                    "document-node" => Some(NodeKind::Root),
+                    "namespace-node" => Some(NodeKind::Namespace),
+                    other => {
+                        return self.error(format!("{other}() is not a known item type"))
+                    }
+                };
+                // `element(name)` and `attribute(name)` narrow by name.
+                let named = if let Some(TokenKind::Name(name)) = self.peek().cloned() {
+                    self.index += 1;
+                    Some(NameTest::parse(&name))
+                } else {
+                    None
+                };
+                self.expect(&TokenKind::RightParen)?;
+                Ok(ItemType::Node { kind, name: named })
+            }
+
+            // An atomic type name, such as `xs:date`.
+            Some(TokenKind::Name(name)) => Ok(ItemType::Atomic(name)),
+
+            other => {
+                self.index = self.index.saturating_sub(1);
+                let found = other
+                    .map_or_else(|| "end of expression".to_string(), |kind| kind.to_string());
+                self.error(format!("expected a type but found {found}"))
+            }
+        }
     }
 
     /// `UnionExpr := PathExpr ('|' PathExpr)*`

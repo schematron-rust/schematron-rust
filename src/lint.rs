@@ -334,6 +334,7 @@ fn first_unprefixed_element_name(expr: &Expr) -> Option<String> {
         } => [condition, then_branch, else_branch]
             .into_iter()
             .find_map(|branch| first_unprefixed_element_name(branch)),
+        Expr::TypeOp { value, .. } => first_unprefixed_element_name(value),
         Expr::Sequence(members) => members.iter().find_map(first_unprefixed_element_name),
         Expr::Range(from, to) => [from, to]
             .into_iter()

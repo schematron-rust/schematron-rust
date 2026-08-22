@@ -351,7 +351,42 @@ is untyped, so a value comparison treats it as a string:
 `@n eq 1` failing is `eq` pointing out that the comparison written is not the
 one meant. Say `number(@n) eq 1`, or use `=`.
 
-## 14. Using the library
+## 14. Checking a value without breaking on it
+
+A schema often wants to *check* a value rather than convert it. Converting a
+bad value raises an error and stops the run, which is the opposite of what a
+validator is for:
+
+```xml
+<!-- aborts validation when @signed is not a date -->
+<assert test="xs:date(@signed) lt current-date()">…</assert>
+```
+
+`castable as` asks the question without doing the conversion, so a bad value
+becomes a finding:
+
+```xml
+<assert test="@signed castable as xs:date">
+  <value-of select="@signed"/> is not a date.
+</assert>
+<assert test="not(@signed castable as xs:date) or xs:date(@signed) lt current-date()">
+  A record cannot be signed in the future.
+</assert>
+```
+
+The second assertion is the pattern worth remembering: guard the conversion
+with `not(… castable as …) or …`, so the date rule only runs on values that
+are dates. The first assertion has already reported the ones that are not.
+
+`cast as` performs the conversion, `instance of` asks what a value is, and
+`treat as` passes a value through or fails:
+
+```xml
+<assert test="'12' castable as xs:integer">…</assert>
+<assert test="b instance of element()">…</assert>
+```
+
+## 15. Using the library
 
 ```rust
 use schematron::{Document, Schema};
@@ -372,7 +407,7 @@ fn main() -> schematron::Result<()> {
 Compile the schema once and reuse it. `Schema` is `Send + Sync`, so validating
 a directory of documents in parallel needs no extra machinery.
 
-## 15. When a schema seems to do nothing
+## 16. When a schema seems to do nothing
 
 This happens to everyone once. There are two causes, and the CLI distinguishes
 them:
@@ -388,7 +423,7 @@ schematron -s rules.sch --explain            # what will this schema do?
   pattern claimed the node. See step 4. `--explain` flags every rule that can
   only see leftovers.
 
-## 16. Where to go next
+## 17. Where to go next
 
 - [validation.md](validation.md) — the exact algorithm, if a result surprises you
 - [xpath.md](xpath.md) — what the expression language does and does not have

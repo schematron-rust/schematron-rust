@@ -105,6 +105,18 @@ Every pattern gets its own pass over the document.
 
 - Corpus: `tests/corpus/patterns-are-independent/`
 
+### `castable as` reports, `cast as` raises
+
+The two run the same check and differ only in what they do when it fails.
+That is deliberate: a schema needs to *report* a bad value as a finding, which
+it cannot do if asking the question aborts the run.
+
+Keep them in step. A cast that succeeds where `castable as` said false, or the
+reverse, would make the guard pattern in `spec/tutorial.md` unsound.
+
+- Test: `tests/xpath2.rs::cast_as_errors_where_castable_as_reports_false`
+- Test: `tests/xpath2.rs::castable_as_reports_instead_of_aborting`
+
 ### `is` is identity, not equality
 
 `b = c` asks whether some pair of nodes has matching content; `b is c` asks

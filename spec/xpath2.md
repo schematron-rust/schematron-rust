@@ -37,9 +37,11 @@ the distance between two dates rather than only order them.
 **Phase 2e** completes the subset: node comparisons, duration scaling, and a
 configurable implicit timezone.
 
-**Phase 3** — `instance of`, `cast as`, sequence types, and the remaining type
-strictness, all of which need the type system — is roadmap item 1 in
-[roadmap.md](roadmap.md).
+**Phase 3** adds the **type operators**: `instance of`, `cast as`,
+`castable as` and `treat as`, with the sequence types they take.
+
+**Phase 4** — the numeric type hierarchy, and the remaining type strictness —
+is roadmap item 1 in [roadmap.md](roadmap.md).
 
 ### The sequence type, and why XPath 1.0 is unaffected
 
@@ -96,6 +98,10 @@ cannot accidentally acquire 2.0 behaviour.
 | `some $v in E satisfies E` | True when any item satisfies the test |
 | `every $v in E satisfies E` | True when every item does; true for an empty input |
 | `E eq E`, `ne`, `lt`, `le`, `gt`, `ge` | Value comparisons; see below |
+| `E instance of T` | Whether a value matches a sequence type |
+| `E castable as T` | Whether a value **could** be cast, without casting it |
+| `E cast as T` | Casts, or raises an error |
+| `E treat as T` | Passes the value through, or raises an error |
 | `E is E` | Whether two expressions select the *same node* |
 | `E << E`, `E >> E` | Whether one node precedes or follows another in document order |
 
@@ -174,6 +180,90 @@ a leap year.
 
 Mixing the two duration types in one operation is a **type error**, for the
 same reason the types are separate.
+
+## Type operators
+
+### `castable as` is the one to reach for
+
+A Schematron schema usually wants to *check* a value, not convert it. Before
+`castable as`, asking whether an attribute held a date meant calling
+`xs:date()` — which raises an error and stops the run when it does not:
+
+```xml
+<!-- aborts validation if @signed is not a date -->
+<assert test="xs:date(@signed) lt current-date()">…</assert>
+
+<!-- reports the bad value as a finding, which is what a schema is for -->
+<assert test="@signed castable as xs:date">
+  <value-of select="@signed"/> is not a date.
+</assert>
+<assert test="not(@signed castable as xs:date) or xs:date(@signed) lt current-date()">
+  A contract cannot be signed in the future.
+</assert>
+```
+
+That is the difference between a schema that reports a bad date and a
+validation run that dies on one.
+
+### The types
+
+| Written | Matches |
+|---|---|
+| `item()` | Anything |
+| `node()`, `element()`, `attribute()`, `text()`, `comment()`, `processing-instruction()`, `document-node()` | A node of that kind |
+| `element(name)`, `attribute(name)` | A node of that kind with that name |
+| `xs:string`, `xs:boolean`, `xs:double` | An atomic value |
+| `xs:date`, `xs:dateTime`, `xs:time` | A date or time |
+| `xs:dayTimeDuration`, `xs:yearMonthDuration` | A duration |
+| `xs:integer`, `xs:decimal` | See the note on numbers below |
+| `xs:anyAtomicType` | Any atomic value; no node |
+| `empty-sequence()` | Only the empty sequence |
+
+An occurrence indicator may follow: `?` for zero or one, `*` for zero or
+more, `+` for one or more. With none, the type matches exactly one item.
+
+These are types, written after `instance of` and its companions. XPath 2.0
+also allows the same kind tests as **node tests inside a path** — `a/element()`
+— and that is not implemented; write `a/*` instead. See the phase 4 table.
+
+`cast as` and `castable as` take a single type — an atomic type with an
+optional `?` — because casting a sequence has no meaning.
+
+### Casting is lexical
+
+A cast checks the **lexical form** of the value, which is what XML Schema
+specifies for untyped input and what a Schematron schema is nearly always
+looking at:
+
+| Expression | Result |
+|---|---|
+| `'2026-08-21' castable as xs:date` | true |
+| `'2026-02-30' castable as xs:date` | false — not a real date |
+| `'12' castable as xs:integer` | true |
+| `'12.5' castable as xs:integer` | false |
+| `'12.5' castable as xs:decimal` | true |
+| `'x' castable as xs:double` | false |
+
+An empty operand is `false` for `castable as`, and the empty sequence for
+`cast as`.
+
+### Numbers, and what `instance of` reports
+
+The crate holds every number as an IEEE 754 double, as XPath 1.0 requires and
+as the whole engine is built on. It does **not** track whether a number
+arrived as an integer, a decimal, or a double.
+
+So `instance of` reports `xs:double` for every number:
+
+| Expression | Result | XPath 2.0 |
+|---|---|---|
+| `1 instance of xs:double` | true | true |
+| `1 instance of xs:integer` | **false** | true |
+| `'1' castable as xs:integer` | true | true |
+
+Casting and `castable as` are unaffected, because they read the lexical form
+rather than a tracked type — and lexical is the right reading for the untyped
+values a schema actually inspects. The numeric type hierarchy is phase 4.
 
 ## Node comparisons
 
@@ -325,10 +415,11 @@ own tests for date rules are written, and how a caller should write theirs.
 Every one of these is a **hard error naming the construct**, at schema-compile
 time. None of them silently does something else.
 
-| Construct | Why it needs phase 3 |
+| Construct | Why it needs phase 4 |
 |---|---|
-| `instance of`, `cast as`, `castable as`, `treat as` | Needs the type system |
-| Sequence types — `element()`, `item()*`, `node()?` | Needs the type system |
+| The numeric hierarchy — `xs:integer`, `xs:decimal`, `xs:float` as *tracked* types | Every number here is a double; see above |
+| Schema-aware types — `element(name, type)`, `schema-element()` | Needs a schema processor, which is out of scope |
+| Kind tests as path node tests — `a/element()`, `a/element(b)` | Use `a/*` and `a/b`; the same tests do work as `instance of` types |
 | The general `xs:duration` | Only partially ordered; see above |
 | `adjust-date-to-timezone()` and its companions | Needs a timezone-bearing cast |
 | `xslt3`, `xpath3`, `xpath31` bindings | Still refused; use `allow_unknown_query_binding` |
