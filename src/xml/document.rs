@@ -439,7 +439,7 @@ impl Document {
     ///
     /// let doc = Document::from_str("<a><b/><b id='x'/></a>").unwrap();
     /// let second = doc.children(doc.document_element().unwrap())[1];
-    /// assert_eq!(doc.location(second), "/*:a[1]/*:b[2]");
+    /// assert_eq!(doc.location(second), "/a[1]/b[2]");
     /// ```
     #[must_use]
     pub fn location(&self, id: NodeId) -> String {
@@ -447,8 +447,16 @@ impl Document {
             NodeKind::Root => "/".to_string(),
             NodeKind::Attribute => {
                 let parent = self.parent(id).map_or_else(|| "/".to_string(), |p| self.location(p));
-                let name = self.name(id).map_or_else(String::new, QName::display_name);
-                format!("{parent}/@{name}")
+                let step = self.name(id).map_or_else(
+                    || "@*".to_string(),
+                    |name| match name.uri.as_deref() {
+                        Some(uri) => {
+                            format!("@*[{}]", name_predicate(&name.local, uri))
+                        }
+                        None => format!("@{}", name.local),
+                    },
+                );
+                format!("{parent}/{step}")
             }
             NodeKind::Namespace => {
                 let parent = self.parent(id).map_or_else(|| "/".to_string(), |p| self.location(p));
@@ -465,9 +473,13 @@ impl Document {
                 });
                 let position = self.position_among_siblings(id);
                 let step = match kind {
-                    NodeKind::Element => self
-                        .name(id)
-                        .map_or_else(|| "*".to_string(), |n| format!("*:{}", n.local)),
+                    NodeKind::Element => self.name(id).map_or_else(
+                        || "*".to_string(),
+                        |name| match name.uri.as_deref() {
+                            Some(uri) => format!("*[{}]", name_predicate(&name.local, uri)),
+                            None => name.local.clone(),
+                        },
+                    ),
                     NodeKind::Text => "text()".to_string(),
                     NodeKind::Comment => "comment()".to_string(),
                     NodeKind::ProcessingInstruction => "processing-instruction()".to_string(),
@@ -478,6 +490,34 @@ impl Document {
                 format!("{parent}/{step}[{position}]")
             }
         }
+    }
+}
+
+/// The predicate that identifies a namespaced name in XPath 1.0.
+///
+/// XPath 1.0 has no `*:local` wildcard — that is XPath 2.0 — and no default
+/// namespace, so a name in a namespace cannot be written as a plain name test
+/// unless the consumer happens to have bound the same prefix. `local-name()`
+/// and `namespace-uri()` need nothing bound, which is why the ISO reference
+/// implementation writes locations this way too.
+fn name_predicate(local: &str, uri: &str) -> String {
+    format!(
+        "local-name()={} and namespace-uri()={}",
+        xpath_literal(local),
+        xpath_literal(uri)
+    )
+}
+
+/// An XPath 1.0 string literal.
+///
+/// The language has no escape inside a literal, so the only lever is the
+/// choice of delimiter. A value holding both kinds of quote cannot be written
+/// at all; a namespace URI or an XML name never does.
+fn xpath_literal(value: &str) -> String {
+    if value.contains('\'') {
+        format!("\"{value}\"")
+    } else {
+        format!("'{value}'")
     }
 }
 
@@ -531,7 +571,7 @@ mod tests {
     fn location_uses_positional_predicates() {
         let d = doc("<a><b/><b/></a>");
         let a = d.document_element().unwrap();
-        assert_eq!(d.location(d.children(a)[1]), "/*:a[1]/*:b[2]");
+        assert_eq!(d.location(d.children(a)[1]), "/a[1]/b[2]");
     }
 
     #[test]
@@ -590,7 +630,7 @@ mod tests {
 
         // Sibling positions and subtree ranges must be computed for the copy,
         // or locations and the axes silently misbehave.
-        assert_eq!(primary.location(second), "/*:x[1]/*:y[2]");
+        assert_eq!(primary.location(second), "/x[1]/y[2]");
         assert!(primary.is_descendant_of(second, root));
         assert!(!primary.is_descendant_of(second, primary.root()));
     }
@@ -614,6 +654,6 @@ mod tests {
         let a = d.document_element().unwrap();
         let b = d.children(a)[0];
         let attr = d.attributes(b)[0];
-        assert_eq!(d.location(attr), "/*:a[1]/*:b[1]/@q");
+        assert_eq!(d.location(attr), "/a[1]/b[1]/@q");
     }
 }

@@ -114,7 +114,9 @@ schema let      context = root of D          visible everywhere
 Bindings are evaluated in document order within a scope, and an earlier
 binding in the same scope is visible to a later one. An inner binding shadows
 an outer binding of the same name for the rest of the inner scope. A reference
-to an unbound variable is an error, not an empty node-set.
+to a variable that nothing anywhere binds is caught when the schema loads; a
+reference to one that exists but is out of reach here is an error at
+validation, not an empty node-set. See [parsing.md](parsing.md).
 
 `<let name="x" value="expr"/>` binds the XPath value of `expr`.
 `<let name="x">content</let>` binds a string built from the rich content.
@@ -150,17 +152,33 @@ The resulting plain-text string is what appears in `svrl:text`.
 
 Every reported assertion carries a **location**: an absolute XPath expression
 that identifies the node the assertion is about, using positional predicates
-so that it is unambiguous. The crate generates the same shape the reference
-implementation does:
+so that it is unambiguous.
 
 ```
-/*:invoice[1]/*:lines[1]/*:line[3]/@qty
+/invoice[1]/lines[1]/line[3]/@qty
 ```
 
-Namespaced names use the `*:local` wildcard form so that the location is
-usable without knowing the report consumer's prefix bindings. The node is the
-`@subject` node when the assertion or its rule names one, otherwise the
-context node.
+**The location must be valid XPath 1.0**, because a location that a consumer
+cannot evaluate does not do the one job it has. SVRL grew up in the XSLT 1.0
+world and its consumers are XPath 1.0 engines, so the `*:local` wildcard is
+not available — that is XPath 2.0 syntax, and libxml2 rejects it outright.
+
+A name in no namespace is therefore written plainly, and a namespaced name
+with the predicate form, which needs no prefix bound by the consumer:
+
+```
+/root[1]/*[local-name()='line' and namespace-uri()='urn:example'][3]/@qty
+```
+
+The ISO reference implementation writes namespaced names the same way, for
+the same reason.
+
+The node is the `@subject` node when the assertion or its rule names one,
+otherwise the context node.
+
+`tests/corpus.rs` checks every recorded location by evaluating
+`count(LOCATION) = 1` under the XPath 1.0 binding, so a location that is not
+valid 1.0, or that selects the wrong number of nodes, fails the suite.
 
 ## Parallel pattern evaluation
 
@@ -245,8 +263,10 @@ raised at compile time, not at validation time.
 
 ## Errors during validation
 
-An XPath expression that fails at runtime — an unbound variable, an unknown
-function, a type error — is a hard error that aborts validation with a message
-naming the schema construct that contains the expression. It is not silently
+An XPath expression that fails at runtime — a variable that is out of scope
+here, a type error — is a hard error that aborts validation with a message
+naming the schema construct that contains the expression. A misspelled
+variable and an unknown function never reach this point; both are caught when
+the schema loads. It is not silently
 treated as false, because a silently-false assertion is a validation that
 passes for the wrong reason.

@@ -11,6 +11,7 @@
 | Doc tests | rustdoc examples | Every public item's example actually runs |
 | CLI tests | `tests/cli.rs` | Arguments, exit codes, output formats |
 | Fuzz targets | `fuzz/` | Crash and panic freedom on hostile input |
+| Differential | `tests/differential.rs` | Agreement with the ISO reference implementation |
 | Benchmarks | `benches/` | Regression tracking with criterion |
 
 Assertions use the `assertables` crate, matching the house style of the
@@ -48,6 +49,11 @@ directory — no Rust code. The cases, and what each pins down:
 | `let-shadowing` | Innermost binding wins across all scopes |
 | `abstract-patterns` | `is-a` and `param`, including `$x` inside a string literal |
 | `abstract-rules` | `extends`, transitive, spliced at its own position |
+| `include-fragment` | `include href="…#id"` splices the element; `extends href` splices its children |
+| `node-set-boolean-comparison` | A node-set against a boolean converts rather than iterating, per XPath 1.0 section 3.4 |
+| `following-axis-from-attribute` | `following` taken from an attribute node — a documented divergence from the reference |
+| `namespaced-attribute-context` | `@x` and `@p:x` are different attributes — a second documented divergence |
+| `namespaced-sibling-position` | A location counts position within its own namespace, not by local name alone |
 | `phase-default` | `@defaultPhase` applies when no phase is named |
 | `phase-selection` | A named phase activating more patterns |
 | `phase-all` | `#ALL` overrides the default and runs unlisted patterns |
@@ -55,6 +61,7 @@ directory — no Rust code. The cases, and what each pins down:
 | `message-interpolation` | `value-of`, `name`, and `name/@path` |
 | `subject` | `@subject` on both rule and assert moving the location |
 | `no-findings` | A clean document produces nothing at all |
+| `rich-metadata` | Every optional attribute a finding can carry, so the SVRL round trip covers them |
 
 Two things are deliberately **not** corpus cases, because the format has no
 way to supply auxiliary files:
@@ -62,6 +69,107 @@ way to supply auxiliary files:
 - `include` and nested includes — `tests/schema.rs`, using `MemoryResolver`.
 - `pattern/@documents` — `tests/schema.rs`, using real temporary files.
 - XPath `document()` — `tests/documents.rs`, using both.
+
+## Differential testing
+
+The strongest evidence available that this implementation is correct is that
+it agrees with another one. `tests/differential.rs` compiles every corpus
+schema with the **ISO Schematron reference implementation** — a set of XSLT
+stylesheets run through `xsltproc` — and compares the findings.
+
+It is `#[ignore]`d, because it needs `xsltproc` and the reference
+stylesheets, and those are third-party: they carry their own licence and
+release cadence, and a vendored copy here would rot.
+
+```sh
+sh tests/differential/fetch-skeleton.sh /tmp/skeleton
+SCHEMATRON_SKELETON=/tmp/skeleton cargo test --test differential -- --ignored
+```
+
+Every corpus case the reference can run agrees exactly. The exceptions are
+listed in the test itself, each with its reason, and in
+[conformance.md](conformance.md). Two lists drive it:
+
+- `KNOWN_DIVERGENCES` — cases where the two legitimately differ.
+- `REFERENCE_CANNOT_RUN` — cases the reference cannot compile at all.
+
+Both are checked in **both directions**. A case that stops diverging, or that
+the reference learns to run, fails the test just as an unexpected difference
+does — because a list of known problems that no longer describes reality is
+worse than no list. The test prints its own tally, so no count is repeated
+here to go stale.
+
+### Generated cases
+
+The curated corpus covers constructs one idea at a time. It cannot cover their
+*combinations*, and XPath 1.0's conversion rules are exactly where a
+disagreement hides: a node-set against a number, an empty node-set coerced to
+a boolean, a string that is not a number fed to a relational operator.
+
+So `generated_cases_agree_with_the_reference_implementation` builds schema and
+document pairs from a grammar, runs both implementations, and requires
+identical findings. Each case comes from a seed, and the seed alone reproduces
+it:
+
+```sh
+SCHEMATRON_FUZZ_SEED=25 SCHEMATRON_FUZZ_CASES=1 \
+  cargo test --test differential generated -- --ignored --nocapture
+```
+
+This found a real bug: node-set compared to boolean was being evaluated
+existentially like the string and number cases, when XPath 1.0 section 3.4
+requires a `boolean()` conversion. `missing >= false()` is true, and this
+crate said false. See [xpath.md](xpath.md).
+
+**The generator is only as good as its grammar, and this is measured rather
+than assumed.** Deliberately breaking a comparison rule and checking that the
+generated cases notice is how the grammar was found wanting the first time:
+an earlier version compared node-sets of one node almost exclusively, agreed
+on 3487 findings, and failed to notice either of two sabotaged comparison
+rules. It now generates repeated sibling names, so node-sets hold several
+nodes, and compares them against booleans. The default case count is set the
+same way — 200 was not enough to catch a sabotaged existential rule, so the
+default is 500.
+
+Coverage here is probabilistic, so it supplements the curated corpus and the
+unit tests rather than replacing them: anything the generator finds gets a
+named case of its own.
+
+What the grammar now reaches, each verified by sabotage rather than assumed —
+break the feature, and generated cases must notice:
+
+| Area | Sabotage that it catches |
+|---|---|
+| Node-set comparison | existential rule replaced by first-node |
+| Node-set versus boolean | conversion replaced by iteration |
+| Namespaces | (the reference's own defect found this one) |
+| Comments | comment nodes dropped from the tree |
+| CDATA | CDATA content dropped |
+| Processing instructions | PI nodes dropped |
+| Entity references | text left unescaped |
+| `extends rule` | abstract rule splicing disabled |
+| `is-a` and `param` | parameter substitution disabled |
+| Phases and `active` | phase selection ignored, every pattern run |
+| Schema-level `let` | the global bindings not bound |
+| Assertion `@flag` | flag omitted from the SVRL |
+| Assertion `@role` | role omitted from the SVRL |
+| Diagnostics | diagnostic references omitted |
+| Locations | sibling position off by one |
+| Namespaced positions | siblings counted by local name alone |
+
+Generated schemas are not flat either: they carry namespace declarations, a
+schema-level `let`, abstract rules spliced in by `extends`, an abstract
+pattern instantiated through `is-a` with `param` substitution, and a phase
+that activates only some patterns. Those exercise the compiler and expansion
+passes rather than the XPath engine, which the expression grammar alone never
+reaches.
+
+Documents are generated with mixed content, comments, processing
+instructions, CDATA, character references and whitespace, because a document
+of bare elements never reaches the parser's interesting paths. Several of the
+text pieces resolve to the same string by different routes — `foo`,
+`&#102;oo`, `&#x66;oo`, `<![CDATA[foo]]>` — so a comparison against `'foo'`
+tests resolution rather than only length.
 
 ## Fuzzing
 
@@ -141,6 +249,16 @@ Indicative numbers on an M-series laptop:
 | `parallel_patterns_100/parallel` | ~670 µs — *slower*; threads cost more than they save here |
 | `parallel_patterns_5000/sequential` | ~28 ms |
 | `parallel_patterns_5000/parallel` | ~6.5 ms — about 4× faster |
+| `cross_reference_200/with_key` | ~166 µs |
+| `cross_reference_200/without_key` | ~7.7 ms |
+| `cross_reference_1000/with_key` | ~785 µs |
+| `cross_reference_1000/without_key` | ~189 ms — about **240× slower** |
+
+The cross-reference pair measures a complexity difference rather than a
+constant factor, and the scaling shows it. Going from 200 references to 1 000
+— five times the data — the keyed version takes 4.7 times as long, and the
+unkeyed one 24.6 times, which is 5². That is the whole justification for
+[keys.md](keys.md), and it is measured rather than asserted.
 
 The parallel pair is worth reading as a warning as much as a result: on a
 small document, turning threading on makes validation slower. That is why

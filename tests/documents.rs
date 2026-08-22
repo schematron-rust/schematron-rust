@@ -51,7 +51,7 @@ fn document_reads_an_external_file_by_literal_uri() {
 
     assert_eq!(report.count_failures(), 1);
     let failure = report.failures().next().unwrap();
-    assert_eq!(failure.location, "/*:order[1]/*:line[2]");
+    assert_eq!(failure.location, "/order[1]/line[2]");
     assert_contains!(failure.text, "Z-9");
 }
 

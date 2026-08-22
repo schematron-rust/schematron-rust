@@ -211,6 +211,7 @@ states the limits and deliberate divergences in full.
 | `diagnostics`, `properties`, `value-of`, `name`, `emph`, `span`, `dir` | Full |
 | `@flag`, `@role`, `@subject`, `@see`, `@icon`, `@fpi` | Full |
 | `pattern/@documents` | Full |
+| `key` and `key()` | Full, as a non-ISO extension — see [spec/keys.md](spec/keys.md) |
 | Phases, `#ALL`, `#DEFAULT`, `@defaultPhase` | Full |
 | SVRL output | Full |
 | XPath 1.0 — 13 axes, 27 core functions, exact conversion semantics | Full |
@@ -219,12 +220,14 @@ states the limits and deliberate divergences in full.
 | `queryBinding="xslt"`, `"xpath"`, or absent | Supported |
 | `queryBinding="xslt2"`, `"xpath2"` | Partly — see [spec/xpath2.md](spec/xpath2.md) |
 | `queryBinding="xslt3"` and later | Refused by default |
-| XSLT `key()`, `extends href`, `document(uri, base)` | Not implemented |
+| `extends rule` and `extends href`, with `#fragment` identifiers | Full |
+| `document(uri, base)` | Not implemented — the one-argument form is |
 
 Beyond the standard, the crate lints a schema for constructs that are legal
 but almost certainly wrong — a rule shadowed by an earlier one in the same
-pattern, an unprefixed name in a namespaced schema — which are the two ways a
-Schematron schema silently does nothing:
+pattern, an unprefixed name in a namespaced schema, a variable or key nothing
+uses, a rule that reports nothing — starting with the two ways a Schematron
+schema silently does nothing:
 
 ```sh
 schematron --schema rules.sch --lint
@@ -241,6 +244,20 @@ is in, what is out, and the handful of places where a `xslt2` schema still
 evaluates with XPath 1.0 semantics.
 
 ---
+
+## Correctness
+
+Beyond the test suite, the crate is compared against the **ISO Schematron
+reference implementation** — the XSLT stylesheets that compile a schema into a
+validator — over the whole corpus. Twenty of twenty-three cases agree exactly;
+the other three are documented in
+[spec/conformance.md](spec/conformance.md#measured-against-the-reference-implementation),
+and in each the difference is the reference's rather than this crate's.
+
+```sh
+sh tests/differential/fetch-skeleton.sh /tmp/skeleton
+SCHEMATRON_SKELETON=/tmp/skeleton cargo test --test differential -- --ignored
+```
 
 ## Security
 
@@ -283,14 +300,15 @@ be read:
 | Document | What it covers |
 |---|---|
 | [spec/index.md](spec/index.md) | Overview and design principles |
-| [spec/tutorial.md](spec/tutorial.md) | **Start here** — seventeen steps from first rule to real schema |
+| [spec/tutorial.md](spec/tutorial.md) | **Start here** — eighteen steps from first rule to real schema |
 | [spec/data-model.md](spec/data-model.md) | Every Schematron element and its Rust type |
 | [spec/validation.md](spec/validation.md) | The validation algorithm, exactly |
 | [spec/xpath.md](spec/xpath.md) | The XPath 1.0 engine |
 | [spec/xpath2.md](spec/xpath2.md) | The XPath 2.0 subset, and its limits |
 | [spec/xml.md](spec/xml.md) | The XML parser and data model |
 | [spec/parsing.md](spec/parsing.md) | The five compilation passes |
-| [spec/svrl.md](spec/svrl.md) | The SVRL report format |
+| [spec/svrl.md](spec/svrl.md) | The SVRL report format, read and written |
+| [spec/keys.md](spec/keys.md) | Keys, and why a cross-reference check needs one |
 | [spec/linting.md](spec/linting.md) | Catching schemas that silently do nothing |
 | [spec/api.md](spec/api.md) | Library API |
 | [spec/cli.md](spec/cli.md) | Command line interface |

@@ -47,6 +47,7 @@ const SIGNATURES: &[(&str, usize, Option<usize>)] = &[
     ("round", 1, Some(1)),
     ("current", 0, Some(0)),
     ("document", 1, Some(1)),
+    ("key", 2, Some(2)),
 ];
 
 /// The XPath 2.0 functions this crate implements, with their arities.
@@ -198,13 +199,6 @@ pub fn check_function(name: &str, arity: usize, version: XPathVersion) -> Result
              see spec/xpath2.md"
         ));
     }
-    if name == "key" {
-        return Err(
-            "key() needs XSLT keys, which this crate does not implement; \
-             express the lookup as a path or a predicate instead"
-                .to_string(),
-        );
-    }
     Err(format!("unknown function {name}()"))
 }
 
@@ -352,10 +346,17 @@ pub(crate) fn call(
             Some(value) => value.to_number(document),
             None => parse_number(&document.string_value(context.node)),
         })),
+        // Folded from `0.0` rather than `.sum()`: Rust's `Sum` for `f64` starts
+        // from `-0.0`, which is the true additive identity — `-0.0 + x == x`
+        // for every `x`, including `-0.0` itself, which `0.0` does not manage.
+        // Correct for Rust, wrong here: `sum()` over an empty node-set must be
+        // positive zero, as every other XPath processor gives. The sign is
+        // invisible until something divides by it, and then `1 div sum(none)`
+        // is -Infinity instead of Infinity.
         "sum" => {
             let items = items_of(name, args, 0, context.version)?;
             Ok(Value::Number(
-                items.iter().map(|item| item.to_number(document)).sum(),
+                items.iter().map(|item| item.to_number(document)).fold(0.0, |a, b| a + b),
             ))
         }
         "floor" => Ok(Value::Number(args[0].to_number(document).floor())),
@@ -365,6 +366,7 @@ pub(crate) fn call(
         "current" => Ok(Value::NodeSet(vec![context.current])),
 
         "document" => document_function(args, context),
+        "key" => key_function(args, context),
 
         // XPath 2.0, phase 1. Reachable only under a 2.0 query binding,
         // because `check_function` above gates on the version.
@@ -409,7 +411,8 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
                 // behaves the same way in every comparison.
                 return Ok(Value::Number(f64::NAN));
             }
-            let total: f64 = numbers.iter().sum();
+            // Folded from `0.0` for the same reason as `sum()` above.
+            let total: f64 = numbers.iter().fold(0.0, |a, b| a + b);
             #[allow(clippy::cast_precision_loss)]
             let count = numbers.len() as f64;
             Ok(Value::Number(total / count))
@@ -902,6 +905,46 @@ fn document_function(args: &[Value], context: &EvalContext<'_>) -> Result<Value,
     Ok(Value::NodeSet(roots))
 }
 
+/// `key(name, value)`: the nodes a named index holds under a value.
+///
+/// A node-set second argument looks up **each** of its string values, which
+/// is the existential behaviour the rest of XPath uses — so
+/// `key('parts', line/@ref)` finds every referenced part at once.
+fn key_function(args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
+    let Some(keys) = context.keys else {
+        return Err(EvalError::new(
+            "key() needs the run's key indexes, which the validator supplies and \
+             a direct call to evaluate() does not; see EvalContext::with_keys",
+        ));
+    };
+
+    let name = args[0].to_xpath_string(context.document);
+    if !keys.is_declared(&name) {
+        // A missing declaration is a mistake in the schema, not an empty
+        // result: returning nothing would make the assertion quietly pass.
+        return Err(EvalError::new(format!(
+            "no key named {name:?} is declared; add <key name=\"{name}\" \
+             match=\"…\" use=\"…\"/> to the schema"
+        )));
+    }
+
+    let wanted: Vec<String> = match &args[1] {
+        Value::NodeSet(nodes) => nodes
+            .iter()
+            .map(|&node| context.document.string_value(node))
+            .collect(),
+        other => vec![other.to_xpath_string(context.document)],
+    };
+
+    let mut found: Vec<NodeId> = wanted
+        .iter()
+        .flat_map(|value| keys.lookup(&name, value))
+        .collect();
+    found.sort_unstable_by_key(|&node| context.document.order(node));
+    found.dedup();
+    Ok(Value::NodeSet(found))
+}
+
 /// `id()` without a DTD.
 ///
 /// Nothing tells the crate which attributes have type ID, because DTDs are not
@@ -1163,11 +1206,11 @@ mod tests {
 
     #[test]
     fn library_has_every_expected_name() {
-        // The 27 core XPath 1.0 functions, plus the two from the XSLT library
-        // that the `xslt` query binding makes available.
+        // The 27 core XPath 1.0 functions, plus the three from the XSLT
+        // library that the `xslt` query binding makes available.
         let names = function_names();
-        assert_eq!(names.len(), 29, "{names:?}");
-        for from_xslt in ["current", "document"] {
+        assert_eq!(names.len(), 30, "{names:?}");
+        for from_xslt in ["current", "document", "key"] {
             assert!(names.contains(&from_xslt), "{from_xslt}() is missing");
         }
     }

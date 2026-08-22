@@ -1,6 +1,6 @@
 # extends is transitive, and splices at its own position, so order is:
 # the assertion before it, then the extended chain, then the one after.
-assert | /*:invoice[1] | needs a total
-assert | /*:invoice[1] | needs a date
-assert | /*:invoice[1] | needs an id
-assert | /*:invoice[1] | needs a line
+assert | /invoice[1] | needs a total
+assert | /invoice[1] | needs a date
+assert | /invoice[1] | needs an id
+assert | /invoice[1] | needs a line

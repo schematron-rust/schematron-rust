@@ -26,14 +26,15 @@ that is a defect in one of them.
 | Document | Covers |
 |---|---|
 | [spec/index.md](spec/index.md) | Overview, design principles, reading order |
-| [spec/tutorial.md](spec/tutorial.md) | Seventeen steps from one rule to a real schema |
+| [spec/tutorial.md](spec/tutorial.md) | Eighteen steps from one rule to a real schema |
 | [spec/data-model.md](spec/data-model.md) | Every Schematron element and its Rust type |
 | [spec/validation.md](spec/validation.md) | The validation algorithm, exactly |
 | [spec/xpath.md](spec/xpath.md) | The XPath 1.0 engine |
 | [spec/xpath2.md](spec/xpath2.md) | The XPath 2.0 subset, and its limits |
 | [spec/xml.md](spec/xml.md) | The XML parser and data model |
 | [spec/parsing.md](spec/parsing.md) | The five schema compilation passes |
-| [spec/svrl.md](spec/svrl.md) | The SVRL report format |
+| [spec/svrl.md](spec/svrl.md) | The SVRL report format, read and written |
+| [spec/keys.md](spec/keys.md) | Keys, and why a cross-reference check needs one |
 | [spec/linting.md](spec/linting.md) | Catching schemas that silently do nothing |
 | [spec/api.md](spec/api.md) | Library API |
 | [spec/cli.md](spec/cli.md) | Command line interface |

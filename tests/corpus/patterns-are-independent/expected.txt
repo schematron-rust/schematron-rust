@@ -1,3 +1,3 @@
 # The same node is claimed once per pattern, so both fire.
-assert | /*:a[1] | broad
-assert | /*:a[1] | narrow
+assert | /a[1] | broad
+assert | /a[1] | narrow

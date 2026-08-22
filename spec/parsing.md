@@ -30,9 +30,43 @@ Rules:
   local filesystem relative to the schema and refuses absolute `http(s)` URIs.
   Network access is opt-in, never implicit.
 
-`<sch:extends href="U"/>` is **not** implemented; use `include`, which can
-splice in a `rule` element just as well. `<sch:extends rule="ID"/>` is the
-supported form and is resolved in pass 4.
+### What each one splices
+
+`<sch:extends href="U"/>` resolves in this same pass, and differs from
+`include` in exactly one way: it is replaced by the **children** of the
+element `U` names, not by the element itself. That is what makes it useful
+inside a `rule` — the rule already exists, and what it wants is the
+assertions, not another `rule` wrapped around them.
+
+| Directive | Replaced by |
+|---|---|
+| `<include href="lib.sch#dated"/>` | the `rule` element `dated` |
+| `<extends href="lib.sch#dated"/>` | the assertions inside `dated` |
+
+The children-splicing semantics come from the reference implementation, which
+marks them experimental; the `@href` attribute itself is in the ISO grammar,
+which lets `extends` carry either `@rule` or `@href`.
+
+`<sch:extends rule="ID"/>` names an abstract rule in this same schema rather
+than a document, so it is left alone here and resolved in pass 4.
+
+### Fragment identifiers
+
+An `href` may end in `#id`, which selects one element instead of the document
+element. With no DTD there is no attribute typed `ID`, so an element is
+addressed by `@id` or `@xml:id` — the same convention the XPath `id()`
+function uses here.
+
+- `lib.sch#dated` — the element `dated` in `lib.sch`.
+- `#dated` — the element `dated` in the document already being read.
+- `lib.sch#` — a trailing `#` is no fragment; the document element.
+
+Only elements in the Schematron namespace are addressable, which is what lets
+a fragment reach a schema embedded in a larger host document.
+
+The fragment is part of a target's identity for cycle detection: two
+fragments of one document are two targets, and only re-entering the *same*
+one is a cycle.
 
 ## Pass 3 — build the model
 
@@ -101,8 +135,27 @@ This pass also checks everything that can be checked without a document:
 - `active/@pattern` and `schema/@defaultPhase` references.
 - That each `rule/@context` is a legal XSLT match pattern.
 
-Variable references are *not* checked here: `let` scope is dynamic, so an
-unbound `$x` is caught during validation, where the scope is actually known.
+- That every `$name` could be bound by something.
+
+### Variable checking is conservative
+
+A variable can be bound at four schema scopes — schema, phase, pattern, rule —
+and, under XPath 2.0, by a `for`, `some` or `every` expression that encloses
+the reference. Most of that is known statically. One part is not: whether a
+phase-level `let` applies depends on which phase runs, and under `#ALL` no
+phase-level `let` applies at all.
+
+So the check is deliberately **conservative**. A reference is an error only
+when the name is bound by *nothing anywhere* — no schema, phase, pattern or
+rule `let`, and no enclosing expression binding. That catches every typo with
+**no false positives**, which is the only kind of check worth having in a
+compiler: one that cried wolf would be turned off.
+
+What it does not catch is a variable that exists but is out of reach — bound
+by phase `strict` while the run is phase `quick`. That remains a validation
+error, reported with the list of names actually in scope at the point of
+failure. The two checks are complements: the compile-time one catches
+misspelling, the runtime one catches misplacement.
 
 Consequences: a syntax error, an unknown function, or a prefix with no `ns`
 declaration is reported when the schema is loaded, naming the element and the

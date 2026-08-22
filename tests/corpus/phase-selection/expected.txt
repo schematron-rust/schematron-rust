@@ -1,2 +1,2 @@
-assert | /*:a[1] | structure
-assert | /*:a[1] | business
+assert | /a[1] | structure
+assert | /a[1] | business

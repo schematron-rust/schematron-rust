@@ -7,9 +7,9 @@
 //! carry annotations from other vocabularies.
 
 use super::model::{
-    Assertion, AssertionKind, Content, Diagnostic, Let, LetValue, Ns, Paragraph, Param, Pattern,
-    Phase, Property, QueryBinding, Rule, RuleChild, SchemaModel, SCHEMATRON_1_5_NAMESPACE,
-    SCHEMATRON_NAMESPACE,
+    Assertion, AssertionKind, Content, Diagnostic, Key, Let, LetValue, Ns, Paragraph, Param,
+    Pattern, Phase, Property, QueryBinding, Rule, RuleChild, SchemaModel,
+    SCHEMATRON_1_5_NAMESPACE, SCHEMATRON_NAMESPACE,
 };
 use crate::error::{Error, Result};
 use crate::xml::{Document, NodeId, NodeKind};
@@ -153,6 +153,11 @@ impl Parser<'_> {
                 "ns" => model.namespaces.push(self.ns(child)?),
                 "let" => model.lets.push(self.binding(child, "schema")?),
                 "phase" => model.phases.push(self.phase(child)?),
+                "key" => model.keys.push(Key {
+                    name: self.required_attribute(child, "name", "schema/key")?,
+                    match_pattern: self.required_attribute(child, "match", "schema/key")?,
+                    use_expression: self.required_attribute(child, "use", "schema/key")?,
+                }),
                 "pattern" => {
                     let index = model.patterns.len();
                     model.patterns.push(self.pattern(child, index)?);
@@ -369,8 +374,9 @@ impl Parser<'_> {
                         Error::schema(
                             "extends",
                             Some(location.clone()),
-                            "an <extends> needs @rule; @href includes are resolved \
-                             before this point",
+                            "an <extends> needs @rule or @href; an @href is \
+                             spliced in earlier, when includes are resolved, \
+                             so reaching here means neither was present",
                         )
                     })?;
                     rule.body.push(RuleChild::Extends(target));

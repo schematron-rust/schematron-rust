@@ -30,7 +30,10 @@
 //! # Ok::<(), schematron::Error>(())
 //! ```
 
-use crate::validate::{AssertionResult, Report, ResultKind};
+use crate::validate::{
+    ActivePattern, AssertionResult, DiagnosticResult, FiredRule, PropertyResult, Report,
+    ResultKind,
+};
 use crate::xml::{escape_attribute, escape_text};
 
 /// The SVRL namespace URI.
@@ -115,6 +118,272 @@ impl Report {
         }
         .run(self)
     }
+}
+
+impl Report {
+    /// Parses an SVRL document into a report.
+    ///
+    /// SVRL is flat — `active-pattern`, `fired-rule` and the findings are all
+    /// siblings — so this rebuilds the tree the writer flattened: each rule
+    /// belongs to the most recent pattern, each finding to the most recent
+    /// rule.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::XmlParse`](crate::Error::XmlParse) if the input is not
+    /// well-formed XML, and [`Error::Schema`](crate::Error::Schema) if it is
+    /// not an SVRL document.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use schematron::{Document, Report, Schema};
+    ///
+    /// let schema = Schema::from_str(r#"
+    ///     <schema xmlns="http://purl.oclc.org/dsdl/schematron">
+    ///       <pattern><rule context="a"><assert test="b">Needs a b.</assert></rule></pattern>
+    ///     </schema>
+    /// "#)?;
+    /// let original = schema.validate(&Document::from_str("<a/>")?)?;
+    ///
+    /// let parsed = Report::from_svrl(&original.to_svrl())?;
+    /// assert_eq!(parsed.count_failures(), 1);
+    /// assert_eq!(parsed.failures().next().unwrap().text, "Needs a b.");
+    /// # Ok::<(), schematron::Error>(())
+    /// ```
+    pub fn from_svrl(source: &str) -> crate::Result<Report> {
+        let document = crate::xml::Document::from_str(source)?;
+        let root = document.document_element().ok_or_else(|| {
+            crate::Error::schema("schematron-output", None, "the document has no root element")
+        })?;
+
+        let is_svrl = |node| {
+            document.name(node).is_some_and(|name| {
+                name.uri.as_deref() == Some(SVRL_NAMESPACE)
+            })
+        };
+        if !is_svrl(root) || document.name(root).map(|n| n.local.as_str()) != Some("schematron-output")
+        {
+            return Err(crate::Error::schema(
+                document
+                    .name(root)
+                    .map_or_else(String::new, crate::xml::QName::display_name),
+                None,
+                format!(
+                    "the root element is not <svrl:schematron-output> in namespace                      {SVRL_NAMESPACE}"
+                ),
+            ));
+        }
+
+        let attribute = |node, wanted: &str| -> Option<String> {
+            document
+                .attributes(node)
+                .iter()
+                .copied()
+                .find(|&a| {
+                    document
+                        .name(a)
+                        .is_some_and(|n| n.uri.is_none() && n.local == wanted)
+                })
+                .map(|a| document.value(a).to_string())
+        };
+
+        let mut report = Report {
+            title: attribute(root, "title"),
+            phase: attribute(root, "phase"),
+            schema_version: attribute(root, "schemaVersion"),
+            namespaces: Vec::new(),
+            patterns: Vec::new(),
+        };
+
+        for child in document.children(root).iter().copied().filter(|&n| is_svrl(n)) {
+            let local = document
+                .name(child)
+                .map_or_else(String::new, |name| name.local.clone());
+
+            match local.as_str() {
+                "ns-prefix-in-attribute-values" => {
+                    report.namespaces.push(crate::schema::Ns {
+                        prefix: attribute(child, "prefix").unwrap_or_default(),
+                        uri: attribute(child, "uri").unwrap_or_default(),
+                    });
+                }
+
+                "active-pattern" => report.patterns.push(ActivePattern {
+                    id: attribute(child, "id"),
+                    name: attribute(child, "name"),
+                    documents: attribute(child, "documents"),
+                    rules: Vec::new(),
+                }),
+
+                "fired-rule" => {
+                    let pattern = last_pattern(&mut report);
+                    pattern.rules.push(FiredRule {
+                        id: attribute(child, "id"),
+                        context: attribute(child, "context").unwrap_or_default(),
+                        role: attribute(child, "role"),
+                        flag: attribute(child, "flag"),
+                        // SVRL has nowhere to record which node the rule fired
+                        // on; see `spec/svrl.md`.
+                        location: String::new(),
+                        assertions: Vec::new(),
+                    });
+                }
+
+                "failed-assert" | "successful-report" => {
+                    let kind = if local == "failed-assert" {
+                        ResultKind::FailedAssert
+                    } else {
+                        ResultKind::SuccessfulReport
+                    };
+                    let finding = read_finding(&document, child, kind);
+                    last_rule(&mut report).assertions.push(finding);
+                }
+
+                _ => {}
+            }
+        }
+        Ok(report)
+    }
+}
+
+/// The text of the first `svrl:text` child, which is where every message
+/// lives.
+fn svrl_text(document: &crate::xml::Document, node: crate::xml::NodeId) -> String {
+    let nested = document
+        .children(node)
+        .iter()
+        .copied()
+        .find(|&child| {
+            document.name(child).is_some_and(|name| {
+                name.uri.as_deref() == Some(SVRL_NAMESPACE) && name.local == "text"
+            })
+        })
+        .map(|child| document.string_value(child));
+    if let Some(nested) = nested {
+        return nested;
+    }
+
+    // No `svrl:text` child. The ISO reference implementation writes the
+    // message of a `diagnostic-reference` as bare character data instead, and
+    // it is much the most common producer of SVRL, so a reader that returns
+    // nothing here cannot read the output of the tool it is measured against.
+    //
+    // Only the element's *own* text nodes count, never its descendants': a
+    // `failed-assert` holds its diagnostic references as children, and
+    // sweeping the whole subtree would fold their text into the message.
+    document
+        .children(node)
+        .iter()
+        .copied()
+        .filter(|&child| document.kind(child) == crate::xml::NodeKind::Text)
+        .map(|child| document.string_value(child))
+        .collect::<String>()
+}
+
+/// An attribute in no namespace, which is how SVRL spells all of its own.
+fn svrl_attribute(
+    document: &crate::xml::Document,
+    node: crate::xml::NodeId,
+    wanted: &str,
+) -> Option<String> {
+    document
+        .attributes(node)
+        .iter()
+        .copied()
+        .find(|&a| {
+            document
+                .name(a)
+                .is_some_and(|n| n.uri.is_none() && n.local == wanted)
+        })
+        .map(|a| document.value(a).to_string())
+}
+
+/// Reads one `failed-assert` or `successful-report`, with its references.
+fn read_finding(
+    document: &crate::xml::Document,
+    node: crate::xml::NodeId,
+    kind: ResultKind,
+) -> AssertionResult {
+    let is_svrl = |child| {
+        document
+            .name(child)
+            .is_some_and(|name| name.uri.as_deref() == Some(SVRL_NAMESPACE))
+    };
+
+    let mut diagnostics = Vec::new();
+    let mut properties = Vec::new();
+    for reference in document.children(node).iter().copied().filter(|&n| is_svrl(n)) {
+        let name = document
+            .name(reference)
+            .map_or_else(String::new, |n| n.local.clone());
+        match name.as_str() {
+            "diagnostic-reference" => diagnostics.push(DiagnosticResult {
+                id: svrl_attribute(document, reference, "diagnostic").unwrap_or_default(),
+                text: svrl_text(document, reference),
+            }),
+            "property-reference" => properties.push(PropertyResult {
+                id: svrl_attribute(document, reference, "property").unwrap_or_default(),
+                role: svrl_attribute(document, reference, "role"),
+                scheme: svrl_attribute(document, reference, "scheme"),
+                text: svrl_text(document, reference),
+            }),
+            _ => {}
+        }
+    }
+
+    AssertionResult {
+        kind,
+        test: svrl_attribute(document, node, "test").unwrap_or_default(),
+        location: svrl_attribute(document, node, "location").unwrap_or_default(),
+        text: svrl_text(document, node),
+        id: svrl_attribute(document, node, "id"),
+        role: svrl_attribute(document, node, "role"),
+        flag: svrl_attribute(document, node, "flag"),
+        see: svrl_attribute(document, node, "see"),
+        icon: svrl_attribute(document, node, "icon"),
+        fpi: svrl_attribute(document, node, "fpi"),
+        diagnostics,
+        properties,
+    }
+}
+
+/// The pattern a `fired-rule` belongs to: the most recent one.
+///
+/// A rule before any pattern gets a synthetic one, so that reading a partial
+/// or hand-written document loses nothing.
+fn last_pattern(report: &mut Report) -> &mut ActivePattern {
+    if report.patterns.is_empty() {
+        report.patterns.push(ActivePattern {
+            id: None,
+            name: None,
+            documents: None,
+            rules: Vec::new(),
+        });
+    }
+    report
+        .patterns
+        .last_mut()
+        .expect("just ensured non-empty")
+}
+
+/// The rule a finding belongs to: the most recent one.
+///
+/// A finding before any `fired-rule` — which is what `--svrl-findings-only`
+/// output looks like — gets a synthetic rule for the same reason.
+fn last_rule(report: &mut Report) -> &mut FiredRule {
+    let pattern = last_pattern(report);
+    if pattern.rules.is_empty() {
+        pattern.rules.push(FiredRule {
+            id: None,
+            context: String::new(),
+            role: None,
+            flag: None,
+            location: String::new(),
+            assertions: Vec::new(),
+        });
+    }
+    pattern.rules.last_mut().expect("just ensured non-empty")
 }
 
 struct Writer<'a> {
@@ -248,6 +517,30 @@ impl Writer<'_> {
 
 #[cfg(test)]
 mod tests {
+
+    /// SVRL exactly as the ISO reference implementation writes it: the
+    /// diagnostic message is bare character data, not a nested `svrl:text`.
+    #[test]
+    fn reads_a_diagnostic_written_the_reference_way() {
+        let svrl = r#"<svrl:schematron-output xmlns:svrl="http://purl.oclc.org/dsdl/svrl">
+  <svrl:failed-assert test="@qty" location="/order/line">
+    <svrl:text>Needs a qty.</svrl:text>
+    <svrl:diagnostic-reference diagnostic="qty-help">
+Quantity is a positive count of units.</svrl:diagnostic-reference>
+  </svrl:failed-assert>
+</svrl:schematron-output>"#;
+        let report = Report::from_svrl(svrl).expect("reference-shaped SVRL should parse");
+        let assertion = report.assertions().next().expect("one assertion");
+
+        // The message itself must not absorb the diagnostic's text.
+        assert_eq!(assertion.text.trim(), "Needs a qty.");
+        assert_eq!(assertion.diagnostics.len(), 1);
+        assert_eq!(assertion.diagnostics[0].id, "qty-help");
+        assert_eq!(
+            assertion.diagnostics[0].text.trim(),
+            "Quantity is a positive count of units."
+        );
+    }
     use super::*;
     use crate::{Document, Schema};
 
@@ -300,7 +593,7 @@ mod tests {
     fn emits_failed_assert_with_location_and_test() {
         let output = svrl(SCHEMA, "<order><line/></order>");
         assert!(output.contains("<svrl:failed-assert"), "{output}");
-        assert!(output.contains("location=\"/*:order[1]/*:line[1]\""), "{output}");
+        assert!(output.contains("location=\"/order[1]/line[1]\""), "{output}");
         assert!(output.contains("test=\"@qty\""), "{output}");
         assert!(output.contains("<svrl:text>Needs a qty.</svrl:text>"), "{output}");
     }
@@ -330,6 +623,113 @@ mod tests {
         let output = report.to_svrl_with(&SvrlOptions::findings_only());
         assert!(!output.contains("fired-rule"), "{output}");
         assert!(output.contains("failed-assert"), "{output}");
+    }
+
+    #[test]
+    fn reads_a_hand_written_document() {
+        let report = Report::from_svrl(
+            r#"<svrl:schematron-output xmlns:svrl="http://purl.oclc.org/dsdl/svrl"
+                                        title="T" phase="p" schemaVersion="2">
+                 <svrl:ns-prefix-in-attribute-values prefix="ex" uri="urn:example"/>
+                 <svrl:active-pattern id="one" name="One"/>
+                 <svrl:fired-rule id="r" context="a" role="structure" flag="warning"/>
+                 <svrl:failed-assert location="/a[1]" test="b" id="i" flag="error">
+                   <svrl:text>message</svrl:text>
+                   <svrl:diagnostic-reference diagnostic="d">
+                     <svrl:text>detail</svrl:text>
+                   </svrl:diagnostic-reference>
+                 </svrl:failed-assert>
+               </svrl:schematron-output>"#,
+        )
+        .unwrap();
+
+        assert_eq!(report.title.as_deref(), Some("T"));
+        assert_eq!(report.phase.as_deref(), Some("p"));
+        assert_eq!(report.schema_version.as_deref(), Some("2"));
+        assert_eq!(report.namespaces.len(), 1);
+        assert_eq!(report.patterns.len(), 1);
+        assert_eq!(report.patterns[0].name.as_deref(), Some("One"));
+
+        let rule = &report.patterns[0].rules[0];
+        assert_eq!(rule.context, "a");
+        assert_eq!(rule.flag.as_deref(), Some("warning"));
+
+        let finding = &rule.assertions[0];
+        assert_eq!(finding.kind, ResultKind::FailedAssert);
+        assert_eq!(finding.text, "message");
+        assert_eq!(finding.location, "/a[1]");
+        assert_eq!(finding.diagnostics[0].id, "d");
+        assert_eq!(finding.diagnostics[0].text, "detail");
+    }
+
+    #[test]
+    fn findings_only_output_reads_back() {
+        // `--svrl-findings-only` emits no fired-rule elements, so the reader
+        // must attach the findings to a synthetic one rather than lose them.
+        let schema = Schema::from_str(SCHEMA).unwrap();
+        let document = Document::from_str("<order><line/></order>").unwrap();
+        let original = schema.validate(&document).unwrap();
+
+        let svrl = original.to_svrl_with(&SvrlOptions::findings_only());
+        assert!(!svrl.contains("fired-rule"), "{svrl}");
+
+        let parsed = Report::from_svrl(&svrl).unwrap();
+        assert_eq!(parsed.count_failures(), original.count_failures());
+        assert_eq!(
+            parsed.failures().next().unwrap().text,
+            original.failures().next().unwrap().text
+        );
+    }
+
+    #[test]
+    fn a_successful_report_keeps_its_kind() {
+        let schema = Schema::from_str(SCHEMA).unwrap();
+        let document = Document::from_str("<order><line qty='1' free='1'/></order>").unwrap();
+        let original = schema.validate(&document).unwrap();
+
+        let parsed = Report::from_svrl(&original.to_svrl()).unwrap();
+        assert_eq!(parsed.reports().count(), 1);
+        assert_eq!(parsed.count_failures(), 0);
+        assert!(parsed.is_valid());
+    }
+
+    #[test]
+    fn a_document_that_is_not_svrl_is_refused() {
+        let error = Report::from_svrl("<not-svrl/>").unwrap_err();
+        assert!(error.to_string().contains("svrl:schematron-output"), "{error}");
+
+        // And one that is not XML at all.
+        assert!(Report::from_svrl("{\"json\": true}").is_err());
+    }
+
+    #[test]
+    fn an_empty_report_round_trips() {
+        let schema = Schema::from_str(SCHEMA).unwrap();
+        let document = Document::from_str("<order/>").unwrap();
+        let original = schema.validate(&document).unwrap();
+
+        let parsed = Report::from_svrl(&original.to_svrl()).unwrap();
+        assert!(parsed.is_valid());
+        assert_eq!(parsed.assertions().count(), 0);
+    }
+
+    #[test]
+    fn escaped_markup_survives_the_round_trip() {
+        let schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="a">
+                   <assert test="b &lt; 1">Use &lt;b&gt; &amp; "quotes"</assert>
+                 </rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let document = Document::from_str("<a><b>5</b></a>").unwrap();
+        let original = schema.validate(&document).unwrap();
+
+        let parsed = Report::from_svrl(&original.to_svrl()).unwrap();
+        let finding = parsed.failures().next().unwrap();
+        assert_eq!(finding.text, "Use <b> & \"quotes\"");
+        assert_eq!(finding.test, "b < 1");
     }
 
     #[test]

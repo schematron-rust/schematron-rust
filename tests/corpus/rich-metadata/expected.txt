@@ -1,0 +1,6 @@
+# Exercises every optional attribute a finding can carry — id, flag, role,
+# see, icon, fpi, diagnostics and properties — so that the SVRL round trip
+# actually covers them. Without a case like this, dropping an attribute from
+# the writer went unnoticed.
+assert | /order[1]/line[1] | Needs a qty.
+report | /order[1]/line[1] | Uses the legacy form.

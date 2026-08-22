@@ -41,12 +41,14 @@ merely reporting an unknown function.
 | `ns`, `let`, `phase`, `active`, `include`, `extends` | Full |
 | `diagnostics`, `diagnostic` | Full |
 | `properties`, `property` | Full |
+| `key` | Full, as a **non-ISO extension** — see [keys.md](keys.md) |
 | `param`, abstract patterns (`abstract`, `is-a`) | Full |
 | abstract rules (`rule/@abstract` + `extends`) | Full |
 | `title`, `p`, `emph`, `span`, `dir` | Full |
 | `value-of`, `name` | Full |
 | `extends rule="ID"` | Full, including transitive extension |
-| `extends href="URI"` | **Not implemented** — use `include` instead |
+| `extends href="URI"` | Full, including fragment identifiers |
+| `include`/`extends` `href="U#id"` | Full — `@id` or `@xml:id`, no DTD needed |
 | XPath `document(uri)` | Full, including cross-document node-sets — see [xpath.md](xpath.md) |
 | XPath `document(uri, base)` | **Not implemented** — URIs resolve against the instance |
 | `pattern/@documents` | Full; the expression's context node is the **root node**, per the ISO XSLT skeleton, so write `catalog/ref/@href`, not `ref/@href` |
@@ -60,10 +62,10 @@ The legacy namespace `http://www.ascc.net/xml/schematron` is accepted, so a
 1.5-era schema whose vocabulary is otherwise ISO-compatible compiles and runs
 unchanged.
 
-`<sch:key>` is **not** implemented: it needs XSLT keys, which this crate has
-no equivalent for. A schema using it is rejected with a message saying so, and
-the same applies to the `key()` function. 1.5's `pattern/@name` is not mapped
-onto `title`; use ISO spellings.
+`<sch:key>` **is** implemented, together with the `key()` function — as an
+extension, because ISO/IEC 19757-3 dropped the element while leaving no other
+way to declare a key. See [keys.md](keys.md), which states the portability
+trade. 1.5's `pattern/@name` is not mapped onto `title`; use ISO spellings.
 
 ## XML support
 
@@ -113,6 +115,56 @@ Each returns an error when exceeded — never a panic and never a crash. Four
   that wants network fetches supplies its own `Resolver` and owns that choice.
 - **No unsafe code.** The crate is `#![forbid(unsafe_code)]`.
 
+## Measured against the reference implementation
+
+The crate is compared against the ISO Schematron reference implementation —
+the XSLT stylesheets that compile a schema into a validator — over the whole
+corpus in [testing.md](testing.md). The comparison is of *findings*: for each,
+whether it is a failed assertion or a successful report, the test that
+produced it, and the message.
+
+**Twenty of twenty-three cases agree exactly.** The other three are below, and
+in both directions the difference is the reference's, not this crate's.
+
+### Rules on text, comments and processing instructions
+
+The reference generates a template for a `context="text()"` rule and then
+never visits a text node: its traversal recurses with `select="@*|*"`, so it
+walks elements and attributes only. A rule written against `text()`,
+`comment()` or `processing-instruction()` therefore cannot fire, silently.
+
+This crate visits all seven node kinds, so such a rule works. See
+[validation.md](validation.md), which documents the visiting order.
+
+### A `let` that shadows another
+
+The reference compiles every `let` into an `xsl:variable` in a single scope,
+so a schema that binds the same name at two scopes is an XSLT error and does
+not run at all. Two corpus cases hit this.
+
+The standard describes four nested scopes — schema, phase, pattern, rule —
+with an inner binding shadowing an outer one, and this crate implements that.
+See [validation.md](validation.md).
+
+### What is not compared
+
+The `@location` attribute, textually. Both implementations emit an absolute
+XPath 1.0 path, in different but equally valid syntax — `/list/item` against
+`/list[1]/item[2]` — and SVRL prescribes neither. Comparing the strings would
+report a difference on every finding and bury the real ones.
+
+Comparing them *semantically* — resolving each and checking it picks the same
+node — would be worth doing, and is the natural next step, but it would have
+to record one reference-side defect first: **the reference emits `/@x` as the
+location of every attribute**, whatever element carries it. That is not a
+namespace artifact; it happens in a document with no namespaces at all, every
+attribute in a document gets the identical location, and libxml2 itself
+resolves `/@x` to zero nodes. A finding whose location cannot be resolved
+does not do the one job a location has.
+
+This crate emits `/root[1]/c[1]/@x`, and every location in the corpus is
+checked to select exactly one node — see [validation.md](validation.md).
+
 ## Known divergences
 
 1. **Rule context patterns** are matched by the rooted `//` reduction
@@ -126,3 +178,76 @@ Each returns an error when exceeded — never a panic and never a crash. Four
 3. **Report order** is pattern order, then document order of matched nodes,
    then assertion order within a rule. The standard does not mandate an order;
    this one is deterministic and matches the reference implementation.
+4. **The `following` axis taken from an attribute node** includes the
+   attribute's own element's children. XPath 1.0 orders an element's
+   attributes after the element and before its children, and defines
+   `following` as everything after the context node in document order barring
+   the *context node's* descendants — and an attribute has none. So for
+   `<e x="1"><a/><a/></e><a/>`, `@x/following::a` selects three nodes here.
+
+   The ISO reference implementation selects one: libxml2 answers as though
+   the attribute stood where its element stands. This crate is not guessing —
+   Java's XPath engine, an independent implementation, gives three as well,
+   which puts the reference in the minority rather than in the right. Pinned
+   by `tests/corpus/following-axis-from-attribute/` and listed in the
+   differential test's `KNOWN_DIVERGENCES`, so if libxml2 changes, the test
+   says so.
+
+   `preceding` from an attribute agrees everywhere, because an attribute's
+   element is its ancestor and ancestors are excluded from `preceding` by
+   every reading.
+5. **A rule context of `@x` does not claim `@p:x`.** An unprefixed name test
+   names the no-namespace name, for attributes exactly as for elements.
+
+   The reference disagrees, and here it contradicts itself: the ISO
+   stylesheets compile the context to `match="@x"`, and libxslt's template
+   matcher then matches namespaced attributes of the same local name — while
+   libxml2's XPath, the same library, counts `//@x` correctly as excluding
+   them. Java's XPath agrees with libxml2. So a schema with rules on both
+   `@x` and `@p:x` gets the first rule claiming everything under the
+   reference, and correct behaviour here.
+
+   Elements are unaffected in both, and `@p:x` correctly matches only itself.
+   Pinned by `tests/corpus/namespaced-attribute-context/`.
+6. **`@flag` and `@role` are inherited from the rule** by an assertion that
+   sets neither. The reference emits neither on such a finding.
+
+   The standard does not state inheritance either way, so this is a reading
+   rather than a defect on either side — but it is not an arbitrary one. The
+   ISO grammar permits `rule/@flag`, and under the reference that attribute
+   has no observable effect whatsoever: it reaches neither the finding nor the
+   `fired-rule` event. A permitted attribute that does nothing is the weaker
+   reading. Flags exist to classify findings for filtering — `--flag error` is
+   the point of them — and a rule saying "everything I match is a warning" is
+   the natural way to write that.
+
+   An assertion's own `@flag` or `@role` always wins over the rule's, in both
+   implementations. Pinned by `tests/corpus/rich-metadata/`.
+7. **`@subject` moves the reported location** to the node the assertion is
+   about, rather than the rule's context node. The reference reports the
+   context node.
+
+   Its own source settles this one. The skeleton's `linkableParms` template
+   says:
+
+   > ISO SVRL does not have a subject attribute to match the Schematron
+   > subject attribute. Instead, the Schematron subject attribute is folded
+   > into the location attribute
+
+   and then makes no use of the `$subject` parameter it has just declared. The
+   reference states this crate's behaviour as the intended one and does not
+   carry it out. Pinned by `tests/corpus/subject/`.
+8. **A location counts position within its own namespace.** The reference
+   counts among siblings sharing the *local name* alone, while emitting a
+   predicate that filters on namespace too — so the number and the node set
+   it indexes disagree.
+
+   For `<root><a/><p:a/><a/><p:a/></root>` the reference reports the first
+   `p:a` as `…[2]`, which resolves to the *second* one, and the second as
+   `…[4]`, which resolves to nothing. Checked by resolving its own output with
+   libxml2. This crate reports `[1]` and `[2]`.
+
+   Pinned by `tests/corpus/namespaced-sibling-position/`. Because of this the
+   differential test does not compare locations naming a namespaced element;
+   it still requires this crate's own location to resolve to exactly one node
+   in every case.

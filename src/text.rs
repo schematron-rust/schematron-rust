@@ -100,7 +100,7 @@ impl Report {
     ///
     /// let text = report.to_text();
     /// assert!(text.contains("Needs a b."));
-    /// assert!(text.contains("/*:a[1]"));
+    /// assert!(text.contains("/a[1]"));
     /// # Ok::<(), schematron::Error>(())
     /// ```
     #[must_use]
@@ -267,7 +267,7 @@ mod tests {
     fn a_failure_shows_flag_location_and_message() {
         let output = text("<order><line/></order>", &TextOptions::new());
         assert!(output.contains("error"), "{output}");
-        assert!(output.contains("/*:order[1]/*:line[1]"), "{output}");
+        assert!(output.contains("/order[1]/line[1]"), "{output}");
         assert!(output.contains("Needs a qty."), "{output}");
     }
 

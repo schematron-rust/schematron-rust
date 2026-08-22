@@ -276,6 +276,19 @@ impl Schema {
         for (index, pattern) in self.model.patterns.iter().enumerate() {
             collect_pattern(pattern, index, &mut work);
         }
+        for key in &self.model.keys {
+            let location = format!("key[@name='{}']", key.name);
+            work.push((
+                key.match_pattern.clone(),
+                format!("{location}/@match"),
+                true,
+            ));
+            work.push((
+                key.use_expression.clone(),
+                format!("{location}/@use"),
+                false,
+            ));
+        }
         for diagnostic in &self.model.diagnostics {
             let location = format!("diagnostic[@id='{}']", diagnostic.id);
             collect_content(&diagnostic.content, &location, &mut work);
@@ -285,12 +298,157 @@ impl Schema {
             collect_content(&property.content, &location, &mut work);
         }
 
+        // Every name any `let` binds, at any scope. Checking against the
+        // union rather than the exact scope keeps the check free of false
+        // positives; see `spec/parsing.md`.
+        let bindable = self.bindable_names();
+
         for (source, location, is_pattern) in work {
             let expr = self.compile_one(&source, &location)?;
+            Schema::check_variables(&expr, &source, &location, &bindable, &mut Vec::new())?;
             if is_pattern {
                 check_match_pattern(&expr, &source, &location)?;
             }
             self.expressions.insert(source, expr);
+        }
+        Ok(())
+    }
+
+    /// Every name a `let` binds anywhere in the schema, at any scope.
+    fn bindable_names(&self) -> std::collections::HashSet<String> {
+        let model = &self.model;
+        let mut names: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        let mut add = |lets: &[Let]| {
+            for binding in lets {
+                names.insert(binding.name.clone());
+            }
+        };
+        add(&model.lets);
+        for phase in &model.phases {
+            add(&phase.lets);
+        }
+        for pattern in &model.patterns {
+            add(&pattern.lets);
+            for rule in &pattern.rules {
+                add(&rule.lets);
+            }
+        }
+        names
+    }
+
+    /// Reports a `$name` that nothing anywhere could bind.
+    ///
+    /// `enclosing` carries the variables an XPath 2.0 `for`, `some` or
+    /// `every` binds around this point, which are scoped to the expression
+    /// rather than to the schema.
+    fn check_variables(
+        expr: &Expr,
+        source: &str,
+        location: &str,
+        bindable: &std::collections::HashSet<String>,
+        enclosing: &mut Vec<String>,
+    ) -> Result<()> {
+        match expr {
+            Expr::Literal(_) | Expr::Number(_) => {}
+
+            Expr::Variable(name) => {
+                let name = name.to_string();
+                if bindable.contains(&name) || enclosing.contains(&name) {
+                    return Ok(());
+                }
+                let mut known: Vec<&str> =
+                    bindable.iter().map(String::as_str).collect();
+                known.extend(enclosing.iter().map(String::as_str));
+                known.sort_unstable();
+                return Err(Error::xpath_syntax(
+                    location,
+                    source,
+                    0,
+                    format!(
+                        "no <let> anywhere in this schema binds ${name}{}",
+                        if known.is_empty() {
+                            "; the schema declares no variables".to_string()
+                        } else {
+                            format!("; it declares: {}", known.join(", "))
+                        }
+                    ),
+                ));
+            }
+
+            Expr::Negate(inner) => {
+                Schema::check_variables(inner, source, location, bindable, enclosing)?;
+            }
+            Expr::Binary(_, left, right) => {
+                Schema::check_variables(left, source, location, bindable, enclosing)?;
+                Schema::check_variables(right, source, location, bindable, enclosing)?;
+            }
+            Expr::Function { args, .. } => {
+                for arg in args {
+                    Schema::check_variables(arg, source, location, bindable, enclosing)?;
+                }
+            }
+            Expr::TypeOp { value, .. } => {
+                Schema::check_variables(value, source, location, bindable, enclosing)?;
+            }
+            Expr::Sequence(members) => {
+                for member in members {
+                    Schema::check_variables(member, source, location, bindable, enclosing)?;
+                }
+            }
+            Expr::Range(from, to) => {
+                Schema::check_variables(from, source, location, bindable, enclosing)?;
+                Schema::check_variables(to, source, location, bindable, enclosing)?;
+            }
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                Schema::check_variables(condition, source, location, bindable, enclosing)?;
+                Schema::check_variables(then_branch, source, location, bindable, enclosing)?;
+                Schema::check_variables(else_branch, source, location, bindable, enclosing)?;
+            }
+
+            // These bind a variable for the rest of the expression, so the
+            // input is checked outside the binding and the body inside it.
+            Expr::For {
+                variable,
+                input,
+                body,
+            } => {
+                Schema::check_variables(input, source, location, bindable, enclosing)?;
+                enclosing.push(variable.to_string());
+                let checked = Schema::check_variables(body, source, location, bindable, enclosing);
+                enclosing.pop();
+                checked?;
+            }
+            Expr::Quantified {
+                variable,
+                input,
+                test,
+                ..
+            } => {
+                Schema::check_variables(input, source, location, bindable, enclosing)?;
+                enclosing.push(variable.to_string());
+                let checked = Schema::check_variables(test, source, location, bindable, enclosing);
+                enclosing.pop();
+                checked?;
+            }
+
+            Expr::Path(path) => {
+                if let PathStart::Expr(start, predicates) = &path.start {
+                    Schema::check_variables(start, source, location, bindable, enclosing)?;
+                    for predicate in predicates {
+                        Schema::check_variables(predicate, source, location, bindable, enclosing)?;
+                    }
+                }
+                for step in &path.steps {
+                    for predicate in &step.predicates {
+                        Schema::check_variables(predicate, source, location, bindable, enclosing)?;
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -307,10 +465,9 @@ impl Schema {
     /// function names and arities, and namespace prefixes.
     fn check_expression(&self, expr: &Expr, source: &str, location: &str) -> Result<()> {
         match expr {
-            // Literals need no checking. Nor does a variable reference:
-            // variable scope is dynamic — a `let` in an enclosing scope may
-            // bind it — so an unbound reference is caught at evaluation time,
-            // where the scope is actually known.
+            // Literals need no checking. Variable references are checked
+            // separately, by `check_variables`, which needs the set of names
+            // the schema binds.
             Expr::Literal(_) | Expr::Number(_) | Expr::Variable(_) => {}
             Expr::Negate(inner) => self.check_expression(inner, source, location)?,
             Expr::Binary(op, left, right) => {
@@ -492,6 +649,16 @@ impl Schema {
                 }
             }
         }
+        // Key names must be unique, or a lookup would be ambiguous.
+        for (index, key) in self.model.keys.iter().enumerate() {
+            if self.model.keys[..index].iter().any(|earlier| earlier.name == key.name) {
+                return Err(Error::schema(
+                    "key",
+                    Some(format!("key[@name='{}']", key.name)),
+                    "two keys share this name; a lookup would be ambiguous",
+                ));
+            }
+        }
         if let Some(default) = &self.model.default_phase {
             if self.model.phase(default).is_none() {
                 return Err(Error::schema(
@@ -605,6 +772,12 @@ impl Schema {
     #[must_use]
     pub fn default_phase(&self) -> Option<&str> {
         self.model.default_phase.as_deref()
+    }
+
+    /// The keys, indexed before any pattern runs.
+    #[must_use]
+    pub fn keys(&self) -> &[crate::schema::Key] {
+        &self.model.keys
     }
 
     /// The patterns that will run, in order.

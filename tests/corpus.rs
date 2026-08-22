@@ -79,7 +79,9 @@ fn run_case(directory: &Path) -> Result<(), String> {
             .map_err(|e| format!("{name}: cannot read {file}: {e}"))
     };
 
-    let schema = Schema::from_str(&read("schema.sch")?)
+    // From the path, not the text: a case may `include` a sibling file, and
+    // a relative href needs the schema's own location to resolve against.
+    let schema = Schema::from_path(directory.join("schema.sch"))
         .map_err(|e| format!("{name}: schema did not compile: {e}"))?;
     let document = Document::from_str(&read("input.xml")?)
         .map_err(|e| format!("{name}: document did not parse: {e}"))?;
@@ -165,6 +167,80 @@ fn every_corpus_case_is_complete() {
 }
 
 #[test]
+fn every_expected_location_resolves_to_exactly_one_node() {
+    // SVRL's `@location` exists so that a consumer can find the node the
+    // finding is about. That only works if the value is an XPath the consumer
+    // can evaluate — which, for the SVRL toolchain, means XPath 1.0.
+    //
+    // Each location is checked by evaluating `count(LOCATION) = 1` under the
+    // default XPath 1.0 binding. That catches both halves at once: syntax
+    // XPath 1.0 does not have fails to compile, and a location pointing at
+    // the wrong number of nodes fails to report.
+    //
+    // This test reads the *expectation files*, so on its own it says nothing
+    // about what `Document::location` produces — sabotage the generator and
+    // this test still passes. It is `corpus_cases_all_pass` that ties the two
+    // together, by comparing emitted locations against these same files. The
+    // pair is what pins the format; neither does it alone.
+    let mut failures = Vec::new();
+
+    for case in cases() {
+        let name = case.file_name().unwrap().to_string_lossy().to_string();
+        let Ok(expected) = fs::read_to_string(case.join("expected.txt")) else {
+            continue;
+        };
+        let locations: Vec<String> = parse_expected(&expected)
+            .into_iter()
+            .map(|e| e.location)
+            .filter(|location| !location.is_empty())
+            .collect();
+        if locations.is_empty() {
+            continue;
+        }
+
+        let mut schema = String::from(
+            "<schema xmlns=\"http://purl.oclc.org/dsdl/schematron\">\n  <pattern>\n    <rule context=\"/\">\n",
+        );
+        for (index, location) in locations.iter().enumerate() {
+            let escaped = location.replace('&', "&amp;").replace('<', "&lt;");
+            schema.push_str(&format!(
+                "      <report test=\"count({escaped}) = 1\">loc{index}</report>\n"
+            ));
+        }
+        schema.push_str("    </rule>\n  </pattern>\n</schema>\n");
+
+        let compiled = match Schema::from_str(&schema) {
+            Ok(compiled) => compiled,
+            Err(why) => {
+                failures.push(format!("{name}: a location is not valid XPath 1.0: {why}"));
+                continue;
+            }
+        };
+        let Ok(document) = fs::read_to_string(case.join("input.xml"))
+            .map_err(drop)
+            .and_then(|s| Document::from_str(&s).map_err(drop))
+        else {
+            continue;
+        };
+        let report = compiled.validate(&document).expect("the probe schema runs");
+        let fired: Vec<&str> = report
+            .assertions()
+            .map(|assertion| assertion.text.trim())
+            .collect();
+        for (index, location) in locations.iter().enumerate() {
+            let label = format!("loc{index}");
+            if !fired.iter().any(|text| *text == label) {
+                failures.push(format!(
+                    "{name}: location {location:?} does not select exactly one node"
+                ));
+            }
+        }
+    }
+
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
 fn every_corpus_case_is_documented_and_every_documented_case_exists() {
     // spec/testing.md tabulates what each case pins down. Drift in either
     // direction is a defect: an undocumented case is invisible to a reader
@@ -175,28 +251,104 @@ fn every_corpus_case_is_documented_and_every_documented_case_exists() {
     )
     .expect("spec/testing.md should exist");
 
+    // Only the corpus table counts. The file holds other tables whose first
+    // column is also a backticked lowercase name — the sabotage coverage
+    // table, for one — and scanning the whole document read those as case
+    // names, which is a false failure waiting for whoever adds the next
+    // table. The section heading is the boundary.
+    let table = {
+        let start = spec
+            .find("## Corpus tests")
+            .expect("spec/testing.md should have a '## Corpus tests' section");
+        let rest = &spec[start + "## Corpus tests".len()..];
+        let end = rest.find("\n## ").unwrap_or(rest.len());
+        &rest[..end]
+    };
+
     for case in cases() {
         let name = case.file_name().unwrap().to_string_lossy().to_string();
         assert!(
-            spec.contains(&format!("| `{name}` |")),
-            "corpus case {name:?} is not in the table in spec/testing.md"
+            table.contains(&format!("| `{name}` |")),
+            "corpus case {name:?} is not in the table under '## Corpus tests' \
+             in spec/testing.md"
         );
     }
 
     // And nothing in the table is fictional.
-    for line in spec.lines().filter(|line| line.starts_with("| `")) {
+    for line in table.lines().filter(|line| line.starts_with("| `")) {
         let Some(name) = line.strip_prefix("| `").and_then(|r| r.split('`').next()) else {
             continue;
         };
-        // The table also lists non-case entries elsewhere in the file; only
-        // rows naming a directory that looks like a case are checked.
-        if !name.chars().all(|c| c.is_ascii_lowercase() || c == '-') {
-            continue;
-        }
         let path = corpus_root().join(name);
         assert!(
             path.is_dir(),
             "spec/testing.md documents corpus case {name:?}, which does not exist"
         );
     }
+}
+
+/// Clears the fields an SVRL round trip cannot preserve.
+///
+/// SVRL's `fired-rule` element has nowhere to record which node the rule
+/// fired on, so that one field is compared as empty on both sides. See
+/// `spec/svrl.md`.
+fn without_fired_rule_locations(mut report: schematron::Report) -> schematron::Report {
+    for pattern in &mut report.patterns {
+        for rule in &mut pattern.rules {
+            rule.location = String::new();
+        }
+    }
+    report
+}
+
+#[test]
+fn every_corpus_report_survives_an_svrl_round_trip() {
+    // A far stronger check on the SVRL writer than asserting on substrings of
+    // its output: everything it emits must come back identical.
+    let mut failures = Vec::new();
+
+    for case in cases() {
+        let name = case.file_name().unwrap().to_string_lossy().to_string();
+        let Ok(schema) = Schema::from_path(case.join("schema.sch")).map_err(drop) else {
+            failures.push(format!("{name}: schema did not compile"));
+            continue;
+        };
+        let Ok(document) = fs::read_to_string(case.join("input.xml"))
+            .map_err(drop)
+            .and_then(|s| Document::from_str(&s).map_err(drop))
+        else {
+            failures.push(format!("{name}: document did not parse"));
+            continue;
+        };
+
+        let mut options = ValidateOptions::new();
+        if let Ok(phase) = fs::read_to_string(case.join("phase")) {
+            options = options.with_phase(PhaseSelection::from(phase.trim()));
+        }
+        let Ok(original) = schema.validate_with(&document, &options) else {
+            failures.push(format!("{name}: validation failed"));
+            continue;
+        };
+
+        let svrl = original.to_svrl();
+        match schematron::Report::from_svrl(&svrl) {
+            Err(error) => failures.push(format!("{name}: SVRL did not parse back: {error}")),
+            Ok(parsed) => {
+                let expected = without_fired_rule_locations(original);
+                let actual = without_fired_rule_locations(parsed);
+                if expected != actual {
+                    failures.push(format!(
+                        "{name}: round trip changed the report\n  before: {expected:?}\n  after:  {actual:?}"
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "{} corpus case(s) failed the SVRL round trip:\n\n{}",
+        failures.len(),
+        failures.join("\n\n")
+    );
 }

@@ -191,10 +191,20 @@ fn a_single_pattern_schema_still_works() {
 #[test]
 fn an_error_in_one_pattern_still_surfaces() {
     // A worker that fails must not be swallowed by the join.
+    // `$elsewhere` is declared, so the schema compiles, but it is bound in
+    // another pattern's rule and so is out of reach here — which is the
+    // runtime failure the compile-time check deliberately does not catch.
     let schema = Schema::from_str(
         r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
-             <pattern id="fine"><rule context="a"><assert test="true()">m</assert></rule></pattern>
-             <pattern id="broken"><rule context="a"><assert test="$nope">m</assert></rule></pattern>
+             <pattern id="fine">
+               <rule context="a">
+                 <let name="elsewhere" value="1"/>
+                 <assert test="$elsewhere">m</assert>
+               </rule>
+             </pattern>
+             <pattern id="broken">
+               <rule context="a"><assert test="$elsewhere">m</assert></rule>
+             </pattern>
            </schema>"#,
     )
     .unwrap();
@@ -202,7 +212,7 @@ fn an_error_in_one_pattern_still_surfaces() {
     let error = schema
         .validate_with(&document, &parallel())
         .unwrap_err();
-    assert_contains!(error.to_string(), "$nope");
+    assert_contains!(error.to_string(), "$elsewhere");
 }
 
 #[test]

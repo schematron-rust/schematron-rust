@@ -78,10 +78,11 @@ fn a_conditional_chooses_a_branch() {
 
 #[test]
 fn a_conditional_evaluates_only_the_taken_branch() {
-    // The untaken branch references an unbound variable, which would be an
-    // error if it were evaluated.
-    assert!(check("if (true()) then true() else $missing", "<a/>"));
-    assert!(check("if (false()) then $missing else true()", "<a/>"));
+    // The untaken branch is a union of two numbers, which is a type error if
+    // it is evaluated — and is not caught at compile time, because operand
+    // types are not known until there is a document.
+    assert!(check("if (true()) then true() else boolean(1 | 2)", "<a/>"));
+    assert!(check("if (false()) then boolean(1 | 2) else true()", "<a/>"));
 }
 
 #[test]
@@ -290,17 +291,22 @@ fn quantifiers_work_over_a_constructed_sequence() {
 #[test]
 fn a_bound_variable_does_not_escape_its_expression() {
     // `$b` is bound only inside the quantified expression. Referencing it
-    // outside must be an unbound-variable error, not a stale binding.
-    let source = schema_with(
+    // outside is an unbound variable, and since no `let` binds that name the
+    // schema does not even compile.
+    let message = compile_error(
         "xslt2",
-        r#"<pattern><rule context="a">
-             <assert test="(every $b in b satisfies true()) and $b">m</assert>
-           </rule></pattern>"#,
+        "(every $b in b satisfies true()) and $b",
     );
-    let schema = Schema::from_str(&source).expect("schema should compile");
-    let document = Document::from_str("<a><b/></a>").unwrap();
-    let error = schema.validate(&document).unwrap_err();
-    assert_contains!(error.to_string(), "$b");
+    assert_contains!(message, "$b");
+}
+
+#[test]
+fn a_variable_bound_by_a_quantifier_is_in_scope_inside_it() {
+    // The other half: the binding must be visible where it should be, or the
+    // compile-time check would reject every quantified expression.
+    assert!(check("every $n in (1, 2) satisfies $n > 0", "<a/>"));
+    assert!(check("count(for $n in (1, 2) return $n) = 2", "<a/>"));
+    assert!(check("some $n in (1 to 3) satisfies $n = 2", "<a/>"));
 }
 
 #[test]

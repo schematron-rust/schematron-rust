@@ -117,14 +117,29 @@ literally:
 
 - node-set **op** node-set — true if *any* pair of nodes has string values for
   which the comparison holds.
-- node-set **op** other — true if *any* node's string value, converted to the
-  other operand's type, satisfies the comparison.
+- node-set **op** string, or node-set **op** number — true if *any* node's
+  string value, converted to the other operand's type, satisfies the
+  comparison.
+- node-set **op** boolean — **not** existential. The node-set is converted
+  with `boolean()`, to whether it is non-empty, and the two booleans are then
+  compared. This is the one node-set rule that never looks at a node's value.
 - `=` and `!=` on two non-node-sets: if either is boolean, compare as boolean;
   else if either is number, compare as number; else compare as string.
-- `<`, `<=`, `>`, `>=` always compare as numbers.
+- `<`, `<=`, `>`, `>=` always compare as numbers, booleans included: true is
+  1 and false is 0.
 
 Therefore `a != b` is not `not(a = b)` when node-sets are involved. The crate
 does not "fix" this.
+
+The empty node-set is where the boolean rule visibly parts company with the
+existential ones. `missing = 'x'` and `missing != 'x'` are both false, because
+there is no node to satisfy either. But `missing >= false()` is **true**: the
+conversion gives `false >= false`, which as numbers is `0 >= 0`.
+
+This distinction is easy to state and easy to miss — an earlier draft of this
+document folded booleans into the existential bullet above, and the engine
+implemented the document faithfully. Differential testing against the
+reference found it; `tests/corpus/node-set-boolean-comparison/` pins it.
 
 ## Function library
 
@@ -136,13 +151,14 @@ All 27 core functions:
 `translate`, `boolean`, `not`, `true`, `false`, `lang`, `number`, `sum`,
 `floor`, `ceiling`, `round`.
 
-Plus two functions from the XSLT library, which the `xslt` query binding makes
-available:
+Plus three functions from the XSLT library, which the `xslt` query binding
+makes available:
 
 | Function | Notes |
 |---|---|
 | `current()` | The node the rule fired on, unaffected by predicates. Unlike `.`, it does not change inside a predicate, which is the whole point of it. |
 | `document(uri)` | The root nodes of external documents. See below. |
+| `key(name, value)` | The nodes a named index holds under a value. See [keys.md](keys.md). |
 
 The two-argument `document(uri, base)` form is **not** implemented; URIs
 resolve against the instance document's base URI.

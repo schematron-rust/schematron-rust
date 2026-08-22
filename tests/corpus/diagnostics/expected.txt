@@ -1,2 +1,2 @@
 # Diagnostics attach to the finding; the finding's own text is unchanged.
-assert | /*:order[1]/*:line[1] | Bad quantity.
+assert | /order[1]/line[1] | Bad quantity.

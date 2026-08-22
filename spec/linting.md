@@ -39,6 +39,12 @@ Each carries a `LintKind`, a location inside the schema, a message, and a
 | `EmptyMessage` | An `assert` or `report` whose message is empty or whitespace |
 | `ConstantTest` | A test that is a constant, such as `true()` or `false()`, and so does not depend on the document |
 | `PatternInNoPhase` | A pattern that no phase activates, in a schema that declares phases |
+| `UnreferencedKey` | A `key` that no expression looks up; its index is built regardless |
+| `UnreferencedVariable` | A `let` whose name no expression mentions; its value is computed regardless |
+| `RuleWithNoAssertions` | A rule that matches nodes and reports nothing |
+| `PatternWithNoRules` | A pattern that cannot do anything |
+| `DuplicateAssertionTest` | Two assertions in one rule with the same test |
+| `PhaseWithNoPatterns` | A phase that activates nothing, so selecting it validates nothing |
 
 ### `UnreachableRule` is deliberately conservative
 
@@ -55,6 +61,18 @@ reported, because it depends on the document and the answer would be a guess.
 
 False positives are worse than misses here: a linter that cries wolf gets
 switched off, and then it catches nothing at all.
+
+### The "unreferenced" lints are conservative
+
+`UnreferencedVariable` asks whether the name appears in *any* expression in
+the schema, not whether it is in scope at the point it is used. A rule-level
+`let` that nothing in its own rule uses, while a different rule happens to
+reference the same name, is therefore not reported.
+
+That is the deliberate direction to err in. Getting scope exactly right would
+mean modelling shadowing across four nested scopes to report something that
+costs a little time; getting it wrong would mean reporting a variable that is
+used, which is how a linter loses its reader's trust.
 
 ### `UnprefixedNameInNamespacedSchema` is a hint, not a verdict
 

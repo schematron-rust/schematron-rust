@@ -68,7 +68,7 @@ pub use ast::{
     Axis, BinaryOp, Expr, ItemType, NameTest, NodeTest, Occurrence, PathExpr, PathStart,
     Quantifier, SequenceType, Step, TypeOp,
 };
-pub use context::{Documents, EvalContext, Namespaces, Variables};
+pub use context::{Documents, EvalContext, Keys, Namespaces, Variables};
 pub use temporal::{
     add_months, add_seconds, from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind,
 };

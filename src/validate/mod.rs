@@ -27,7 +27,7 @@
 //! let report = schema.validate_with(&document, &options)?;
 //!
 //! assert_eq!(report.count_failures(), 1);
-//! assert_eq!(report.failures().next().unwrap().location, "/*:invoice[1]");
+//! assert_eq!(report.failures().next().unwrap().location, "/invoice[1]");
 //! # Ok::<(), schematron::Error>(())
 //! ```
 

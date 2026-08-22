@@ -185,6 +185,67 @@ fn bench_parallel_patterns(c: &mut Criterion) {
     }
 }
 
+/// A cross-reference document: `count` parts, and `count` lines referencing
+/// them. This is the shape that makes keys worth having.
+fn cross_reference_document(count: usize) -> String {
+    let mut source = String::from("<order><parts>");
+    for i in 0..count {
+        source.push_str(&format!("<part id=\"P{i}\"/>"));
+    }
+    source.push_str("</parts>");
+    for i in 0..count {
+        source.push_str(&format!("<line ref=\"P{i}\"/>"));
+    }
+    source.push_str("</order>");
+    source
+}
+
+/// The same constraint with and without a key.
+///
+/// Without one, `//part[@id = current()/@ref]` re-scans every part for every
+/// line, so the work is quadratic. With one, the index is built once and each
+/// lookup is a hash probe. The gap is the entire justification for the
+/// feature, so it is measured rather than asserted.
+fn bench_keys(c: &mut Criterion) {
+    const WITH_KEY: &str = r#"
+    <schema xmlns="http://purl.oclc.org/dsdl/schematron">
+      <key name="parts" match="part" use="@id"/>
+      <pattern>
+        <rule context="line">
+          <assert test="key('parts', @ref)">No such part.</assert>
+        </rule>
+      </pattern>
+    </schema>
+    "#;
+
+    const WITHOUT_KEY: &str = r#"
+    <schema xmlns="http://purl.oclc.org/dsdl/schematron">
+      <pattern>
+        <rule context="line">
+          <assert test="//part[@id = current()/@ref]">No such part.</assert>
+        </rule>
+      </pattern>
+    </schema>
+    "#;
+
+    let with_key = Schema::from_str(WITH_KEY).unwrap();
+    let without_key = Schema::from_str(WITHOUT_KEY).unwrap();
+
+    for count in [200_usize, 1_000] {
+        let document = Document::from_str(&cross_reference_document(count)).unwrap();
+        let mut group = c.benchmark_group(format!("cross_reference_{count}"));
+
+        group.bench_function("with_key", |b| {
+            b.iter(|| with_key.validate(black_box(&document)).unwrap());
+        });
+        group.bench_function("without_key", |b| {
+            b.iter(|| without_key.validate(black_box(&document)).unwrap());
+        });
+
+        group.finish();
+    }
+}
+
 criterion_group!(
     benches,
     bench_compile_schema,
@@ -193,6 +254,7 @@ criterion_group!(
     bench_compile_once_validate_many,
     bench_fired_rule_recording,
     bench_report_rendering,
-    bench_parallel_patterns
+    bench_parallel_patterns,
+    bench_keys
 );
 criterion_main!(benches);

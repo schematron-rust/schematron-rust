@@ -1,0 +1,14 @@
+# Each rule claims exactly its own two attributes. The ISO reference
+# implementation instead lets the `@x` rule claim all four, because libxslt's
+# template matcher ignores the namespace on an unprefixed attribute name test
+# — a bug contradicted by libxml2's own XPath in the second pattern below,
+# which counts correctly. See spec/conformance.md.
+#
+# The order is document order of the matched nodes, not rule order, so `c`'s
+# two attributes come before `d`'s.
+report | /root[1]/c[1]/@x | @x claims x on c
+report | /root[1]/c[1]/@*[local-name()='x' and namespace-uri()='http://example.com/p'] | @p:x claims p:x on c
+report | /root[1]/d[1]/@x | @x claims x on d
+report | /root[1]/e[1]/@*[local-name()='x' and namespace-uri()='http://example.com/p'] | @p:x claims p:x on e
+report | /root[1] | two attributes named x in no namespace
+report | /root[1] | two attributes named x in the p namespace

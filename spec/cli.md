@@ -51,12 +51,12 @@ otherwise `error` for a failed assertion or `report` for a successful report.
 
 ```
 examples/invoice-bad.xml:
-  error    /*:invoice[1]
+  error    /invoice[1]
            An invoice must have an id.
-  error    /*:invoice[1]/*:line[1]
+  error    /invoice[1]/line[1]
            Quantity must be positive, but is -2.
            - Quantity is the number of units ordered. It must be a positive number.
-  warning  /*:invoice[1]
+  warning  /invoice[1]
            Total is 99.00 but the lines plus tax come to 18.
   3 findings: 3 failed asserts, 0 reports
 ```

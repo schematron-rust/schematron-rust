@@ -386,7 +386,40 @@ are dates. The first assertion has already reported the ones that are not.
 <assert test="b instance of element()">…</assert>
 ```
 
-## 15. Using the library
+## 15. Cross-references, and why they need a key
+
+"Every `@ref` must name a part that exists" is the most common expensive
+thing a schema does. Written directly it is quadratic:
+
+```xml
+<!-- re-scans every part, for every line -->
+<assert test="//part[@id = current()/@ref]">…</assert>
+```
+
+A key builds the index once:
+
+```xml
+<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+  <key name="parts" match="part" use="@id"/>
+  <pattern>
+    <rule context="line">
+      <assert test="key('parts', @ref)">
+        No part has id <value-of select="@ref"/>.
+      </assert>
+    </rule>
+  </pattern>
+</schema>
+```
+
+On the crate's own benchmark, a thousand references take about 189 ms without
+a key and about 0.8 ms with one. The gap grows with the document, because the
+difference is one of complexity rather than a constant factor.
+
+`<sch:key>` is a Schematron 1.5 element that ISO dropped, and this crate keeps
+as an extension — a schema using it will not run on a processor that does
+not. [keys.md](keys.md) states that trade.
+
+## 16. Using the library
 
 ```rust
 use schematron::{Document, Schema};
@@ -407,7 +440,7 @@ fn main() -> schematron::Result<()> {
 Compile the schema once and reuse it. `Schema` is `Send + Sync`, so validating
 a directory of documents in parallel needs no extra machinery.
 
-## 16. When a schema seems to do nothing
+## 17. When a schema seems to do nothing
 
 This happens to everyone once. There are two causes, and the CLI distinguishes
 them:
@@ -423,7 +456,7 @@ schematron -s rules.sch --explain            # what will this schema do?
   pattern claimed the node. See step 4. `--explain` flags every rule that can
   only see leftovers.
 
-## 17. Where to go next
+## 18. Where to go next
 
 - [validation.md](validation.md) — the exact algorithm, if a result surprises you
 - [xpath.md](xpath.md) — what the expression language does and does not have

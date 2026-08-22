@@ -148,6 +148,9 @@ impl Report {
     pub fn fired_rules(&self) -> impl Iterator<Item = &FiredRule>;
     pub fn count_fired_rules(&self) -> usize;
 
+    /// Parses an SVRL document back into a report.
+    pub fn from_svrl(source: &str) -> Result<Report>;
+
     pub fn to_svrl(&self) -> String;
     pub fn to_svrl_with(&self, options: &SvrlOptions) -> String;
     pub fn to_text(&self) -> String;

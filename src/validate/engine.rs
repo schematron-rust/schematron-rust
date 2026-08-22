@@ -15,8 +15,8 @@ use crate::schema::model::{Content, Let, LetValue, Pattern, Rule, SchemaModel};
 use crate::schema::Schema;
 use crate::xml::{Document, NodeId};
 use crate::xpath::{
-    evaluate, Axis, BinaryOp, Documents, EvalContext, Expr, NodeTest, PathExpr, PathStart, Step,
-    Value, Variables,
+    evaluate, Axis, BinaryOp, Documents, EvalContext, Expr, Keys, NodeTest, PathExpr, PathStart,
+    Step, Value, Variables,
 };
 
 /// How many times validation may re-run to load documents `document()` asked
@@ -30,27 +30,40 @@ const MAX_DOCUMENT_PASSES: usize = 8;
 
 /// Everything that stays fixed for the length of one validation pass.
 ///
-/// Bundled because these four travel together through every step of the
+/// Bundled because these all travel together through every step of the
 /// algorithm, and threading them individually turned each helper's signature
 /// into a wall of parameters that obscured the one argument that varies.
+///
+/// `document` and `keys` are adjacent on purpose: a key indexes one document,
+/// so the two change together and `Run::on` replaces both at once.
 #[derive(Clone, Copy)]
 struct Run<'a> {
     schema: &'a Schema,
+    /// The tree being validated. This is the target document for a pattern
+    /// with `@documents`, not necessarily the instance.
+    document: &'a Document,
+    /// The named indexes `key()` looks up, over `document`.
+    keys: &'a Keys,
+    documents: &'a Documents,
     /// The instant the clock functions report, read once for the whole run.
     current_time: f64,
     /// The timezone a date with no offset is read as being in.
     implicit_timezone: i32,
-    /// The tree being validated. This is the target document for a pattern
-    /// with `@documents`, not necessarily the instance.
-    document: &'a Document,
-    documents: &'a Documents,
     options: &'a ValidateOptions,
 }
 
 impl<'a> Run<'a> {
-    /// The same run, pointed at a different tree.
-    fn on(self, document: &'a Document) -> Self {
-        Self { document, ..self }
+    /// The same run, pointed at a different tree with its own key indexes.
+    ///
+    /// A key indexes one document, as it does in XSLT, so a pattern with
+    /// `@documents` gets indexes built over its target rather than over the
+    /// instance.
+    fn on(self, document: &'a Document, keys: &'a Keys) -> Self {
+        Self {
+            document,
+            keys,
+            ..self
+        }
     }
 
     /// An evaluation context for `node`, wired to this run's registry.
@@ -60,6 +73,7 @@ impl<'a> Run<'a> {
             .with_version(self.schema.version())
             .with_current_time(self.current_time)
             .with_implicit_timezone(self.implicit_timezone)
+            .with_keys(self.keys)
     }
 }
 
@@ -134,12 +148,14 @@ fn validate_once(
     documents: &Documents,
     options: &ValidateOptions,
 ) -> Result<Report> {
+    let keys = build_keys(schema, document)?;
     let run = Run {
         schema,
+        document,
+        keys: &keys,
+        documents,
         current_time: options.resolve_current_time(),
         implicit_timezone: options.implicit_timezone.unwrap_or(0),
-        document,
-        documents,
         options,
     };
     let model = schema.model();
@@ -183,8 +199,19 @@ fn run_patterns_sequentially(
     let mut failures = 0;
     for pattern in active {
         for (label, target) in pattern_targets(run, pattern)? {
+            let document = target.as_ref().unwrap_or(run.document);
+            // A `@documents` target is a different document, so it needs its
+            // own indexes; the instance reuses the ones built for the run.
+            let target_keys;
+            let keys = match &target {
+                Some(_) => {
+                    target_keys = build_keys(run.schema, document)?;
+                    &target_keys
+                }
+                None => run.keys,
+            };
             let outcome = run_pattern(
-                run.on(target.as_ref().unwrap_or(run.document)),
+                run.on(document, keys),
                 pattern,
                 label,
                 variables,
@@ -243,10 +270,19 @@ fn run_patterns_in_parallel(
                         let mut variables = variables.clone();
                         let mut failures = 0;
                         for (label, target) in pattern_targets(run, pattern)? {
+                            let document = target.as_ref().unwrap_or(run.document);
+                            let target_keys;
+                            let keys = match &target {
+                                Some(_) => {
+                                    target_keys = build_keys(run.schema, document)?;
+                                    &target_keys
+                                }
+                                None => run.keys,
+                            };
                             out.push((
                                 offset + index,
                                 run_pattern(
-                                    run.on(target.as_ref().unwrap_or(run.document)),
+                                    run.on(document, keys),
                                     pattern,
                                     label,
                                     &mut variables,
@@ -278,6 +314,75 @@ fn run_patterns_in_parallel(
     }
     ordered.sort_by_key(|(index, _)| *index);
     Ok(ordered.into_iter().map(|(_, pattern)| pattern).collect())
+}
+
+/// Builds every declared key's index over one document.
+///
+/// Eager rather than lazy: a schema that declares a key almost certainly uses
+/// it, and building on demand would need interior mutability in the
+/// evaluation path for no real gain. The linter reports a key nothing looks
+/// up, which is the case eagerness would waste work on. See `spec/keys.md`.
+fn build_keys(schema: &Schema, document: &Document) -> Result<Keys> {
+    let mut keys = Keys::new();
+    if schema.keys().is_empty() {
+        return Ok(keys);
+    }
+
+    let variables = Variables::new();
+    for key in schema.keys() {
+        // Declared even when it matches nothing, so that a lookup can tell
+        // "no such node" from "no such key".
+        keys.declare(key.name.clone());
+
+        let matched = {
+            let expr = schema.expression(&key.match_pattern)?;
+            let rooted = root_match_expression(expr);
+            let context = EvalContext::new(document, document.root(), &variables, schema.namespaces())
+                .with_version(schema.version());
+            match evaluate(&rooted, &context).map_err(|e| {
+                Error::xpath_eval(format!("key[@name='{}']/@match", key.name), e.message)
+            })? {
+                Value::NodeSet(nodes) => nodes,
+                other => {
+                    return Err(Error::xpath_eval(
+                        format!("key[@name='{}']/@match", key.name),
+                        format!(
+                            "a key's @match must select nodes, but this one evaluated \
+                             to a {}",
+                            other.type_name()
+                        ),
+                    ))
+                }
+            }
+        };
+
+        let use_expr = schema.expression(&key.use_expression)?;
+        for node in matched {
+            let context = EvalContext::new(document, node, &variables, schema.namespaces())
+                .with_version(schema.version());
+            let value = evaluate(use_expr, &context).map_err(|e| {
+                Error::xpath_eval(format!("key[@name='{}']/@use", key.name), e.message)
+            })?;
+
+            // A `use` selecting several nodes indexes the matched node under
+            // each of their values, as XSLT does.
+            match value {
+                Value::NodeSet(nodes) => {
+                    for value_node in nodes {
+                        keys.insert(
+                            key.name.clone(),
+                            document.string_value(value_node),
+                            node,
+                        );
+                    }
+                }
+                other => {
+                    keys.insert(key.name.clone(), other.to_xpath_string(document), node);
+                }
+            }
+        }
+    }
+    Ok(keys)
 }
 
 /// Which phase to run: the caller's choice, the schema's default, or all.

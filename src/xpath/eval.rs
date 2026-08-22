@@ -337,6 +337,25 @@ fn compare_relational(op: BinaryOp, left: &Value, right: &Value, document: &Docu
         _ => unreachable!("caller limits the operators"),
     };
 
+    // XPath 1.0 section 3.4: when one side is a node-set and the other a
+    // boolean, the node-set is converted with `boolean()` — that is, to
+    // whether it is non-empty — and the two booleans are then compared as
+    // numbers. It is *not* existential over the nodes, and the difference
+    // shows when the node-set is empty: `z >= false()` is `0 >= 0`, true,
+    // whereas an existential walk over no nodes yields false.
+    let as_boolean = |value: &Value, other: &Value| -> Option<Value> {
+        match (value, other) {
+            (Value::NodeSet(nodes), Value::Boolean(_)) => {
+                Some(Value::Boolean(!nodes.is_empty()))
+            }
+            _ => None,
+        }
+    };
+    let converted_left = as_boolean(left, right);
+    let converted_right = as_boolean(right, left);
+    let left = converted_left.as_ref().unwrap_or(left);
+    let right = converted_right.as_ref().unwrap_or(right);
+
     let numbers = |value: &Value| -> Vec<f64> {
         match value {
             Value::NodeSet(nodes) => nodes
@@ -1527,6 +1546,40 @@ mod tests {
         assert!(!boolean(DOC, "b/@id > 2"));
         // A non-numeric string becomes NaN, and NaN fails every comparison.
         assert!(!boolean(DOC, "'x' > 0"));
+    }
+
+    #[test]
+    fn a_node_set_against_a_boolean_converts_rather_than_iterating() {
+        // XPath 1.0 section 3.4. `boolean()` the node-set, then compare the
+        // two booleans as numbers: true is 1, false is 0.
+        //
+        // The empty node-set is the case that separates this from the
+        // existential rule the other operand types use. An existential walk
+        // over no nodes is false whatever the comparison; the conversion
+        // rule gives `0 >= 0`, which is true.
+        assert!(boolean(DOC, "nothing >= false()"));
+        assert!(boolean(DOC, "nothing < true()"));
+        assert!(!boolean(DOC, "nothing > false()"));
+        assert!(!boolean(DOC, "nothing >= true()"));
+
+        // A non-empty node-set is `true`, whatever the nodes contain, so the
+        // string values never enter into it.
+        assert!(boolean(DOC, "b >= false()"));
+        assert!(boolean(DOC, "b > false()"));
+        assert!(!boolean(DOC, "b < true()"));
+        assert!(boolean(DOC, "b >= true()"));
+    }
+
+    #[test]
+    fn sum_of_an_empty_node_set_is_positive_zero() {
+        assert_eq!(number(DOC, "sum(nothing)"), 0.0);
+        assert!(number(DOC, "sum(nothing)").is_sign_positive());
+
+        // `0.0 == -0.0` is true in IEEE 754, so the equality above passes
+        // either way and proves nothing on its own. Division is what makes
+        // the sign observable, and it is how the bug reached daylight.
+        assert_eq!(number(DOC, "1 div sum(nothing)"), f64::INFINITY);
+        assert_eq!(number(DOC, "-1 div sum(nothing)"), f64::NEG_INFINITY);
     }
 
     #[test]

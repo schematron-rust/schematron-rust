@@ -1,4 +1,4 @@
 # The rule's @subject moves the first finding onto <total>; the assertion's
 # own @subject overrides it for the second.
-assert | /*:invoice[1]/*:total[1] | The total must be positive.
-assert | /*:invoice[1] | The invoice needs an id.
+assert | /invoice[1]/total[1] | The total must be positive.
+assert | /invoice[1] | The invoice needs an id.

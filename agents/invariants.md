@@ -70,7 +70,8 @@ function library trusted that the schema compiler had checked arity — but
 
 ### An evaluation error is never a false assertion
 
-If an XPath test cannot be evaluated — unbound variable, type error — that is
+If an XPath test cannot be evaluated — a variable out of scope, a type error —
+that is
 `Err`, and validation stops. It is **never** downgraded to "the test was
 false", because a false `assert` means the document is invalid, and silently
 turning a broken schema into a stream of failures, or worse into a pass, is
@@ -104,6 +105,44 @@ context matches. Not "every matching rule".
 Every pattern gets its own pass over the document.
 
 - Corpus: `tests/corpus/patterns-are-independent/`
+
+### SVRL round-trips
+
+Every report the writer emits must parse back identical, apart from
+`FiredRule::location`, which SVRL has nowhere to record. The corpus round-trip
+test checks this for every case — which is a far stronger check on the writer
+than asserting on substrings of its output.
+
+Keep it non-vacuous. The check passed for months' worth of cases while the
+`flag` attribute could be deleted from the writer unnoticed, because no corpus
+case set one; `tests/corpus/rich-metadata/` exists to exercise every optional
+field. When adding a field to a report, add it there too.
+
+- Test: `tests/corpus.rs::every_corpus_report_survives_an_svrl_round_trip`
+
+### A misspelled variable fails when the schema loads
+
+An unknown function and an undeclared namespace prefix are compile-time
+errors, so a misspelled variable is one too — consistency matters more here
+than the small extra analysis. The check is against the union of every name
+any `let` binds, which catches every typo with no false positives; a variable
+that exists but is out of reach stays a validation error. See
+`spec/parsing.md`.
+
+- Test: `tests/validation.rs::a_variable_nothing_binds_is_caught_when_the_schema_loads`
+- Test: `tests/validation.rs::an_evaluation_error_is_an_error_not_a_silent_false`
+
+### A missing key is an error, not an empty result
+
+`key('prats', @ref)` on an undeclared key is an error naming it. Returning an
+empty node-set would make the assertion quietly pass, so a typo in a key name
+would silently disable the check it guards.
+
+A key that matches *no nodes* is different, and is still declared: "no such
+node" and "no such key" are distinct mistakes.
+
+- Test: `tests/keys.rs::looking_up_an_undeclared_key_is_an_error`
+- Test: `tests/keys.rs::a_key_matching_nothing_is_still_declared`
 
 ### `castable as` reports, `cast as` raises
 
@@ -193,8 +232,17 @@ behaviour for it.
 Do not "fix" any of these:
 
 - Node-set comparison is existential, so `a = b` and `a != b` can both be true.
+- Except against a boolean, which converts the node-set with `boolean()`
+  instead of iterating it. So an empty node-set gives `missing >= false()`
+  **true** — `0 >= 0` — while `missing = 'x'` and `missing != 'x'` are both
+  false. This one was a real bug, found by differential testing against the
+  reference; do not "simplify" it back into the bullet above.
 - Relational operators always convert to number, so `'x' > 0` is false rather
   than an error.
+- `sum()` over an empty node-set is **positive** zero, so `1 div sum(none)`
+  is Infinity. It is folded from `0.0` rather than written `.sum()`, because
+  Rust's `Sum` for `f64` starts from `-0.0` — the true additive identity, and
+  the wrong answer here. Do not "tidy" the fold back into `.sum()`.
 - `string(number)` never uses exponential notation: `1e21` prints in full.
 - An unprefixed name matches **no namespace**. There is no default namespace.
 

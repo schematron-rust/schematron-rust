@@ -385,6 +385,56 @@ fn the_xpath_two_function_list_in_the_spec_matches_the_engine() {
 }
 
 #[test]
+fn the_lint_table_in_the_spec_matches_the_linter() {
+    // Every lint must be documented, and every documented lint must exist.
+    // A lint nobody can look up is a lint nobody acts on.
+    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/linting.md"))
+        .expect("spec/linting.md should exist");
+
+    // The kind names as the source spells them, taken from the source rather
+    // than from a list here, so the two cannot drift.
+    let source = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lint.rs"))
+        .expect("src/lint.rs should exist");
+
+    let mut kinds = Vec::new();
+    for line in source.lines() {
+        let Some(rest) = line.trim().strip_prefix("LintKind::") else {
+            continue;
+        };
+        let Some((name, _)) = rest.split_once(" => \"") else {
+            continue;
+        };
+        kinds.push(name.to_string());
+    }
+    assert!(!kinds.is_empty(), "no LintKind variants were found");
+
+    let documented: Vec<String> = spec
+        .lines()
+        .filter_map(|line| line.strip_prefix("| `"))
+        .filter_map(|rest| rest.split('`').next())
+        .map(ToString::to_string)
+        .collect();
+
+    for kind in &kinds {
+        assert!(
+            documented.contains(kind),
+            "spec/linting.md does not document the {kind} lint"
+        );
+    }
+    for name in &documented {
+        // The table also lists non-lint rows elsewhere in the file; only
+        // check rows that look like a variant name.
+        if !name.chars().next().is_some_and(char::is_uppercase) {
+            continue;
+        }
+        assert!(
+            kinds.contains(name),
+            "spec/linting.md documents a {name} lint, which does not exist"
+        );
+    }
+}
+
+#[test]
 fn every_runnable_example_is_referenced_from_the_documentation() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let readme = fs::read_to_string(root.join("README.md")).expect("README.md");

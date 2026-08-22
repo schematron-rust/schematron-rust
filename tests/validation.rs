@@ -274,7 +274,7 @@ fn subject_moves_the_reported_location() {
     ))
     .unwrap();
     let report = schema.validate(&Document::from_str("<a><b/></a>").unwrap()).unwrap();
-    assert_eq!(report.failures().next().unwrap().location, "/*:a[1]/*:b[1]");
+    assert_eq!(report.failures().next().unwrap().location, "/a[1]/b[1]");
 }
 
 #[test]
@@ -351,16 +351,34 @@ fn max_failures_stops_early() {
 
 #[test]
 fn an_evaluation_error_is_an_error_not_a_silent_false() {
-    // `$missing` is bound nowhere, so the test cannot be evaluated. Treating
-    // that as "false" would let a broken schema pass a broken document.
+    // `$elsewhere` is declared, so the schema compiles, but it is bound in
+    // another pattern and so is out of reach here. The test cannot be
+    // evaluated, and treating that as "false" would let a broken schema pass
+    // a broken document.
     let schema = Schema::from_str(&schema_with(
-        r#"<pattern><rule context="a"><assert test="$missing">m</assert></rule></pattern>"#,
+        r#"<pattern><let name="elsewhere" value="1"/>
+             <rule context="a"><assert test="true()">m</assert></rule>
+           </pattern>
+           <pattern><rule context="a"><assert test="$elsewhere">m</assert></rule></pattern>"#,
     ))
     .unwrap();
     let error = schema
         .validate(&Document::from_str("<a/>").unwrap())
         .unwrap_err();
-    assert_contains!(error.to_string(), "$missing");
+    assert_contains!(error.to_string(), "$elsewhere");
+}
+
+#[test]
+fn a_variable_nothing_binds_is_caught_when_the_schema_loads() {
+    // A misspelling should not wait until it aborts somebody's validation.
+    let error = Schema::from_str(&schema_with(
+        r#"<let name="limit" value="10"/>
+           <pattern><rule context="a"><assert test="$lmit">m</assert></rule></pattern>"#,
+    ))
+    .unwrap_err();
+    assert_contains!(error.to_string(), "$lmit");
+    // And it says what the schema does declare.
+    assert_contains!(error.to_string(), "limit");
 }
 
 #[test]

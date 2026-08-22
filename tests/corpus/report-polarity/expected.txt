@@ -1,2 +1,2 @@
 # A report fires on TRUE, which is the opposite of an assert.
-report | /*:list[1]/*:item[2] | This item is deprecated.
+report | /list[1]/item[2] | This item is deprecated.

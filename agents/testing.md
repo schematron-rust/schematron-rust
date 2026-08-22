@@ -37,7 +37,7 @@ ignored — **use them**, and explain what the case is demonstrating:
 
 ```
 # The broad rule claims the node, so the narrower rule after it is dead code.
-assert | /*:a[1] | claimed by the broad rule
+assert | /a[1] | claimed by the broad rule
 ```
 
 No Rust changes are needed. `tests/corpus.rs` discovers directories, and a
@@ -78,6 +78,23 @@ cargo bench --bench bench_validate -- --warm-up-time 1 --measurement-time 2 --sa
 `validate` group at 1 000 and 10 000 elements exposed a quadratic in SVRL
 location generation; the fix was a 14× speedup. If you change anything that
 runs per node, check that group's scaling ratio.
+
+## Differential testing
+
+`tests/differential.rs` runs every corpus schema through the ISO Schematron
+reference implementation and compares the findings. It is `#[ignore]`d
+because it needs `xsltproc` and third-party stylesheets:
+
+```sh
+sh tests/differential/fetch-skeleton.sh /tmp/skeleton
+SCHEMATRON_SKELETON=/tmp/skeleton cargo test --test differential -- --ignored
+```
+
+Run it when changing validation semantics. If a case starts differing, decide
+which implementation is right *before* adding it to `KNOWN_DIVERGENCES` — the
+list is for differences that have been understood, not for silencing the test.
+Both lists are checked in both directions, so an entry that no longer
+describes reality fails just as loudly.
 
 ## Fuzzing
 

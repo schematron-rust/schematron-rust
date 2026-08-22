@@ -59,6 +59,18 @@ pub enum LintKind {
     ConstantTest,
     /// A pattern that no phase activates, in a schema that declares phases.
     PatternInNoPhase,
+    /// A `key` that no expression looks up.
+    UnreferencedKey,
+    /// A `let` whose name no expression mentions.
+    UnreferencedVariable,
+    /// A rule that matches nodes and reports nothing.
+    RuleWithNoAssertions,
+    /// A pattern with no rules, which cannot do anything.
+    PatternWithNoRules,
+    /// Two assertions in one rule testing the same thing.
+    DuplicateAssertionTest,
+    /// A phase that activates no pattern.
+    PhaseWithNoPatterns,
 }
 
 impl LintKind {
@@ -74,6 +86,12 @@ impl LintKind {
             LintKind::EmptyMessage => "empty-message",
             LintKind::ConstantTest => "constant-test",
             LintKind::PatternInNoPhase => "pattern-in-no-phase",
+            LintKind::UnreferencedKey => "unreferenced-key",
+            LintKind::UnreferencedVariable => "unreferenced-variable",
+            LintKind::RuleWithNoAssertions => "rule-with-no-assertions",
+            LintKind::PatternWithNoRules => "pattern-with-no-rules",
+            LintKind::DuplicateAssertionTest => "duplicate-assertion-test",
+            LintKind::PhaseWithNoPatterns => "phase-with-no-patterns",
         }
     }
 }
@@ -146,36 +164,62 @@ impl Schema {
             lint_pattern_phases(self, pattern, &location, &mut lints);
         }
 
+        lint_phases(self, &mut lints);
+        lint_variables(self, &mut lints);
         lint_unreferenced(self, &mut lints);
         lints
     }
 
     fn lint_pattern(&self, pattern: &Pattern, location: &str, lints: &mut Vec<Lint>) {
-        // A context that claims every node of its kind makes every later rule
-        // in the pattern unreachable, whatever those rules say.
-        let mut claimed_by: Option<(&str, &str)> = None;
-        let mut seen: Vec<&str> = Vec::new();
+        if pattern.rules.is_empty() {
+            lints.push(Lint::new(
+                LintKind::PatternWithNoRules,
+                location,
+                "this pattern has no rules, so it cannot do anything",
+                "add a <rule>, or delete the pattern.",
+            ));
+        }
 
+        // A rule is unreachable when an earlier rule in the same pattern
+        // matches everything it would. Comparison is pairwise, because the
+        // relation is between two contexts rather than a property of one.
         for (index, rule) in pattern.rules.iter().enumerate() {
             let Some(context) = rule.context.as_deref() else {
                 continue;
             };
             let rule_location = format!("{location}/{}", rule_step(index));
 
-            if let Some((earlier, kind)) = claimed_by {
+            let duplicate = pattern.rules[..index]
+                .iter()
+                .filter_map(|earlier| earlier.context.as_deref())
+                .find(|&earlier| earlier == context);
+
+            // The exact-duplicate case is checked first: it is a special case
+            // of subsumption, and its message is the more specific one.
+            let shadow = if duplicate.is_some() {
+                None
+            } else {
+                pattern.rules[..index].iter().find_map(|earlier| {
+                    let earlier_context = earlier.context.as_deref()?;
+                    self.subsumes(earlier_context, context)
+                        .then_some(earlier_context)
+                })
+            };
+
+            if let Some(earlier) = shadow {
                 lints.push(Lint::new(
                     LintKind::UnreachableRule,
                     &rule_location,
                     format!(
                         "the rule with context {context:?} can never fire: an earlier \
-                         rule in the same pattern, context={earlier:?}, already claims \
-                         every {kind}"
+                         rule in the same pattern, context={earlier:?}, already matches \
+                         every node this one would"
                     ),
                     "within one pattern a node is processed by the first matching rule \
                      only. Move this rule into a pattern of its own, or put it before \
                      the broader rule.",
                 ));
-            } else if let Some(earlier) = seen.iter().find(|&&c| c == context) {
+            } else if let Some(earlier) = duplicate {
                 lints.push(Lint::new(
                     LintKind::DuplicateRuleContext,
                     &rule_location,
@@ -185,10 +229,7 @@ impl Schema {
                     ),
                     "merge the two rules, or move this one into a pattern of its own.",
                 ));
-            } else if let Some(kind) = universal_context(self, context) {
-                claimed_by = Some((context, kind));
             }
-            seen.push(context);
 
             self.lint_rule(rule, &rule_location, lints);
         }
@@ -197,6 +238,35 @@ impl Schema {
     fn lint_rule(&self, rule: &Rule, location: &str, lints: &mut Vec<Lint>) {
         if let Some(context) = rule.context.as_deref() {
             self.lint_unprefixed(context, location, "@context", lints);
+        }
+
+        if rule.assertions().next().is_none() {
+            lints.push(Lint::new(
+                LintKind::RuleWithNoAssertions,
+                location,
+                "this rule matches nodes and reports nothing",
+                "it still claims those nodes, so a later rule in the same pattern \
+                 will not see them. Add an assert or report, or delete the rule.",
+            ));
+        }
+
+        // Two assertions testing the same thing: whichever fires, the reader
+        // cannot tell which was meant.
+        let mut seen: Vec<&str> = Vec::new();
+        for assertion in rule.assertions() {
+            if seen.contains(&assertion.test.as_str()) {
+                lints.push(Lint::new(
+                    LintKind::DuplicateAssertionTest,
+                    location,
+                    format!(
+                        "two assertions in this rule test {:?}",
+                        assertion.test
+                    ),
+                    "merge them, or check whether one was meant to test something \
+                     else.",
+                ));
+            }
+            seen.push(&assertion.test);
         }
 
         for (index, assertion) in rule.assertions().enumerate() {
@@ -273,29 +343,126 @@ impl Schema {
     }
 }
 
-/// A context that claims every node of some kind, making later rules in the
-/// same pattern unreachable.
+/// Whether an expression calls `key()` with this name as a literal.
 ///
-/// Deliberately limited to the three certain cases. General subsumption of
-/// XPath patterns is not practical to decide, and a linter with false
-/// positives gets switched off — after which it catches nothing at all.
-fn universal_context(schema: &Schema, context: &str) -> Option<&'static str> {
-    let expr = schema.expression(context).ok()?;
-    let Expr::Path(path) = expr else {
-        return None;
-    };
-    if path.start != PathStart::Context || path.steps.len() != 1 {
-        return None;
+/// A computed name cannot be traced, so a schema that builds one is
+/// conservatively treated as looking up every key.
+fn looks_up_key(expr: &Expr, name: &str) -> bool {
+    match expr {
+        Expr::Function { name: called, args } if called == "key" => {
+            match args.first() {
+                Some(Expr::Literal(literal)) => literal == name,
+                // A computed name might be any key, so assume it is this one.
+                Some(_) => true,
+                None => false,
+            }
+        }
+        Expr::Function { args, .. } => args.iter().any(|arg| looks_up_key(arg, name)),
+        Expr::Literal(_) | Expr::Number(_) | Expr::Variable(_) => false,
+        Expr::Negate(inner) => looks_up_key(inner, name),
+        Expr::Binary(_, left, right) => {
+            looks_up_key(left, name) || looks_up_key(right, name)
+        }
+        Expr::TypeOp { value, .. } => looks_up_key(value, name),
+        Expr::Sequence(members) => members.iter().any(|m| looks_up_key(m, name)),
+        Expr::Range(from, to) => looks_up_key(from, name) || looks_up_key(to, name),
+        Expr::For { input, body, .. } => {
+            looks_up_key(input, name) || looks_up_key(body, name)
+        }
+        Expr::Quantified { input, test, .. } => {
+            looks_up_key(input, name) || looks_up_key(test, name)
+        }
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            looks_up_key(condition, name)
+                || looks_up_key(then_branch, name)
+                || looks_up_key(else_branch, name)
+        }
+        Expr::Path(path) => {
+            let start = match &path.start {
+                PathStart::Expr(expr, predicates) => {
+                    looks_up_key(expr, name)
+                        || predicates.iter().any(|p| looks_up_key(p, name))
+                }
+                PathStart::Root | PathStart::Context => false,
+            };
+            start
+                || path
+                    .steps
+                    .iter()
+                    .any(|step| step.predicates.iter().any(|p| looks_up_key(p, name)))
+        }
     }
-    let step = &path.steps[0];
-    if !step.predicates.is_empty() {
-        return None;
+}
+
+impl Schema {
+    /// Whether every node matching `narrow` also matches `broad`.
+    ///
+    /// Deciding this in general is not practical, so the test is deliberately
+    /// one-directional and conservative: `broad` must carry no predicates,
+    /// and its steps must generalise a **suffix** of `narrow`'s. That covers
+    /// the shapes the mistake actually takes —
+    ///
+    /// | `broad` | `narrow` | why |
+    /// |---|---|---|
+    /// | `*` | `a` | a wildcard generalises a name |
+    /// | `node()` | `text()` | a node test generalises a kind |
+    /// | `a` | `a[@x]` | a predicate only narrows |
+    /// | `b` | `a/b` | a longer path only narrows |
+    ///
+    /// — and reports nothing it is not certain of, because a linter with
+    /// false positives gets switched off, after which it catches nothing.
+    fn subsumes(&self, broad: &str, narrow: &str) -> bool {
+        let (Ok(Expr::Path(broad)), Ok(Expr::Path(narrow))) =
+            (self.expression(broad), self.expression(narrow))
+        else {
+            return false;
+        };
+
+        // Only relative paths are compared. An absolute context is anchored
+        // and the reasoning below does not hold for it.
+        if broad.start != PathStart::Context || narrow.start != PathStart::Context {
+            return false;
+        }
+        // Any predicate on the broader rule could exclude a node, so it is no
+        // longer certainly broader.
+        if broad.steps.iter().any(|step| !step.predicates.is_empty()) {
+            return false;
+        }
+        if broad.steps.is_empty() || broad.steps.len() > narrow.steps.len() {
+            return false;
+        }
+
+        // Align at the end: `b` generalises the `b` of `a/b`.
+        let offset = narrow.steps.len() - broad.steps.len();
+        broad
+            .steps
+            .iter()
+            .zip(&narrow.steps[offset..])
+            .all(|(broad, narrow)| {
+                broad.axis == narrow.axis
+                    && node_test_subsumes(&broad.node_test, &narrow.node_test)
+            })
     }
-    match (&step.node_test, step.axis) {
-        (NodeTest::Wildcard, crate::xpath::Axis::Attribute) => Some("attribute"),
-        (NodeTest::Wildcard, crate::xpath::Axis::Child) => Some("element"),
-        (NodeTest::AnyNode, crate::xpath::Axis::Child) => Some("node"),
-        _ => None,
+}
+
+/// Whether every node passing `narrow` also passes `broad`, on one axis.
+fn node_test_subsumes(broad: &NodeTest, narrow: &NodeTest) -> bool {
+    match (broad, narrow) {
+        // `node()` admits everything the axis yields. `*` admits every node
+        // of the axis's principal type, which is what a name test and a
+        // namespace wildcard both select — so on one axis the two cases
+        // coincide.
+        (NodeTest::AnyNode, _)
+        | (
+            NodeTest::Wildcard,
+            NodeTest::Wildcard | NodeTest::Name(_) | NodeTest::NamespaceWildcard(_),
+        ) => true,
+        // Anything else only subsumes itself.
+        (a, b) => a == b,
     }
 }
 
@@ -416,6 +583,125 @@ fn lint_pattern_phases(schema: &Schema, pattern: &Pattern, location: &str, lints
     ));
 }
 
+/// Reports a phase that activates nothing.
+fn lint_phases(schema: &Schema, lints: &mut Vec<Lint>) {
+    for phase in &schema.model().phases {
+        if phase.actives.is_empty() {
+            lints.push(Lint::new(
+                LintKind::PhaseWithNoPatterns,
+                format!("phase[@id='{}']", phase.id),
+                "this phase activates no pattern, so selecting it validates nothing",
+                "add an <active pattern=\"…\"/>, or delete the phase.",
+            ));
+        }
+    }
+}
+
+/// Reports a `let` whose name no expression anywhere mentions.
+///
+/// Deliberately conservative: it asks whether the name appears at all, not
+/// whether it is in scope where it is used. See `spec/linting.md`.
+fn lint_variables(schema: &Schema, lints: &mut Vec<Lint>) {
+    let model = schema.model();
+
+    let referenced = |name: &str| {
+        schema
+            .expressions
+            .values()
+            .any(|expr| references_variable(expr, name))
+    };
+
+    let mut report = |name: &str, location: String| {
+        if referenced(name) {
+            return;
+        }
+        lints.push(Lint::new(
+            LintKind::UnreferencedVariable,
+            location,
+            format!("no expression mentions ${name}"),
+            "its value is computed anyway — once per node, for a rule-level \
+             binding. Reference it, or delete it.",
+        ));
+    };
+
+    for binding in &model.lets {
+        report(&binding.name, format!("let[@name='{}']", binding.name));
+    }
+    for phase in &model.phases {
+        for binding in &phase.lets {
+            report(
+                &binding.name,
+                format!("phase[@id='{}']/let[@name='{}']", phase.id, binding.name),
+            );
+        }
+    }
+    for (index, pattern) in model.patterns.iter().enumerate() {
+        let where_ = pattern_location(pattern, index);
+        for binding in &pattern.lets {
+            report(&binding.name, format!("{where_}/let[@name='{}']", binding.name));
+        }
+        for (rule_index, rule) in pattern.rules.iter().enumerate() {
+            for binding in &rule.lets {
+                report(
+                    &binding.name,
+                    format!(
+                        "{where_}/{}/let[@name='{}']",
+                        rule_step(rule_index),
+                        binding.name
+                    ),
+                );
+            }
+        }
+    }
+}
+
+/// Whether an expression mentions `$name` anywhere inside it.
+fn references_variable(expr: &Expr, name: &str) -> bool {
+    match expr {
+        Expr::Variable(variable) => variable.to_string() == name,
+        Expr::Literal(_) | Expr::Number(_) => false,
+        Expr::Negate(inner) => references_variable(inner, name),
+        Expr::Binary(_, left, right) => {
+            references_variable(left, name) || references_variable(right, name)
+        }
+        Expr::Function { args, .. } => args.iter().any(|a| references_variable(a, name)),
+        Expr::TypeOp { value, .. } => references_variable(value, name),
+        Expr::Sequence(members) => members.iter().any(|m| references_variable(m, name)),
+        Expr::Range(from, to) => {
+            references_variable(from, name) || references_variable(to, name)
+        }
+        Expr::For { input, body, .. } => {
+            references_variable(input, name) || references_variable(body, name)
+        }
+        Expr::Quantified { input, test, .. } => {
+            references_variable(input, name) || references_variable(test, name)
+        }
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            references_variable(condition, name)
+                || references_variable(then_branch, name)
+                || references_variable(else_branch, name)
+        }
+        Expr::Path(path) => {
+            let start = match &path.start {
+                PathStart::Expr(expr, predicates) => {
+                    references_variable(expr, name)
+                        || predicates.iter().any(|p| references_variable(p, name))
+                }
+                PathStart::Root | PathStart::Context => false,
+            };
+            start
+                || path
+                    .steps
+                    .iter()
+                    .any(|step| step.predicates.iter().any(|p| references_variable(p, name)))
+        }
+    }
+}
+
 fn lint_unreferenced(schema: &Schema, lints: &mut Vec<Lint>) {
     let model = schema.model();
     let assertions = || {
@@ -434,6 +720,23 @@ fn lint_unreferenced(schema: &Schema, lints: &mut Vec<Lint>) {
                 "no assertion references this diagnostic",
                 "reference it with diagnostics=\"…\" on an assert or report, or \
                  delete it.",
+            ));
+        }
+    }
+
+    // A key's index is built eagerly, so one nothing looks up is work done
+    // for nothing on every validation. See spec/keys.md.
+    for key in &model.keys {
+        let looked_up = schema
+            .expressions
+            .values()
+            .any(|expr| looks_up_key(expr, &key.name));
+        if !looked_up {
+            lints.push(Lint::new(
+                LintKind::UnreferencedKey,
+                format!("key[@name='{}']", key.name),
+                "no expression looks this key up",
+                "its index is built on every validation whether or not anything                  uses it. Reference it with key('…', …), or delete it.",
             ));
         }
     }
@@ -503,19 +806,91 @@ mod tests {
     }
 
     #[test]
-    fn node_test_and_attribute_wildcards_also_claim_everything() {
-        for universal in ["node()", "@*"] {
-            let found = kinds(&format!(
-                r#"<pattern>
-                     <rule context="{universal}"><assert test="true()">m</assert></rule>
-                     <rule context="a"><assert test="b">m</assert></rule>
-                   </pattern>"#
-            ));
-            assert!(
-                found.contains(&LintKind::UnreachableRule),
-                "{universal} did not shadow: {found:?}"
-            );
+    fn a_node_test_claims_every_kind_of_node() {
+        let found = kinds(
+            r#"<pattern>
+                 <rule context="node()"><assert test="@id">m</assert></rule>
+                 <rule context="a"><assert test="b">m</assert></rule>
+               </pattern>"#,
+        );
+        assert!(found.contains(&LintKind::UnreachableRule), "{found:?}");
+    }
+
+    #[test]
+    fn an_attribute_wildcard_does_not_shadow_an_element_rule() {
+        // `@*` claims attributes; an element rule after it still fires, as
+        // running the validator confirms. Reporting it was a false positive,
+        // which is how a linter loses its reader.
+        let found = kinds(
+            r#"<pattern>
+                 <rule context="@*"><assert test="true()">m</assert></rule>
+                 <rule context="a"><assert test="b">m</assert></rule>
+               </pattern>"#,
+        );
+        assert!(!found.contains(&LintKind::UnreachableRule), "{found:?}");
+    }
+
+    #[test]
+    fn an_attribute_wildcard_does_shadow_a_named_attribute_rule() {
+        let found = kinds(
+            r#"<pattern>
+                 <rule context="@*"><assert test="true()">m</assert></rule>
+                 <rule context="@x"><assert test="true()">m</assert></rule>
+               </pattern>"#,
+        );
+        assert!(found.contains(&LintKind::UnreachableRule), "{found:?}");
+    }
+
+    #[test]
+    fn a_predicate_only_narrows_so_the_bare_context_shadows_it() {
+        let found = kinds(
+            r#"<pattern>
+                 <rule context="a"><assert test="b">m</assert></rule>
+                 <rule context="a[@x]"><assert test="c">m</assert></rule>
+               </pattern>"#,
+        );
+        assert!(found.contains(&LintKind::UnreachableRule), "{found:?}");
+    }
+
+    #[test]
+    fn a_longer_path_only_narrows_so_the_shorter_one_shadows_it() {
+        let found = kinds(
+            r#"<pattern>
+                 <rule context="b"><assert test="@id">m</assert></rule>
+                 <rule context="a/b"><assert test="@id">m</assert></rule>
+               </pattern>"#,
+        );
+        assert!(found.contains(&LintKind::UnreachableRule), "{found:?}");
+    }
+
+    #[test]
+    fn the_narrower_rule_placed_first_is_the_idiomatic_ordering() {
+        // The else-branch idiom must never be reported.
+        for body in [
+            r#"<pattern>
+                 <rule context="a[@x]"><assert test="c">m</assert></rule>
+                 <rule context="a"><assert test="b">m</assert></rule>
+               </pattern>"#,
+            r#"<pattern>
+                 <rule context="a/b"><assert test="@id">m</assert></rule>
+                 <rule context="b"><assert test="@id">m</assert></rule>
+               </pattern>"#,
+        ] {
+            let found = kinds(body);
+            assert!(!found.contains(&LintKind::UnreachableRule), "{body} -> {found:?}");
         }
+    }
+
+    #[test]
+    fn unrelated_contexts_do_not_shadow_each_other() {
+        let found = kinds(
+            r#"<pattern>
+                 <rule context="a"><assert test="@id">m</assert></rule>
+                 <rule context="b"><assert test="@id">m</assert></rule>
+                 <rule context="c/d"><assert test="@id">m</assert></rule>
+               </pattern>"#,
+        );
+        assert!(!found.contains(&LintKind::UnreachableRule), "{found:?}");
     }
 
     #[test]
@@ -667,6 +1042,101 @@ mod tests {
             r#"<pattern id="one"><rule context="a"><assert test="b">m</assert></rule></pattern>"#,
         );
         assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn a_rule_with_no_assertions_is_reported() {
+        // It still claims its nodes, so a later rule in the pattern will not
+        // see them — which makes an empty rule worse than useless.
+        let found = kinds(r#"<pattern><rule context="a"/></pattern>"#);
+        assert_eq!(found, vec![LintKind::RuleWithNoAssertions]);
+    }
+
+    #[test]
+    fn a_pattern_with_no_rules_is_reported() {
+        let found = kinds(r#"<pattern id="empty"/>"#);
+        assert_eq!(found, vec![LintKind::PatternWithNoRules]);
+    }
+
+    #[test]
+    fn two_assertions_testing_the_same_thing_are_reported() {
+        let found = kinds(
+            r#"<pattern><rule context="a">
+                 <assert test="b">one</assert>
+                 <assert test="b">two</assert>
+               </rule></pattern>"#,
+        );
+        assert_eq!(found, vec![LintKind::DuplicateAssertionTest]);
+    }
+
+    #[test]
+    fn different_tests_in_one_rule_are_not_reported() {
+        let found = kinds(
+            r#"<pattern><rule context="a">
+                 <assert test="b">one</assert>
+                 <assert test="c">two</assert>
+               </rule></pattern>"#,
+        );
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn the_same_test_in_different_rules_is_not_reported() {
+        // Two rules may legitimately check the same thing about different
+        // contexts.
+        let found = kinds(
+            r#"<pattern>
+                 <rule context="a"><assert test="@id">m</assert></rule>
+                 <rule context="b"><assert test="@id">m</assert></rule>
+               </pattern>"#,
+        );
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn a_phase_that_activates_nothing_is_reported() {
+        let found = kinds(
+            r#"<phase id="empty"/>
+               <pattern id="p"><rule context="a"><assert test="b">m</assert></rule></pattern>"#,
+        );
+        // The pattern is in no phase either, which is its own lint.
+        assert!(found.contains(&LintKind::PhaseWithNoPatterns), "{found:?}");
+    }
+
+    #[test]
+    fn a_variable_nothing_mentions_is_reported() {
+        let found = kinds(
+            r#"<let name="unused" value="1"/>
+               <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>"#,
+        );
+        assert_eq!(found, vec![LintKind::UnreferencedVariable]);
+    }
+
+    #[test]
+    fn a_variable_that_is_used_is_not_reported() {
+        for body in [
+            // Schema scope, used in a test.
+            r#"<let name="v" value="1"/>
+               <pattern><rule context="a"><assert test="$v">m</assert></rule></pattern>"#,
+            // Rule scope, used in a message.
+            r#"<pattern><rule context="a">
+                 <let name="v" value="1"/>
+                 <assert test="b"><value-of select="$v"/></assert>
+               </rule></pattern>"#,
+            // Used only inside a predicate.
+            r#"<let name="v" value="1"/>
+               <pattern><rule context="a"><assert test="b[c = $v]">m</assert></rule></pattern>"#,
+            // Used only by another `let`.
+            r#"<let name="v" value="1"/>
+               <let name="w" value="$v + 1"/>
+               <pattern><rule context="a"><assert test="$w">m</assert></rule></pattern>"#,
+        ] {
+            let found = kinds(body);
+            assert!(
+                !found.contains(&LintKind::UnreferencedVariable),
+                "{body} -> {found:?}"
+            );
+        }
     }
 
     #[test]

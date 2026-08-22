@@ -408,6 +408,12 @@ fn parse(source: &str) -> Result<Document> {
     config.trim_text(false);
     config.expand_empty_elements = false;
     config.check_end_names = true;
+    // XML 1.0 section 2.5 forbids `--` inside a comment, and quick-xml does
+    // not check for it unless asked. Left off, `<!-- a -- b -->` parses here
+    // and is rejected by every other XML tool — and a validator that reports
+    // a document valid when its parser is the only one that would read it is
+    // worse than one that refuses.
+    config.check_comments = true;
 
     let mut builder = Builder::new(source);
     let mut open: Vec<NodeId> = vec![builder.doc.root];
@@ -626,6 +632,22 @@ mod tests {
     #[test]
     fn rejects_unclosed_element() {
         assert!(Document::from_str("<a><b></a>").is_err());
+    }
+
+    #[test]
+    fn rejects_a_double_hyphen_inside_a_comment() {
+        // XML 1.0 section 2.5: "For compatibility, the string `--` MUST NOT
+        // occur within comments." A comment may also not end `--->`, which is
+        // the same rule seen from the other end.
+        assert!(Document::from_str("<a><!-- x-- y --></a>").is_err());
+        assert!(Document::from_str("<a><!-- x ---></a>").is_err());
+        assert!(Document::from_str("<a><!--- x ---></a>").is_err());
+        assert!(Document::from_str("<a><!---></a>").is_err());
+
+        // The legal neighbours, including the empty comment.
+        assert!(Document::from_str("<a><!-- x --></a>").is_ok());
+        assert!(Document::from_str("<a><!----></a>").is_ok());
+        assert!(Document::from_str("<a><!-- - --></a>").is_ok());
     }
 
     #[test]

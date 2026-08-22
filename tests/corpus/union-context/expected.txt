@@ -1,2 +1,2 @@
-assert | /*:r[1]/*:a[1] | matched a
-assert | /*:r[1]/*:b[1] | matched b
+assert | /r[1]/a[1] | matched a
+assert | /r[1]/b[1] | matched b

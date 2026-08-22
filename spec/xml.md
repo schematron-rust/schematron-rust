@@ -71,7 +71,11 @@ Handled:
   (`xmlns=""`), with correct scoping.
 - The five predefined entities and numeric character references.
 - CDATA sections, merged into adjacent text.
-- Comments and processing instructions, preserved as nodes.
+- Comments and processing instructions, preserved as nodes. A comment
+  containing `--`, or ending `--->`, is **rejected**: XML 1.0 section 2.5
+  forbids it, and the underlying tokeniser does not check unless asked. A
+  document only this parser would accept is worse than one it refuses, since
+  the whole point of the answer is that other tools would agree with it.
 - `xml:` prefix bound implicitly to `http://www.w3.org/XML/1998/namespace`.
 
 Deliberately not handled, and reported as errors rather than guessed at:

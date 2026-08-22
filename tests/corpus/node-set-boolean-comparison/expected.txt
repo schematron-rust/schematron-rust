@@ -1,0 +1,8 @@
+# Only the three comparisons that are true under section 3.4's conversion
+# rule fire. Every "must not fire" line is absent, which is the point of the
+# case: an existential reading of the boolean rule would make the first two
+# false, and a value-inspecting reading would make the fourth depend on the
+# text content.
+report | /a[1] | empty node-set >= false() is 0 >= 0
+report | /a[1] | empty node-set < true() is 0 < 1
+report | /a[1] | non-empty >= true() is 1 >= 1

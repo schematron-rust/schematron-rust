@@ -202,9 +202,14 @@ See [parsing.md](parsing.md).
 ```xml
 <extends rule="..."/>
 <extends href="..."/>
+<extends href="...#id"/>
 ```
 
-Inside a rule, splices in the assertions of the referenced abstract rule.
+Inside a rule, splices in assertions from elsewhere. `@rule` names an abstract
+rule in this schema and is expanded after the model is built; `@href` names a
+document, or a fragment of one, and is spliced in with `include` before the
+model exists. Either way what the rule gains is the assertions, at the
+position the `extends` element occupies. See [parsing.md](parsing.md).
 
 ## `title` and `p`
 

@@ -107,6 +107,22 @@ pub struct Ns {
     pub uri: String,
 }
 
+/// A named index over a document, from `<sch:key>`.
+///
+/// A Schematron 1.5 element that ISO/IEC 19757-3 dropped, kept here as an
+/// extension because ISO Schematron gives no other way to declare a key —
+/// and a cross-reference check without one is quadratic. See `spec/keys.md`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Key {
+    /// The name `key()` looks it up by. Unique within the schema.
+    pub name: String,
+    /// An XSLT match pattern selecting the nodes to index.
+    pub match_pattern: String,
+    /// The key value, evaluated with each matched node as the context node.
+    pub use_expression: String,
+}
+
 /// A variable binding, from `<sch:let>`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -400,6 +416,8 @@ pub struct SchemaModel {
     pub phases: Vec<Phase>,
     /// The patterns, in the order they run.
     pub patterns: Vec<Pattern>,
+    /// The keys, indexed before any pattern runs.
+    pub keys: Vec<Key>,
     /// The reusable diagnostics.
     pub diagnostics: Vec<Diagnostic>,
     /// The reusable properties.
@@ -415,6 +433,12 @@ impl SchemaModel {
         self.patterns
             .iter()
             .find(|p| p.id.as_deref() == Some(id))
+    }
+
+    /// Finds a key by name.
+    #[must_use]
+    pub fn key(&self, name: &str) -> Option<&Key> {
+        self.keys.iter().find(|key| key.name == name)
     }
 
     /// Finds a phase by identifier.

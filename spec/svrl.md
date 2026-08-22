@@ -54,6 +54,14 @@ structure while the SVRL output stays wire-compatible.
 | `svrl:successful-report` | A `report` whose test evaluated true. |
 | `svrl:text` | The instantiated human-readable message. |
 | `svrl:diagnostic-reference` | Per `@diagnostics` reference on the assertion. |
+
+When **reading** SVRL, a `diagnostic-reference` whose message is bare
+character data rather than a nested `svrl:text` is accepted too. That is the
+shape the ISO reference implementation writes, and it is much the most common
+producer of SVRL; a reader that insisted on the nested form could not read the
+output of the tool this crate is measured against. Only the element's own text
+nodes are taken, never its descendants', so a `failed-assert` message never
+absorbs the text of the diagnostics beneath it.
 | `svrl:property-reference` | Per `@properties` reference on the assertion. |
 | `svrl:ns-prefix-in-attribute-values` | Once per schema `ns`, so a consumer can interpret `@location` and `@test`. |
 
@@ -67,6 +75,48 @@ structure while the SVRL output stays wire-compatible.
 | `role` | Resolved role: assertion's, else rule's |
 | `flag` | Resolved flag: assertion's, else rule's |
 | `see`, `icon`, `fpi` | Passed through when present |
+
+## Reading SVRL back
+
+`Report::from_svrl` parses an SVRL document into a [`Report`], which makes the
+crate's SVRL support bidirectional rather than write-only. Two things that
+buys:
+
+- **Round-trip testing.** Every report this crate produces is parsed back and
+  compared against the original, which checks the writer far more thoroughly
+  than asserting on substrings of its output.
+- **Comparing processors.** A report from another Schematron implementation
+  can be read in and diffed against this one's, which is the strongest
+  evidence available that the two agree.
+
+```rust
+let report = Report::from_svrl(&svrl)?;
+assert_eq!(report.count_failures(), 2);
+```
+
+### Reconstructing the tree from a flat document
+
+SVRL is flat: `active-pattern`, `fired-rule`, `failed-assert` and
+`successful-report` are all siblings, and the structure is implied by order.
+The reader rebuilds the tree the writer flattened — each `fired-rule` belongs
+to the most recent `active-pattern`, each finding to the most recent
+`fired-rule`.
+
+A finding that appears before any `fired-rule`, which is what
+`--svrl-findings-only` output looks like, is attached to a synthetic rule so
+that nothing is lost.
+
+### What a round trip does not preserve
+
+**`FiredRule::location`.** SVRL's `fired-rule` element carries `id`,
+`context`, `role` and `flag`, and has nowhere to put the node the rule fired
+on. That field therefore comes back empty. It is a real field — the text
+report uses it — so the loss is stated here rather than papered over, and the
+round-trip test compares reports with those locations cleared.
+
+Everything else survives exactly: the schema title, phase and version, the
+namespace bindings, every pattern and rule, and every finding with its test,
+location, message, flags, diagnostics and properties.
 
 ## Verbosity
 

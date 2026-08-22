@@ -1,0 +1,10 @@
+# Each location counts within its own namespace: the two `p:a` elements are
+# the 1st and 2nd `p:a`, not the 2nd and 4th `a`-named element. The ISO
+# reference implementation counts by local name alone while emitting a
+# predicate that also filters on namespace, so it says [2] and [4] — the first
+# picking the wrong node and the second picking none at all. See
+# spec/conformance.md.
+report | /root[1]/a[1] | on a id 1
+report | /root[1]/*[local-name()='a' and namespace-uri()='http://example.com/p'][1] | on p:a id 2
+report | /root[1]/a[2] | on a id 3
+report | /root[1]/*[local-name()='a' and namespace-uri()='http://example.com/p'][2] | on p:a id 4

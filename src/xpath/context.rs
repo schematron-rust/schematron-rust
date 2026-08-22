@@ -160,6 +160,87 @@ impl Namespaces {
     }
 }
 
+/// The named indexes that XPath `key()` looks up.
+///
+/// Built once per document per validation run, before any pattern runs. See
+/// `spec/keys.md`.
+///
+/// # Examples
+///
+/// ```
+/// use schematron::xml::Document;
+/// use schematron::xpath::Keys;
+///
+/// let doc = Document::from_str("<a><b id='x'/></a>").unwrap();
+/// let b = doc.children(doc.document_element().unwrap())[0];
+///
+/// let mut keys = Keys::new();
+/// keys.insert("parts", "x", b);
+///
+/// assert_eq!(keys.lookup("parts", "x"), vec![b]);
+/// assert!(keys.lookup("parts", "missing").is_empty());
+/// assert!(keys.is_declared("parts"));
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct Keys {
+    /// key name -> key value -> the nodes indexed under it.
+    indexes: HashMap<String, HashMap<String, Vec<NodeId>>>,
+}
+
+impl Keys {
+    /// An empty set of indexes.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Declares a key with no entries yet.
+    ///
+    /// Needed so that a key matching nothing is still *declared*, which is
+    /// what distinguishes "no such node" from "no such key".
+    pub fn declare(&mut self, name: impl Into<String>) {
+        self.indexes.entry(name.into()).or_default();
+    }
+
+    /// Indexes `node` under `value` for the key called `name`.
+    pub fn insert(&mut self, name: impl Into<String>, value: impl Into<String>, node: NodeId) {
+        self.indexes
+            .entry(name.into())
+            .or_default()
+            .entry(value.into())
+            .or_default()
+            .push(node);
+    }
+
+    /// The nodes indexed under `value`, or empty when there are none.
+    #[must_use]
+    pub fn lookup(&self, name: &str, value: &str) -> Vec<NodeId> {
+        self.indexes
+            .get(name)
+            .and_then(|index| index.get(value))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Whether a key of this name was declared.
+    #[must_use]
+    pub fn is_declared(&self, name: &str) -> bool {
+        self.indexes.contains_key(name)
+    }
+
+    /// How many keys are declared.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.indexes.len()
+    }
+
+    /// Whether no key is declared.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.indexes.is_empty()
+    }
+}
+
 /// A stack of variable bindings, innermost last.
 ///
 /// Schematron nests four scopes — schema, phase, pattern, rule — and an inner
@@ -271,6 +352,11 @@ pub struct EvalContext<'a> {
     /// Defaults to zero, which keeps a validation run reproducible on any
     /// machine. See `spec/xpath2.md`.
     pub implicit_timezone: i32,
+    /// The named indexes `key()` looks up, when the caller supplies any.
+    ///
+    /// `None` makes `key()` an error rather than an empty node-set, because
+    /// an empty result would turn a missing index into a passing assertion.
+    pub keys: Option<&'a Keys>,
     /// The documents `document()` can reach, when the caller supplies any.
     ///
     /// `None` — the default from [`EvalContext::new`] — makes `document()` an
@@ -299,8 +385,16 @@ impl<'a> EvalContext<'a> {
             version: XPathVersion::V1,
             current_time: None,
             implicit_timezone: 0,
+            keys: None,
             documents: None,
         }
+    }
+
+    /// The same context, with the indexes `key()` looks up.
+    #[must_use]
+    pub fn with_keys(mut self, keys: &'a Keys) -> Self {
+        self.keys = Some(keys);
+        self
     }
 
     /// The same context, with the timezone that a date or time carrying no

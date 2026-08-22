@@ -1,0 +1,13 @@
+# `include href="lib.sch#totals"` splices that one pattern and leaves the
+# `unused` pattern behind, so "the unused pattern must not be spliced"
+# never appears. The included pattern comes first because the include
+# element does.
+assert | /invoice[1] | needs a total
+
+# `extends href="lib.sch#dated"` contributes the *children* of the `dated`
+# rule to the rule holding it, at the position of the extends element:
+# after "needs a line" and before "needs a currency".
+assert | /invoice[1] | needs a line
+assert | /invoice[1] | needs a date
+assert | /invoice[1] | needs an id
+assert | /invoice[1] | needs a currency

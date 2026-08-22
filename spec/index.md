@@ -15,9 +15,10 @@ XML data model, its own XPath 1.0 engine, and its own Schematron validator.
 | XPath 1.0 engine | [xpath.md](xpath.md) | Implemented |
 | XPath 2.0 support | [xpath2.md](xpath2.md) | Phase 1 |
 | Schematron data model | [data-model.md](data-model.md) | Implemented |
-| Schema parsing, include, abstract expansion | [parsing.md](parsing.md) | Implemented, less `extends href` |
+| Schema parsing, include, abstract expansion | [parsing.md](parsing.md) | Implemented |
 | Validation semantics | [validation.md](validation.md) | Implemented |
 | SVRL report output | [svrl.md](svrl.md) | Implemented |
+| Keys | [keys.md](keys.md) | Implemented |
 | Schema linting | [linting.md](linting.md) | Implemented |
 | Library API | [api.md](api.md) | Implemented |
 | Command line interface | [cli.md](cli.md) | Implemented |
@@ -29,10 +30,9 @@ XML data model, its own XPath 1.0 engine, and its own Schematron validator.
 | Tutorial | [tutorial.md](tutorial.md) | — |
 | Roadmap | [roadmap.md](roadmap.md) | — |
 
-One gap is deliberate for this version and is recorded in
-[conformance.md](conformance.md) rather than left to be discovered:
-`extends href`, for which `include` serves. Query bindings above XPath 1.0 are
-refused rather than approximated.
+Remaining gaps are recorded in [conformance.md](conformance.md) rather than
+left to be discovered. Query bindings above XPath 1.0 are refused rather than
+approximated.
 
 ## What Schematron is
 
