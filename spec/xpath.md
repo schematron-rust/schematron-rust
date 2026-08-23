@@ -158,10 +158,25 @@ makes available:
 |---|---|
 | `current()` | The node the rule fired on, unaffected by predicates. Unlike `.`, it does not change inside a predicate, which is the whole point of it. |
 | `document(uri)` | The root nodes of external documents. See below. |
+| `document(uri, base)` | The same, with relative URIs resolved against `base`'s first node. |
 | `key(name, value)` | The nodes a named index holds under a value. See [keys.md](keys.md). |
 
-The two-argument `document(uri, base)` form is **not** implemented; URIs
-resolve against the instance document's base URI.
+With one argument, a relative URI resolves against the **instance
+document's** base URI. With two, XSLT 1.0 section 12.1 resolves it against the
+base URI of the **first node of the second argument** — which is how a
+document that has itself been loaded can name its own neighbours:
+
+```xml
+<let name="catalogue" value="document(@catalogue)"/>
+<!-- `parts.xml` sits next to the catalogue, not next to the instance -->
+<assert test="document($catalogue//ref/@href, $catalogue)//part">…</assert>
+```
+
+An empty second argument names no base, so the call returns an empty node-set
+rather than an error. That is not leniency for its own sake: loading runs in
+passes, and on the first pass every `document()` call returns empty, so a
+nested call's second argument is empty until a later pass has run. Erroring
+would abort the validation before the retry that makes it work.
 
 ## `document()` and cross-document node-sets
 

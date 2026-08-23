@@ -4,7 +4,6 @@
 //! and — the piece that defines the language — first-matching-rule-wins
 //! within each pattern.
 
-use std::collections::HashMap;
 
 use super::options::{PhaseSelection, ValidateOptions};
 use super::report::{
@@ -122,12 +121,29 @@ fn validate_loading_documents(
             return Ok(report);
         }
 
-        for uri in wanted {
-            let text = schema.resolver().resolve(&uri, document.base_uri())?;
+        for (uri, requested) in wanted {
+            // `requested` is the key the call looked up under, and the insert
+            // below must use it unchanged — resolving it first and inserting
+            // under the resolved value leaves the original request forever
+            // unsatisfied, and the loader spins until it gives up.
+            //
+            // The base to resolve against is the instance for
+            // `document(uri)`, and the document holding the second argument's
+            // first node for `document(uri, node-set)`.
+            let base = requested
+                .clone()
+                .or_else(|| document.base_uri().map(ToString::to_string));
+            let text = schema.resolver().resolve(&uri, base.as_deref())?;
             let mut loaded = Document::from_str(&text)?;
-            loaded.set_base_uri(uri.clone());
+            // What this document is *called*, for resolving anything it in
+            // turn refers to.
+            let origin = schema
+                .resolver()
+                .rebase(&uri, base.as_deref())
+                .unwrap_or_else(|| uri.clone());
+            loaded.set_base_uri(origin.clone());
             let root = working.append_document(&loaded);
-            documents.insert(uri, root);
+            documents.insert(uri, requested, origin, root);
         }
     }
 
@@ -500,23 +516,35 @@ fn run_pattern(
     // this pattern has already claimed. Evaluating each rule's context once
     // per document, rather than testing every rule against every node, is
     // what keeps this linear rather than quadratic.
-    let mut claims: HashMap<NodeId, usize> = HashMap::new();
+    //
+    // Claims are held in a vector indexed by node rather than a map keyed by
+    // one. `NodeId` is a dense index into the arena, so hashing it buys
+    // nothing and costs a great deal: profiling a 10,000-element document put
+    // SipHash and its `RandomState` among the heaviest frames in the run,
+    // above the XPath evaluation the pattern actually exists to do.
+    let mut claims: Vec<u32> = vec![UNCLAIMED; document.nodes.len()];
+    let mut claimed = false;
     for (index, rule) in pattern.rules.iter().enumerate() {
+        let index = u32::try_from(index).unwrap_or(UNCLAIMED - 1);
         for node in matched_nodes(run, rule, variables)? {
-            claims.entry(node).or_insert(index);
+            if claims[node.0] == UNCLAIMED {
+                claims[node.0] = index;
+                claimed = true;
+            }
         }
     }
 
-    if claims.is_empty() {
+    if !claimed {
         variables.truncate(mark);
         return Ok(active);
     }
 
     for node in document.all_nodes_in_document_order() {
-        let Some(&index) = claims.get(&node) else {
+        let index = claims[node.0];
+        if index == UNCLAIMED {
             continue;
-        };
-        let rule = &pattern.rules[index];
+        }
+        let rule = &pattern.rules[index as usize];
         let fired = fire_rule(run, rule, node, variables, failures)?;
         if options.record_fired_rules || !fired.assertions.is_empty() {
             active.rules.push(fired);
@@ -529,6 +557,9 @@ fn run_pattern(
     variables.truncate(mark);
     Ok(active)
 }
+
+/// A node no rule in the pattern has claimed.
+const UNCLAIMED: u32 = u32::MAX;
 
 /// The nodes a rule's context matches, evaluated once for the whole document.
 ///
@@ -543,6 +574,26 @@ fn matched_nodes(run: Run<'_>, rule: &Rule, variables: &Variables) -> Result<Vec
     let expr = schema.expression(source)?;
     let rooted = root_match_expression(expr);
     let context = run.context(document.root(), variables);
+
+    // The overwhelmingly common context is a bare name or wildcard, which
+    // roots to `/descendant-or-self::node()/child::TEST`. Evaluated
+    // generically that materialises every node in the document and then
+    // filters it — once per rule, so a fifty-rule schema builds that vector
+    // fifty times. Walking once and keeping only what matches does the same
+    // work without the vector.
+    if let Some(test) = simple_descendant_test(&rooted) {
+        let matched = descendant_matches(document, test, &context);
+        debug_assert_eq!(
+            matched,
+            match evaluate(&rooted, &context) {
+                Ok(Value::NodeSet(nodes)) => nodes,
+                _ => matched.clone(),
+            },
+            "the fast path for rule context {source:?} disagreed with the evaluator"
+        );
+        return Ok(matched);
+    }
+
     let value = evaluate(&rooted, &context).map_err(|e| {
         Error::xpath_eval(format!("rule/@context: {source}"), e.message)
     })?;
@@ -556,6 +607,59 @@ fn matched_nodes(run: Run<'_>, rule: &Rule, variables: &Variables) -> Result<Vec
             ),
         )),
     }
+}
+
+/// The node test of a rooted path that is exactly
+/// `/descendant-or-self::node()/child::TEST`, with no predicates.
+///
+/// Anything else — a predicate, a longer path, an axis — returns `None` and
+/// takes the general evaluator.
+fn simple_descendant_test(expr: &Expr) -> Option<&NodeTest> {
+    let Expr::Path(path) = expr else {
+        return None;
+    };
+    if path.start != PathStart::Root || path.steps.len() != 2 {
+        return None;
+    }
+    let (first, second) = (&path.steps[0], &path.steps[1]);
+    let spread_is_plain = first.axis == Axis::DescendantOrSelf
+        && first.node_test == NodeTest::AnyNode
+        && first.predicates.is_empty();
+    if !spread_is_plain || second.axis != Axis::Child || !second.predicates.is_empty() {
+        return None;
+    }
+    Some(&second.node_test)
+}
+
+/// Every node reachable on the child axis that satisfies `test`, in document
+/// order.
+///
+/// `descendant-or-self::node()` from the root is every node bar attributes
+/// and namespaces, and the children of that set are the same minus the root
+/// itself — so one filtered walk gives what the two steps would.
+fn descendant_matches(
+    document: &Document,
+    test: &NodeTest,
+    context: &crate::xpath::EvalContext<'_>,
+) -> Vec<NodeId> {
+    fn walk(
+        document: &Document,
+        node: NodeId,
+        test: &NodeTest,
+        context: &crate::xpath::EvalContext<'_>,
+        out: &mut Vec<NodeId>,
+    ) {
+        for &child in document.children(node) {
+            if crate::xpath::matches_node_test(document, child, Axis::Child, test, context) {
+                out.push(child);
+            }
+            walk(document, child, test, context, out);
+        }
+    }
+
+    let mut out = Vec::new();
+    walk(document, document.root(), test, context, &mut out);
+    out
 }
 
 /// Rewrites a match pattern into an absolute expression selecting every node

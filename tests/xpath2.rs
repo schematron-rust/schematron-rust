@@ -1174,3 +1174,117 @@ fn the_keywords_are_still_element_names_in_name_position() {
     assert!(check("count(instance) = 1", "<a><instance/></a>"));
     assert!(check("count(treat) = 1", "<a><treat/></a>"));
 }
+
+#[test]
+fn kind_tests_work_as_path_node_tests() {
+    const DOC: &str = r#"<a>text<b id="1"/><c/><b id="2"/><!--note--><?pi data?></a>"#;
+
+    // `element()` names the kind outright, so it selects elements whatever
+    // the axis — unlike `*`, which selects the axis's principal node type.
+    assert!(check("count(element()) = 3", DOC));
+    assert!(check("count(element(b)) = 2", DOC));
+    assert!(check("count(element(*)) = 3", DOC));
+    assert!(check("count(self::element(a)) = 1", DOC));
+
+    // A step whose test is an attribute kind test defaults to the attribute
+    // axis, per XPath 2.0 section 3.2.1.1. Without that rule it could never
+    // match: the child axis yields no attributes.
+    assert!(check("count(b/attribute()) = 2", DOC));
+    assert!(check("count(b/attribute(id)) = 2", DOC));
+    assert!(check("count(b/attribute(absent)) = 0", DOC));
+
+    // An axis written out is respected, and the child axis has no attributes.
+    assert!(check("count(b/child::attribute()) = 0", DOC));
+
+    // `document-node()` matches the root, which is the parent of the
+    // document element rather than one of its children.
+    assert!(check("count(/self::document-node()) = 1", DOC));
+    assert!(check("count(ancestor-or-self::document-node()) = 1", DOC));
+    assert!(check("count(/document-node()) = 0", DOC));
+
+    // The XPath 1.0 node tests keep working and keep their meaning.
+    assert!(check("count(node()) = 6", DOC));
+    assert!(check("count(text()) = 1", DOC));
+    assert!(check("count(comment()) = 1", DOC));
+    assert!(check("count(processing-instruction()) = 1", DOC));
+}
+
+#[test]
+fn kind_tests_as_node_tests_are_refused_under_a_one_point_zero_binding() {
+    // Being told `element` is an unknown function would send the reader
+    // hunting for a typo. The message names the construct and the binding
+    // that enables it.
+    for (test, written) in [
+        ("count(element())", "element()"),
+        ("count(element(b))", "element()"),
+        ("count(b/attribute())", "attribute()"),
+        ("count(self::document-node())", "document-node()"),
+    ] {
+        let message = compile_error("xslt", test);
+        assert_contains!(message, written);
+        assert_contains!(message, "kind test");
+        assert_contains!(message, "xslt2");
+    }
+}
+
+#[test]
+fn an_element_named_like_a_kind_test_is_still_a_name_test() {
+    // `element` is only a kind test when followed by `(`. As a bare name it
+    // is an ordinary element name, under either binding.
+    const DOC: &str = "<a><element/><attribute/></a>";
+    assert!(check("count(element) = 1", DOC));
+    assert!(check("count(attribute) = 1", DOC));
+    assert!(check("name(element) = 'element'", DOC));
+}
+
+#[test]
+fn nested_ranges_and_loops_are_bounded_together() {
+    // A limit on one range cannot see this: each of the three below is well
+    // under it, and the product is close to a billion items. libFuzzer found
+    // the shape as a slow unit; the budget is shared across nested
+    // constructs so that the product is what is bounded.
+    const DOC: &str = "<a/>";
+
+    // Each of these is legitimate and must keep working.
+    assert!(check("count(1 to 999999) = 999999", DOC));
+    assert!(check("count(for $i in 1 to 999 return for $j in 1 to 999 return $j) = 998001", DOC));
+    assert!(check("count(for $i in 1 to 10 return $i * 2) = 10", DOC));
+    assert!(check("some $i in 1 to 10 satisfies $i = 5", DOC));
+
+    // And each of these asks for more than the budget allows.
+    for test in [
+        "count(for $i in 1 to 999 return for $j in 1 to 999 return for $k in 1 to 999 return $k)",
+        // Both ranges are under the single-range limit; their product is not.
+        "count(for $i in 1 to 4000 return for $j in 1 to 4000 return $j)",
+    ] {
+        let source = schema_with(
+            "xslt2",
+            &format!(r#"<pattern><rule context="a"><assert test="{test}">m</assert></rule></pattern>"#),
+        );
+        let schema = Schema::from_str(&source).expect("it compiles; the cost is at evaluation");
+        let document = Document::from_str(DOC).unwrap();
+        let error = schema
+            .validate(&document)
+            .expect_err("an expression this large must be refused, not run");
+        assert_contains!(error.to_string(), "items");
+    }
+}
+
+#[test]
+fn the_budget_does_not_leak_between_expressions() {
+    // The budget is thread-local, so a large-but-legal expression must not
+    // leave a later one short. Two rules, each asking for most of it.
+    let source = schema_with(
+        "xslt2",
+        r#"<pattern>
+             <rule context="a">
+               <assert test="count(1 to 900000) = 900000">first</assert>
+               <assert test="count(1 to 900000) = 900000">second</assert>
+             </rule>
+           </pattern>"#,
+    );
+    let schema = Schema::from_str(&source).unwrap();
+    let document = Document::from_str("<a/>").unwrap();
+    let report = schema.validate(&document).expect("both must run");
+    assert!(report.is_valid(), "{}", report.to_text());
+}

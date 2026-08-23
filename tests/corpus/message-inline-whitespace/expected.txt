@@ -1,0 +1,11 @@
+# Case A is where the ISO reference implementation differs: it reports
+# "A [ae]", losing the space. Its generated validator is itself an XSLT
+# stylesheet, and XSLT 1.0 strips whitespace-only text nodes from a
+# stylesheet, so the space between `<name/>` and `<emph>` cannot survive the
+# way it compiles a schema. B and C agree everywhere.
+#
+# Corpus expectations collapse runs of whitespace, so A is written with the
+# single space it carries rather than with the layout of the source.
+assert | /a[1] | A [a e]
+assert | /a[1] | B [a and e]
+assert | /a[1] | C [ae]

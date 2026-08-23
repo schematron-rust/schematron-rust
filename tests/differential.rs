@@ -22,6 +22,10 @@
 //! `@role` it carries, and the messages of its diagnostics — in order. That
 //! is the substance of a Schematron report.
 //!
+//! And the **rule firings**, which findings alone cannot show: a rule whose
+//! assertions all hold reports nothing, so without this the dispatch that
+//! Schematron is built on goes unchecked wherever a schema passes.
+//!
 //! The `@location` attribute is compared, but by resolving it rather than by
 //! string: the two write equally valid XPath in different shapes, and SVRL
 //! prescribes neither. Two paths name the same node exactly when each selects
@@ -53,6 +57,16 @@ struct Finding {
 /// comparison. A case listed here must have its reason written down, in
 /// `spec/conformance.md` as well as here.
 const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
+    (
+        "message-inline-whitespace",
+        "A whitespace-only text node between two inline elements in a message \
+         — `<name/> <emph>e</emph>` — survives here and is lost by the \
+         reference. Its generated validator is itself an XSLT stylesheet, and \
+         XSLT 1.0 strips whitespace-only text nodes from a stylesheet, so the \
+         space cannot survive the way it compiles a schema. Text with any \
+         non-whitespace content is preserved by both. See \
+         spec/conformance.md.",
+    ),
     (
         "subject",
         "`@subject` moves the reported location to the node the assertion is \
@@ -197,6 +211,37 @@ fn reference_svrl(
 /// meaning in a message.
 fn normalize(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Every rule firing, in order, as `pattern/rule@context`.
+///
+/// A rule that fires but whose assertions all hold produces no finding at
+/// all, so [`findings`] cannot see it. That is a large blind spot: the
+/// first-matching-rule-wins dispatch is the central Schematron semantic, and
+/// a schema whose tests happen to pass exercises it just as hard as one whose
+/// tests fail. SVRL records each firing as `svrl:fired-rule`, so the two
+/// implementations' dispatch can be compared directly.
+///
+/// SVRL has nowhere to record *which node* a rule fired on, so this compares
+/// the sequence — how many times each rule fired, in what order, under which
+/// pattern — rather than the nodes themselves.
+fn fired_rules(svrl: &str) -> Result<Vec<String>, String> {
+    let report = schematron::Report::from_svrl(svrl)
+        .map_err(|e| format!("SVRL did not parse: {e}"))?;
+    Ok(report
+        .patterns
+        .iter()
+        .flat_map(|pattern| {
+            let label = pattern.id.clone().unwrap_or_default();
+            pattern.rules.iter().map(move |rule| {
+                format!(
+                    "{label}/{}@{}",
+                    rule.id.clone().unwrap_or_default(),
+                    rule.context
+                )
+            })
+        })
+        .collect())
 }
 
 /// The `@location` of each finding, in the same order as [`findings`].
@@ -347,6 +392,75 @@ fn our_svrl(schema: &Path, document: &Path, phase: Option<&str>) -> Result<Strin
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// What comparing one case produced.
+struct Comparison {
+    /// The first difference found, if any: findings, then dispatch, then
+    /// locations. `None` means the two implementations agree.
+    difference: Option<String>,
+    findings: usize,
+    firings: usize,
+    /// Locations skipped because the reference's could not be trusted.
+    unresolvable: usize,
+}
+
+/// Compares one case's two SVRL documents on every axis this test checks.
+///
+/// Shared by the curated corpus and the generated cases so that the two
+/// cannot drift into checking different things — which, when one of them is
+/// the only cover for a behaviour, is how a gap opens without anyone noticing.
+fn compare_case(reference: &str, ours: &str, document_text: &str) -> Comparison {
+    let mut result = Comparison {
+        difference: None,
+        findings: 0,
+        firings: 0,
+        unresolvable: 0,
+    };
+
+    let (theirs, mine) = match (findings(reference), findings(ours)) {
+        (Ok(a), Ok(b)) => (a, b),
+        (a, b) => {
+            result.difference = Some(format!("SVRL did not parse: {:?} {:?}", a.err(), b.err()));
+            return result;
+        }
+    };
+    result.findings = theirs.len();
+    if theirs != mine {
+        result.difference = Some(describe_difference(&theirs, &mine));
+        return result;
+    }
+
+    match (fired_rules(reference), fired_rules(ours)) {
+        (Ok(a), Ok(b)) => {
+            result.firings = a.len();
+            if a != b {
+                let at = (0..a.len().max(b.len())).find(|&i| a.get(i) != b.get(i));
+                result.difference = Some(format!(
+                    "rule dispatch differs: the reference fired {} rules, this crate {}; \
+                     at index {at:?} the reference has {:?} and this crate {:?}",
+                    a.len(),
+                    b.len(),
+                    at.and_then(|i| a.get(i).cloned()),
+                    at.and_then(|i| b.get(i).cloned()),
+                ));
+                return result;
+            }
+        }
+        (Err(why), _) | (_, Err(why)) => {
+            result.difference = Some(why);
+            return result;
+        }
+    }
+
+    match (locations(reference), locations(ours)) {
+        (Ok(a), Ok(b)) => match compare_locations(document_text, &a, &b) {
+            Ok(skipped) => result.unresolvable = skipped,
+            Err(why) => result.difference = Some(why),
+        },
+        _ => result.difference = Some("locations did not parse".to_string()),
+    }
+    result
+}
+
 #[test]
 #[ignore = "needs xsltproc and the reference stylesheets; see the module docs"]
 fn we_agree_with_the_reference_implementation() {
@@ -402,38 +516,10 @@ fn we_agree_with_the_reference_implementation() {
             }
         };
 
-        let (theirs, mine) = match (findings(&reference), findings(&ours)) {
-            (Ok(a), Ok(b)) => (a, b),
-            (a, b) => {
-                unexpected.push(format!("{name}: {:?} {:?}", a.err(), b.err()));
-                continue;
-            }
-        };
-
-        let locations_agree = match (locations(&reference), locations(&ours)) {
-            (Ok(a), Ok(b)) => {
-                let document_text = std::fs::read_to_string(&document).unwrap_or_default();
-                match compare_locations(&document_text, &a, &b) {
-                    Ok(skipped) => {
-                        unresolvable += skipped;
-                        None
-                    }
-                    Err(why) => Some(why),
-                }
-            }
-            _ => Some("locations did not parse".to_string()),
-        };
-        // A case agrees only if its findings *and* its locations do. A
-        // location that points at the wrong node is a divergence even when
-        // every message matches, which is exactly the shape of the `subject`
-        // case.
-        let difference = if theirs == mine {
-            locations_agree.map(|why| format!("{name}: {why}"))
-        } else {
-            Some(format!(
-                "{name}: findings differ\n    reference: {theirs:?}\n    ours:      {mine:?}"
-            ))
-        };
+        let document_text = std::fs::read_to_string(&document).unwrap_or_default();
+        let comparison = compare_case(&reference, &ours, &document_text);
+        unresolvable += comparison.unresolvable;
+        let difference = comparison.difference.map(|why| format!("{name}: {why}"));
 
         match (difference, known.contains_key(name.as_str())) {
             (None, false) => agreed += 1,
@@ -924,12 +1010,48 @@ const CONTEXTS: &[&str] = &[
 ///
 /// `visible` are the variable names already in scope from outside the rule;
 /// the rule may add one of its own, which the assertions can then use.
+/// The mixed content of an assertion's message.
+///
+/// A message is not just text: Schematron instantiates `value-of`, `name`,
+/// and the inline markup `emph`, `span` and `dir` into it. All of that lands
+/// in the message the comparison already checks, so generating it costs
+/// nothing extra to compare and covers a whole element group that plain text
+/// never reaches.
+fn generate_message(rng: &mut Rng, label: &str) -> String {
+    let mut out = String::from(label);
+    for part in 0..rng.below(3) {
+        // After the label a plain space is part of a text node that already
+        // has content. Between two elements it would be a whitespace-only
+        // text node, which the reference cannot preserve — see
+        // `KNOWN_DIVERGENCES` — so a word goes there instead.
+        out.push_str(if part == 0 { " " } else { " and " });
+        match rng.below(6) {
+            0 => out.push_str(&format!(
+                "<value-of select=\"{}\"/>",
+                escape(&generate_value_of(rng))
+            )),
+            // `name` with no `path` is the context node's name; with one, the
+            // name of whatever the path selects first.
+            1 => out.push_str("<name/>"),
+            2 => out.push_str(&format!(
+                "<name path=\"{}\"/>",
+                escape(&generate_path(rng))
+            )),
+            3 => out.push_str("<emph>emphasised</emph>"),
+            4 => out.push_str("<span class=\"c\">spanned</span>"),
+            _ => out.push_str("<dir value=\"ltr\">directed</dir>"),
+        }
+    }
+    out
+}
+
 fn generate_rule_body(
     rng: &mut Rng,
     label: &str,
     visible: &[String],
     out: &mut String,
     diagnostics: &mut Vec<String>,
+    allow_diagnostics: bool,
 ) {
     let mut variables = visible.to_vec();
 
@@ -968,25 +1090,55 @@ fn generate_rule_body(
             attributes.push_str(&format!(" role=\"{}\"", rng.pick(&["required", "structure"])));
         }
         // A diagnostic, whose message the comparison also checks.
-        let diagnostic = rng.chance(1, 3).then(|| format!("d{label}a{assertion}"));
+        // A library fragment is spliced into another schema without the
+        // `diagnostics` section it was written beside, so an assertion there
+        // must not reference one — it would name an id the host schema has
+        // never heard of.
+        let diagnostic = (allow_diagnostics && rng.chance(1, 3))
+            .then(|| format!("d{label}a{assertion}"));
         if let Some(id) = &diagnostic {
             attributes.push_str(&format!(" diagnostics=\"{id}\""));
         }
 
-        if rng.chance(1, 3) {
-            out.push_str(&format!(
-                "      <{kind} test=\"{test}\"{attributes}>{message} <value-of select=\"{}\"/></{kind}>\n",
-                generate_value_of(rng)
-            ));
-        } else {
-            out.push_str(&format!(
-                "      <{kind} test=\"{test}\"{attributes}>{message}</{kind}>\n"
-            ));
-        }
+        let body = generate_message(rng, &message);
+        out.push_str(&format!(
+            "      <{kind} test=\"{test}\"{attributes}>{body}</{kind}>\n"
+        ));
         if let Some(id) = diagnostic {
             diagnostics.push(id);
         }
     }
+}
+
+/// A library of parts for a generated schema to pull in by reference.
+///
+/// Written next to the schema, so a relative `href` resolves against the
+/// schema's own location — which is the thing that actually has to work.
+fn generate_library(rng: &mut Rng) -> String {
+    let mut diagnostics = Vec::new();
+    let mut out = String::from("<schema xmlns=\"http://purl.oclc.org/dsdl/schematron\">\n");
+    for (prefix, uri) in NAMESPACES {
+        out.push_str(&format!("  <ns prefix=\"{prefix}\" uri=\"{uri}\"/>\n"));
+    }
+    // A whole pattern, for `include` to splice as an element.
+    out.push_str("  <pattern id=\"libp\">\n");
+    out.push_str(&format!(
+        "    <rule context=\"{}\">\n",
+        CONTEXTS[rng.below(CONTEXTS.len())]
+    ));
+    generate_rule_body(rng, "libp", &[], &mut out, &mut diagnostics, false);
+    out.push_str("    </rule>\n  </pattern>\n");
+
+    // A bare rule, for `extends href` to splice the *children* of. It is not
+    // in a pattern on purpose: nothing compiles this file as a schema, both
+    // implementations only lift the element the fragment names out of it.
+    out.push_str("  <rule id=\"libr\">\n");
+    generate_rule_body(rng, "libr", &[], &mut out, &mut diagnostics, false);
+    out.push_str("  </rule>\n");
+
+    debug_assert!(diagnostics.is_empty(), "library parts reference no diagnostics");
+    out.push_str("</schema>\n");
+    out
 }
 
 /// Builds a schema, and names the phase to run it under, if any.
@@ -1011,10 +1163,17 @@ fn generate_schema(rng: &mut Rng) -> (String, Option<String>) {
     // The concrete patterns, decided up front so a phase can name them.
     let concrete: Vec<String> = (0..=rng.below(3)).map(|i| format!("p{i}")).collect();
     let abstract_pattern = rng.chance(1, 3);
+    // `include` splices the element the fragment names; `extends href`
+    // splices that element's children into the rule holding it.
+    let include_pattern = rng.chance(1, 3);
+    let extends_href = rng.chance(1, 3);
     let instance = "i0".to_string();
     let mut activatable = concrete.clone();
     if abstract_pattern {
         activatable.push(instance.clone());
+    }
+    if include_pattern {
+        activatable.push("libp".to_string());
     }
 
     // Phases. `#ALL` is the default when none is named, so generating a phase
@@ -1058,6 +1217,10 @@ fn generate_schema(rng: &mut Rng) -> (String, Option<String>) {
         out.push_str("  </pattern>\n");
     }
 
+    if include_pattern {
+        out.push_str("  <include href=\"lib.sch#libp\"/>\n");
+    }
+
     for (index, id) in concrete.iter().enumerate() {
         out.push_str(&format!("  <pattern id=\"{id}\">\n"));
 
@@ -1067,7 +1230,7 @@ fn generate_schema(rng: &mut Rng) -> (String, Option<String>) {
         let abstract_rule = rng.chance(1, 3);
         if abstract_rule {
             out.push_str(&format!("    <rule abstract=\"true\" id=\"ar{index}\">\n"));
-            generate_rule_body(rng, &format!("{id}ar"), &global, &mut out, &mut diagnostics);
+            generate_rule_body(rng, &format!("{id}ar"), &global, &mut out, &mut diagnostics, true);
             out.push_str("    </rule>\n");
         }
 
@@ -1077,7 +1240,10 @@ fn generate_schema(rng: &mut Rng) -> (String, Option<String>) {
             if abstract_rule && rng.chance(1, 2) {
                 out.push_str(&format!("      <extends rule=\"ar{index}\"/>\n"));
             }
-            generate_rule_body(rng, &format!("{id}r{rule}"), &global, &mut out, &mut diagnostics);
+            if extends_href && rng.chance(1, 2) {
+                out.push_str("      <extends href=\"lib.sch#libr\"/>\n");
+            }
+            generate_rule_body(rng, &format!("{id}r{rule}"), &global, &mut out, &mut diagnostics, true);
             out.push_str("    </rule>\n");
         }
         out.push_str("  </pattern>\n");
@@ -1153,6 +1319,7 @@ fn generated_cases_agree_with_the_reference_implementation() {
     let mut agreed = 0;
     let mut produced = 0usize;
     let mut unresolvable = 0usize;
+    let mut firings = 0usize;
     let mut failures = Vec::new();
 
     for seed in first..first + count {
@@ -1163,6 +1330,7 @@ fn generated_cases_agree_with_the_reference_implementation() {
         let schema = work.join("schema.sch");
         let document = work.join("input.xml");
         std::fs::write(&schema, &schema_text).expect("write schema");
+        std::fs::write(work.join("lib.sch"), generate_library(&mut rng)).expect("write library");
         std::fs::write(&document, &document_text).expect("write document");
 
         let report = |what: String| {
@@ -1197,28 +1365,15 @@ fn generated_cases_agree_with_the_reference_implementation() {
             }
         };
 
-        let (theirs, mine) = match (findings(&reference), findings(&ours)) {
-            (Ok(a), Ok(b)) => (a, b),
-            (a, b) => {
-                failures.push(report(format!("SVRL did not parse: {:?} {:?}", a.err(), b.err())));
-                continue;
+        let comparison = compare_case(&reference, &ours, &document_text);
+        unresolvable += comparison.unresolvable;
+        firings += comparison.firings;
+        match comparison.difference {
+            None => {
+                agreed += 1;
+                produced += comparison.findings;
             }
-        };
-
-        if theirs == mine {
-            match (locations(&reference), locations(&ours)) {
-                (Ok(a), Ok(b)) => match compare_locations(&document_text, &a, &b) {
-                    Ok(skipped) => {
-                        agreed += 1;
-                        produced += theirs.len();
-                        unresolvable += skipped;
-                    }
-                    Err(why) => failures.push(report(why)),
-                },
-                _ => failures.push(report("locations did not parse".to_string())),
-            }
-        } else {
-            failures.push(report(describe_difference(&theirs, &mine)));
+            Some(why) => failures.push(report(why)),
         }
 
         // A wall of near-identical failures helps nobody; the first few carry
@@ -1246,6 +1401,7 @@ fn generated_cases_agree_with_the_reference_implementation() {
     );
     println!(
         "generated cases agreed: {agreed}, findings compared: {produced}, \
+         rule firings compared: {firings}, \
          locations the reference could not resolve: {unresolvable}"
     );
 }

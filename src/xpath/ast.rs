@@ -525,6 +525,18 @@ pub enum NodeTest {
     Comment,
     /// `processing-instruction()` or `processing-instruction('target')`
     ProcessingInstruction(Option<String>),
+    /// An XPath 2.0 kind test used as a node test: `element()`,
+    /// `element(name)`, `attribute()`, `attribute(name)`, `document-node()`.
+    ///
+    /// Distinct from [`NodeTest::Wildcard`], which selects the axis's
+    /// principal node type: `element()` selects elements on any axis.
+    Kind {
+        /// The kind of node selected.
+        kind: crate::xml::NodeKind,
+        /// The name it must have, when one was written. `element(*)` is
+        /// written with a wildcard and means the same as `element()`.
+        name: Option<NameTest>,
+    },
 }
 
 #[cfg(test)]

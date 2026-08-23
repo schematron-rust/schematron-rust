@@ -246,10 +246,86 @@ fn bench_keys(c: &mut Criterion) {
     }
 }
 
+/// Locations, which every finding carries and nothing else pays for.
+///
+/// A name in no namespace is written plainly, `/order[1]/line[7]`, but a
+/// namespaced one needs the XPath 1.0 predicate form,
+/// `*[local-name()='line' and namespace-uri()='urn:example'][7]`, which is a
+/// much longer string built per finding. Both are measured against a document
+/// where *every* node fails, so the cost lands on the location path rather
+/// than being diluted by nodes that report nothing.
+fn bench_location_generation(c: &mut Criterion) {
+    const N: usize = 10_000;
+    const DEPTH: usize = 300;
+
+    let plain_schema = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern><rule context="line"><assert test="false()">no</assert></rule></pattern>
+           </schema>"#,
+    )
+    .unwrap();
+    let namespaced_schema = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <ns prefix="e" uri="urn:example"/>
+             <pattern><rule context="e:line"><assert test="false()">no</assert></rule></pattern>
+           </schema>"#,
+    )
+    .unwrap();
+
+    let mut plain = String::from("<order>");
+    let mut namespaced = String::from("<order xmlns:e=\"urn:example\">");
+    for _ in 0..N {
+        plain.push_str("<line/>");
+        namespaced.push_str("<e:line/>");
+    }
+    plain.push_str("</order>");
+    namespaced.push_str("</order>");
+    let plain = Document::from_str(&plain).unwrap();
+    let namespaced = Document::from_str(&namespaced).unwrap();
+
+    // Both must actually report on every node, or this measures nothing.
+    assert_eq!(plain_schema.validate(&plain).unwrap().count_failures(), N);
+    assert_eq!(
+        namespaced_schema.validate(&namespaced).unwrap().count_failures(),
+        N
+    );
+
+    // Depth is the interesting axis: a location names every ancestor, so
+    // building one is linear in depth, and a naive implementation that
+    // re-copies the prefix per level is quadratic.
+    let mut deep = String::from("<order>");
+    for _ in 0..DEPTH {
+        deep.push_str("<line>");
+    }
+    for _ in 0..DEPTH {
+        deep.push_str("</line>");
+    }
+    deep.push_str("</order>");
+    let deep = Document::from_str(&deep).unwrap();
+    assert_eq!(plain_schema.validate(&deep).unwrap().count_failures(), DEPTH);
+
+    let mut group = c.benchmark_group("location_generation");
+    group.throughput(Throughput::Elements(N as u64));
+    group.bench_function("plain", |b| {
+        b.iter(|| plain_schema.validate(black_box(&plain)).unwrap());
+    });
+    group.bench_function("namespaced", |b| {
+        b.iter(|| namespaced_schema.validate(black_box(&namespaced)).unwrap());
+    });
+    group.finish();
+
+    // Not in the group above: its throughput is set for N elements, and this
+    // one has DEPTH findings, so sharing the group would misreport both.
+    c.bench_function("location_generation_deep", |b| {
+        b.iter(|| plain_schema.validate(black_box(&deep)).unwrap());
+    });
+}
+
 criterion_group!(
     benches,
     bench_compile_schema,
     bench_validate,
+    bench_location_generation,
     bench_end_to_end,
     bench_compile_once_validate_many,
     bench_fired_rule_recording,

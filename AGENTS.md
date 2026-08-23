@@ -43,7 +43,11 @@ Slower, run when relevant:
 
 ```sh
 cargo bench                                   # criterion; see agents/testing.md
-cargo +nightly fuzz run fuzz_validate -- -max_total_time=60
+cargo +nightly fuzz run fuzz_validate -- -max_total_time=60 -report_slow_units=30
+
+# Agreement with the ISO reference implementation, curated and generated.
+# Needs xsltproc and the skeleton; see spec/testing.md.
+SCHEMATRON_SKELETON=/path/to/skeleton cargo test --test differential -- --ignored
 ```
 
 If a command fails for a reason unrelated to your change, say so explicitly

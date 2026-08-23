@@ -222,9 +222,29 @@ validation run that dies on one.
 An occurrence indicator may follow: `?` for zero or one, `*` for zero or
 more, `+` for one or more. With none, the type matches exactly one item.
 
-These are types, written after `instance of` and its companions. XPath 2.0
-also allows the same kind tests as **node tests inside a path** — `a/element()`
-— and that is not implemented; write `a/*` instead. See the phase 4 table.
+These are types, written after `instance of` and its companions. The same
+kind tests also work as **node tests inside a path**:
+
+| Written | Selects |
+|---|---|
+| `element()` | every element, on whatever axis the step uses |
+| `element(b)`, `element(*)` | an element of that name; `*` means any |
+| `attribute()`, `attribute(id)` | an attribute, named or not |
+| `document-node()` | the root node |
+
+`element()` is not the same as `*`. A wildcard selects the axis's *principal*
+node type — elements on `child`, attributes on `attribute` — while a kind test
+names the kind outright, so `child::attribute()` correctly selects nothing.
+
+One special rule comes with them, from XPath 2.0 section 3.2.1.1: a step whose
+node test is an attribute kind test defaults to the **attribute** axis rather
+than `child`. So `b/attribute()` means `b/attribute::attribute()`. Without
+that rule the test could never match, because the child axis yields no
+attributes. An axis written out is always respected.
+
+Under an XPath 1.0 binding these are refused by name — "the `element()` kind
+test is XPath 2.0 syntax" — rather than reported as an unknown function, which
+would send the reader hunting for a typo.
 
 `cast as` and `castable as` take a single type — an atomic type with an
 optional `?` — because casting a sequence has no meaning.
@@ -419,7 +439,6 @@ time. None of them silently does something else.
 |---|---|
 | The numeric hierarchy — `xs:integer`, `xs:decimal`, `xs:float` as *tracked* types | Every number here is a double; see above |
 | Schema-aware types — `element(name, type)`, `schema-element()` | Needs a schema processor, which is out of scope |
-| Kind tests as path node tests — `a/element()`, `a/element(b)` | Use `a/*` and `a/b`; the same tests do work as `instance of` types |
 | The general `xs:duration` | Only partially ordered; see above |
 | `adjust-date-to-timezone()` and its companions | Needs a timezone-bearing cast |
 | `xslt3`, `xpath3`, `xpath31` bindings | Still refused; use `allow_unknown_query_binding` |

@@ -239,6 +239,28 @@ Do not "fix" any of these:
   reference; do not "simplify" it back into the bullet above.
 - Relational operators always convert to number, so `'x' > 0` is false rather
   than an error.
+- A rule context of the shape `/descendant-or-self::node()/child::TEST` —
+  which is what a bare name or wildcard roots to, and so most contexts — takes
+  a **fused walk** in `matched_nodes` rather than the general evaluator.
+  Evaluating it generically materialises every node in the document and then
+  filters, once per rule; the walk keeps only what matches. It cut the
+  per-rule cost on a 20,000-element document from 1.33ms to 0.26ms.
+
+  A `debug_assert_eq!` compares the fast path against the evaluator on every
+  rule context, so the whole test suite and every generated differential case
+  checks that the two agree. Do not remove it: a fast path that silently
+  disagrees is worse than no fast path.
+- Rule claims in `run_pattern` are a **vector indexed by `NodeId`**, not a
+  map keyed by one. `NodeId` is a dense arena index, so hashing it buys
+  nothing: profiling put SipHash and its `RandomState` above the XPath
+  evaluation the pattern exists to do. Replacing it took 10–19% off
+  validation across every document size.
+- `Document::location` is **linear in depth**. It walks up once collecting
+  the chain and writes the steps in a single pass. The obvious recursive
+  shape — `format!("{parent}/{step}")` at each level — re-copies the whole
+  ancestor prefix per level, which is quadratic, and a finding pays it once
+  per location. On a document nested 300 deep that cost 5.4x. There is a
+  benchmark, `location_generation_deep`.
 - `sum()` over an empty node-set is **positive** zero, so `1 div sum(none)`
   is Infinity. It is folded from `0.0` rather than written `.sum()`, because
   Rust's `Sum` for `f64` starts from `-0.0` — the true additive identity, and

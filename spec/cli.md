@@ -23,6 +23,7 @@ schematron [OPTIONS] --schema <SCHEMA> [DOCUMENT]...
 | `--list-phases` | Print the schema's phases and exit |
 | `--explain` | Print the compiled schema: patterns, rules, contexts, tests |
 | `--lint` | Check the schema for likely mistakes and exit; see [linting.md](linting.md) |
+| `--portability` | Report constructs other Schematron processors treat differently, and exit |
 | `-q, --quiet` | Suppress the report; use the exit code only |
 | `-v, --verbose` | Show the test and rule behind each finding, and rules that fired without finding anything |
 
@@ -86,6 +87,9 @@ schematron -s rules.sch --list-phases
 
 # Check the schema itself for likely mistakes; no document needed
 schematron -s rules.sch --lint
+
+# Ask a different question: will this schema behave the same elsewhere?
+schematron -s rules.sch --portability
 
 # Find out why a schema appears to do nothing
 schematron -s rules.sch --verbose --phase '#ALL' data.xml

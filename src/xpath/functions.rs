@@ -46,7 +46,7 @@ const SIGNATURES: &[(&str, usize, Option<usize>)] = &[
     ("ceiling", 1, Some(1)),
     ("round", 1, Some(1)),
     ("current", 0, Some(0)),
-    ("document", 1, Some(1)),
+    ("document", 1, Some(2)),
     ("key", 2, Some(2)),
 ];
 
@@ -598,7 +598,9 @@ fn two_strings(args: &[Value], document: &Document) -> (String, String) {
 fn clock(kind: TemporalKind, context: &EvalContext<'_>) -> Result<Value, EvalError> {
     let Some(seconds) = context.current_time else {
         return Err(EvalError::new(
-            "current-date() and its companions need the run's instant, which the              validator supplies and a direct call to evaluate() does not; see              EvalContext::with_current_time",
+            "current-date() and its companions need the run's instant, which \
+             the validator supplies and a direct call to evaluate() does not; \
+             see EvalContext::with_current_time",
         ));
     };
     Ok(Value::Sequence(vec![Item::Temporal(from_unix_seconds(
@@ -894,9 +896,47 @@ fn document_function(args: &[Value], context: &EvalContext<'_>) -> Result<Value,
         other => vec![other.to_xpath_string(context.document)],
     };
 
+    // XSLT 1.0 section 12.1: with a second argument, a relative URI resolves
+    // against the base URI of the *first node* of that node-set, rather than
+    // against the instance. That is how a document loaded by an earlier
+    // `document()` call can name its own neighbours.
+    let base: Option<String> = match args.get(1) {
+        None => None,
+        Some(Value::NodeSet(nodes)) => {
+            let first = nodes
+                .iter()
+                .copied()
+                .min_by_key(|&node| context.document.order(node));
+            match first {
+                // An empty node-set names no base, so there is nothing to
+                // resolve and nothing to load.
+                //
+                // This must not be an error. Loading runs in passes, and on
+                // the first pass every `document()` call returns empty — so
+                // `document(x, document(y))` has an empty second argument
+                // until the pass that loads `y` has run. Erroring here would
+                // abort the validation before the retry that makes it work.
+                None => return Ok(Value::NodeSet(Vec::new())),
+                Some(node) => {
+                    let root = context.document.root_of(node);
+                    registry
+                        .origin_of(root)
+                        .map(ToString::to_string)
+                        .or_else(|| context.document.base_uri().map(ToString::to_string))
+                }
+            }
+        }
+        Some(other) => {
+            return Err(EvalError::new(format!(
+                "document(): the second argument must be a node-set, not {}",
+                other.type_name()
+            )))
+        }
+    };
+
     let mut roots: Vec<NodeId> = uris
         .iter()
-        .filter_map(|uri| registry.lookup(uri))
+        .filter_map(|uri| registry.lookup(uri, base.as_deref()))
         .collect();
     // A node-set is sorted and deduplicated; two references to one URI are
     // one node.
@@ -1220,8 +1260,11 @@ mod tests {
         // Returning an empty node-set instead would turn a misconfigured
         // lookup into a quietly passing assertion.
         assert!(check_function("document", 1, XPathVersion::V1).is_ok());
+        // XSLT 1.0 section 12.1 gives `document()` a second, optional
+        // argument: the node-set whose first node supplies the base URI.
+        assert!(check_function("document", 2, XPathVersion::V1).is_ok());
         assert!(check_function("document", 0, XPathVersion::V1).is_err());
-        assert!(check_function("document", 2, XPathVersion::V1).is_err());
+        assert!(check_function("document", 3, XPathVersion::V1).is_err());
     }
 
     #[test]

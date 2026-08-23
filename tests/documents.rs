@@ -214,6 +214,83 @@ fn document_relative_uris_resolve_against_the_instance() {
 }
 
 #[test]
+fn the_two_argument_document_resolves_against_the_node_it_is_given() {
+    // XSLT 1.0 section 12.1: with a second argument, a relative URI resolves
+    // against the base URI of that node-set's first node, not the instance's.
+    //
+    // The test only means something because the two answers are *different
+    // files*: `parts.xml` exists both beside the instance and beside the
+    // catalogue, with different contents. A one-argument call finds the
+    // former, a two-argument call the latter.
+    let directory = std::env::temp_dir().join("schematron-document-two-arg-test");
+    let sub = directory.join("sub");
+    std::fs::create_dir_all(&sub).unwrap();
+    std::fs::write(sub.join("catalogue.xml"), r#"<catalogue><ref href="parts.xml"/></catalogue>"#)
+        .unwrap();
+    std::fs::write(sub.join("parts.xml"), r#"<parts><part id="A"/><part id="B"/></parts>"#).unwrap();
+    std::fs::write(directory.join("parts.xml"), r#"<parts><part id="BESIDE-INSTANCE"/></parts>"#)
+        .unwrap();
+    let instance = directory.join("order.xml");
+    std::fs::write(&instance, "<order><load>sub/catalogue.xml</load></order>").unwrap();
+
+    let schema = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern>
+               <rule context="order">
+                 <let name="catalogue" value="document(load)"/>
+                 <assert test="count($catalogue//ref) = 1">the catalogue loads</assert>
+
+                 <!-- Resolved beside the catalogue: two parts. -->
+                 <assert test="count(document($catalogue//ref/@href, $catalogue)//part) = 2">
+                   the two-argument form resolves beside the catalogue
+                 </assert>
+                 <assert test="document($catalogue//ref/@href, $catalogue)//part[1]/@id = 'A'">
+                   and so reads the parts file next to it
+                 </assert>
+
+                 <!-- The same href, resolved beside the instance: one part. -->
+                 <assert test="count(document($catalogue//ref/@href)//part) = 1">
+                   the one-argument form resolves beside the instance
+                 </assert>
+                 <assert test="document($catalogue//ref/@href)//part[1]/@id = 'BESIDE-INSTANCE'">
+                   and so reads a different file entirely
+                 </assert>
+               </rule>
+             </pattern>
+           </schema>"#,
+    )
+    .unwrap();
+
+    let document = Document::from_path(&instance).unwrap();
+    let report = schema.validate(&document).unwrap();
+    assert!(report.is_valid(), "{}", report.to_text());
+
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn an_empty_second_argument_to_document_yields_nothing() {
+    // Not an error: loading runs in passes, and on the first pass every
+    // `document()` call returns empty, so a nested call's second argument is
+    // empty until a later pass. Erroring would abort before the retry.
+    let schema = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern>
+               <rule context="a">
+                 <report test="count(document('parts.xml', nothing)) = 0">nothing to resolve against</report>
+               </rule>
+             </pattern>
+           </schema>"#,
+    )
+    .unwrap();
+
+    let document = Document::from_str("<a/>").unwrap();
+    let report = schema.validate(&document).unwrap();
+    assert_eq!(report.count_fired_rules(), 1);
+    assert_eq!(report.reports().count(), 1);
+}
+
+#[test]
 fn a_schema_without_document_is_unaffected() {
     // The zero-cost path: no working copy, no extra pass.
     let schema = Schema::from_str(

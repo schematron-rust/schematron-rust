@@ -3,6 +3,65 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.5.0
+
+### Changed
+
+- **`Documents::insert`, `lookup` and `missing` take a base URI.** A request
+  for a document is now the pair of the URI as written and what to resolve it
+  against, because `document('a.xml')` and `document('a.xml', $node)` may name
+  different files. Only affects code driving the XPath engine directly; a
+  schema is unaffected.
+
+### Added
+
+- **`document(uri, base)`**, the two-argument form. A relative URI resolves
+  against the base URI of the second argument's first node, per XSLT 1.0
+  section 12.1, so a document that has itself been loaded can name its own
+  neighbours. This closes the last gap against ISO/IEC 19757-3: every element
+  of the standard is now implemented under the XPath 1.0 binding.
+- **XPath 2.0 kind tests as path node tests** — `element()`, `element(name)`,
+  `attribute()`, `attribute(id)`, `document-node()`. A kind test names the
+  kind outright, so unlike `*` it does not depend on the axis. A step whose
+  test is an attribute kind test defaults to the attribute axis, per XPath 2.0
+  section 3.2.1.1. Under an XPath 1.0 binding these are refused by name.
+- **`--portability`**, and `Schema::portability()`: constructs that behave
+  differently under other Schematron processors. These are **not mistakes** —
+  they are correct, and this crate implements them as the standard describes —
+  so they are kept out of `--lint`, which exists to report likely errors. Each
+  of the seven checks is backed by a divergence in
+  [spec/conformance.md](spec/conformance.md), established by running this
+  crate and the ISO reference implementation against the same schema.
+
+### Fixed
+
+- **A denial of service in XPath 2.0 ranges and loops.** A limit on a single
+  `to` range cannot see that nesting multiplies: each range in
+  `for $i in 1 to 999 return for $j in 1 to 999 return for $k in 1 to 999
+  return $k` is well inside it, and together they ask for close to a billion
+  items — from a 90-byte expression. Found by fuzzing. A budget is now shared
+  across every nested construct in one expression, so the product is bounded;
+  both limits are in [spec/conformance.md](spec/conformance.md).
+
+### Performance
+
+Each of these was found by profiling and is covered by a benchmark.
+
+- **Building a report location is linear in the node's depth**, not quadratic.
+  It recursed to the root and re-copied the whole ancestor prefix at every
+  level, and a finding pays that once per location: 11.5 ms to 2.1 ms for 300
+  findings on a 300-deep document, and 23–33% on flat ones.
+- **Rule claims are a vector indexed by node**, not a map keyed by one.
+  `NodeId` is a dense arena index, so hashing it bought nothing: SipHash and
+  its `RandomState` were above the XPath evaluation itself in the profile.
+  10–19% off validation at every document size.
+- **A rule context of a bare name or wildcard takes a fused walk.** Evaluated
+  generically it materialises every node in the document and then filters,
+  once per rule. Per-rule cost on a 20,000-element document fell from 1.33 ms
+  to 0.26 ms. A debug assertion compares the fast path against the evaluator
+  on every rule context, so the test suite and every generated differential
+  case check that the two agree.
+
 ## 0.4.0
 
 ### Changed

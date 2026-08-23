@@ -127,3 +127,47 @@ rules, contexts, tests — and notes which rules can only see nodes no earlier
 rule claimed. `--lint` is the automated form of reading that output and
 noticing something wrong. Use `--explain` to understand a schema, `--lint` to
 check one.
+
+## Portability
+
+`--portability`, and `Schema::portability()`, ask a different question:
+**will this schema behave the same under another Schematron processor?**
+
+The constructs it reports are **not mistakes**. Each one is correct, is what
+the standard describes, and works here. But the ISO reference implementation —
+the XSLT skeleton most other tools are built on — behaves differently for each,
+and a schema author has no way to find that out. Every entry is backed by a
+divergence in [conformance.md](conformance.md), established by running both.
+
+| Kind | What differs elsewhere |
+|---|---|
+| `VariableShadowsAnOuterScope` | A `let` redeclaring an enclosing name: the reference compiles all bindings into one XSLT scope and **refuses the schema** |
+| `ContextSelectsANonElementKind` | A rule on `text()`, `comment()` or `processing-instruction()`: the reference visits only elements and attributes, so the rule never fires |
+| `FlagOrRoleOnTheRule` | `@flag`/`@role` on a rule, inherited by an assertion that sets neither: the reference leaves them off the finding |
+| `SubjectMovesTheLocation` | `@subject`: the reference reports the context node's location instead |
+| `FollowingFromAnAttribute` | `@x/following::…`: the reference excludes the attribute's own element's children |
+| `CollidingAttributeContexts` | Rules on both `@x` and `@p:x`: the reference's `@x` rule claims both, so the second never fires |
+| `SpaceBetweenInlineElements` | Whitespace between two inline elements in a message: the reference cannot preserve it |
+
+That is every divergence in [conformance.md](conformance.md) that a schema
+can be checked for on its own. The remaining four cannot be, and saying so is
+part of the answer:
+
+| Divergence | Why no check |
+|---|---|
+| Rule context reduction | This crate's rooted `//` reduction agrees with the reference for the pattern subset schemas use |
+| `value-of` on a node-set | Any `value-of` might select several nodes; flagging them all would report almost every schema |
+| Report order | The two agree |
+| Location sibling position | A property of the *document* — whether it has same-local-name siblings across namespaces — not of the schema |
+
+These are kept **out of `--lint`** on purpose. The rule that governs the
+linter is that a false positive costs more than a miss, because a linter that
+reports correct code gets switched off and then catches nothing. Portability
+is a separate question, so it is asked separately:
+
+```sh
+schematron --schema rules.sch --portability
+```
+
+Same exit codes as `--lint`: `0` when nothing is reported, `1` otherwise.
+A schema that will only ever run through this crate can ignore it entirely.

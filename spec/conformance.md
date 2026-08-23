@@ -50,7 +50,7 @@ merely reporting an unknown function.
 | `extends href="URI"` | Full, including fragment identifiers |
 | `include`/`extends` `href="U#id"` | Full — `@id` or `@xml:id`, no DTD needed |
 | XPath `document(uri)` | Full, including cross-document node-sets — see [xpath.md](xpath.md) |
-| XPath `document(uri, base)` | **Not implemented** — URIs resolve against the instance |
+| XPath `document(uri, base)` | Full — the URI resolves against the base URI of the second argument's first node |
 | `pattern/@documents` | Full; the expression's context node is the **root node**, per the ISO XSLT skeleton, so write `catalog/ref/@href`, not `ref/@href` |
 | `schema/@defaultPhase`, `#ALL`, `#DEFAULT` | Full |
 | `@flag`, `@role`, `@subject`, `@see`, `@icon`, `@fpi` | Full |
@@ -97,6 +97,8 @@ Number-to-string conversion follows XPath 1.0's format, not Rust's `Display`.
 | Include depth | 64, configurable | Cycles and expansion blow-up |
 | `extends` chain depth | 64 | Same |
 | XPath sub-expression nesting | 64 | Stack exhaustion on hostile input |
+| A single `to` range | 1,000,000 items | A range is materialised |
+| Nested ranges and `for`/`some`/`every` together | 10,000,000 items | Each may be within the limit while the product is not: three ranges of 999 ask for close to a billion |
 | XML element nesting | 1024 | Same |
 | Include, `@documents`, and `document()` fetches | Resolver-controlled | Disk and network access is opt-in, never implicit |
 | `document()` loading passes | 8 | A schema deriving each URI from the document it just loaded |
@@ -251,3 +253,15 @@ checked to select exactly one node — see [validation.md](validation.md).
    differential test does not compare locations naming a namespaced element;
    it still requires this crate's own location to resolve to exactly one node
    in every case.
+9. **Whitespace between two inline elements in a message is preserved.** A
+   message is mixed content, and the text between `<name/>` and `<emph>` is
+   character data like any other.
+
+   The reference loses it, and structurally cannot do otherwise: the validator
+   it generates is itself an XSLT stylesheet, and XSLT 1.0 strips
+   whitespace-only text nodes from a stylesheet. So `<name/> <emph>e</emph>`
+   reports `ae` there and `a e` here. Text with any non-whitespace content —
+   `<name/> and <emph>e</emph>` — is preserved by both, which is why this
+   almost never shows up in a real schema.
+
+   Pinned by `tests/corpus/message-inline-whitespace/`.

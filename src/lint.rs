@@ -35,13 +35,32 @@
 use serde::{Deserialize, Serialize};
 
 use crate::schema::{Content, Pattern, Rule, Schema};
-use crate::xpath::{Expr, NodeTest, PathStart};
+use crate::xpath::{Axis, Expr, NodeTest, PathStart};
 
 /// What kind of problem a [`Lint`] reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum LintKind {
+    /// A `let` that redeclares a name from an enclosing scope. **Portability
+    /// only** — see [`Schema::portability`].
+    VariableShadowsAnOuterScope,
+    /// The `following` axis taken from an attribute node. **Portability
+    /// only.**
+    FollowingFromAnAttribute,
+    /// Rules on `@x` and `@p:x` in one pattern. **Portability only.**
+    CollidingAttributeContexts,
+    /// Whitespace between two inline elements in a message. **Portability
+    /// only.**
+    SpaceBetweenInlineElements,
+    /// A rule context selecting text, comment or processing-instruction
+    /// nodes. **Portability only.**
+    ContextSelectsANonElementKind,
+    /// `@flag` or `@role` on a rule, inherited by its assertions.
+    /// **Portability only.**
+    FlagOrRoleOnTheRule,
+    /// `@subject`, which moves the reported location. **Portability only.**
+    SubjectMovesTheLocation,
     /// A rule no node can reach, because an earlier rule in the same pattern
     /// claims everything it would match.
     UnreachableRule,
@@ -78,6 +97,13 @@ impl LintKind {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            LintKind::VariableShadowsAnOuterScope => "variable-shadows-outer-scope",
+            LintKind::FollowingFromAnAttribute => "following-from-an-attribute",
+            LintKind::CollidingAttributeContexts => "colliding-attribute-contexts",
+            LintKind::SpaceBetweenInlineElements => "space-between-inline-elements",
+            LintKind::ContextSelectsANonElementKind => "context-selects-non-element-kind",
+            LintKind::FlagOrRoleOnTheRule => "flag-or-role-on-the-rule",
+            LintKind::SubjectMovesTheLocation => "subject-moves-the-location",
             LintKind::UnreachableRule => "unreachable-rule",
             LintKind::DuplicateRuleContext => "duplicate-rule-context",
             LintKind::UnprefixedNameInNamespacedSchema => "unprefixed-name",
@@ -134,11 +160,241 @@ impl std::fmt::Display for Lint {
 }
 
 impl Schema {
+    /// Constructs that behave differently under other Schematron processors.
+    ///
+    /// These are **not mistakes**. A schema that uses `@subject` is correct,
+    /// and this crate implements it as the standard describes. But the ISO
+    /// reference implementation — the XSLT skeleton most other tools are
+    /// built on — behaves differently for each of the constructs reported
+    /// here, and a schema author has no way to discover that. Every one is
+    /// backed by a divergence recorded in `spec/conformance.md`, established
+    /// by running both implementations.
+    ///
+    /// They are deliberately kept out of [`Schema::lint`]. A linter that
+    /// reports correct code as a problem gets switched off, and then it
+    /// catches nothing; portability is a separate question, asked separately.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use schematron::Schema;
+    ///
+    /// let schema = Schema::from_str(
+    ///     r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+    ///          <pattern>
+    ///            <rule context="a" flag="warning">
+    ///              <assert test="b">needs a b</assert>
+    ///            </rule>
+    ///          </pattern>
+    ///        </schema>"#,
+    /// )
+    /// .unwrap();
+    ///
+    /// // Correct, and portable nowhere: the reference drops a rule's flag.
+    /// assert!(schema.lint().is_empty());
+    /// assert_eq!(schema.portability().len(), 1);
+    /// ```
+    #[must_use]
+    pub fn portability(&self) -> Vec<Lint> {
+        let mut lints = Vec::new();
+        let model = self.model();
+
+        // A `let` that redeclares an enclosing name. The reference compiles
+        // every binding into one XSLT scope, so this is not a divergence in
+        // behaviour but a schema it cannot compile at all.
+        let mut outer: Vec<(&str, &str)> = model
+            .lets
+            .iter()
+            .map(|binding| (binding.name.as_str(), "schema"))
+            .collect();
+        for phase in &model.phases {
+            let at = format!("phase[@id='{}']", phase.id);
+            for binding in &phase.lets {
+                shadowing(&outer, binding, &at, &mut lints);
+            }
+        }
+        for (index, pattern) in model.patterns.iter().enumerate() {
+            let location = pattern_location(pattern, index);
+            let mut here = outer.clone();
+            for binding in &pattern.lets {
+                shadowing(&here, binding, &location, &mut lints);
+                here.push((binding.name.as_str(), "pattern"));
+            }
+            // Rules on `@x` and `@p:x` in one pattern. The reference's `@x`
+            // rule claims both, so the first one written takes every node and
+            // the second never fires.
+            let attributes: Vec<(&str, Option<&str>, &str)> = pattern
+                .rules
+                .iter()
+                .filter_map(|rule| rule.context.as_deref())
+                .filter_map(|context| {
+                    let Ok(Expr::Path(path)) = self.expression(context) else {
+                        return None;
+                    };
+                    let step = path.steps.last()?;
+                    if step.axis != Axis::Attribute {
+                        return None;
+                    }
+                    match &step.node_test {
+                        NodeTest::Name(name) => {
+                            Some((name.local.as_str(), name.prefix.as_deref(), context))
+                        }
+                        _ => None,
+                    }
+                })
+                .collect();
+            for (index, (local, prefix, context)) in attributes.iter().enumerate() {
+                let clash = attributes[..index]
+                    .iter()
+                    .find(|(other, other_prefix, _)| other == local && other_prefix != prefix);
+                if let Some((_, _, earlier)) = clash {
+                    lints.push(Lint::new(
+                        LintKind::CollidingAttributeContexts,
+                        format!("{location}/rule[@context='{context}']"),
+                        format!(
+                            "this pattern has rules on both {earlier} and {context}"
+                        ),
+                        "an unprefixed attribute name test matches only the \
+                         no-namespace attribute here, correctly; the reference's \
+                         template matcher ignores the namespace, so its earlier rule \
+                         claims both and this one never fires. See \
+                         spec/conformance.md.",
+                    ));
+                }
+            }
+
+            for rule in &pattern.rules {
+                let context = rule.context.as_deref().unwrap_or_default();
+                let at = format!("{location}/rule[@context='{context}']");
+                for binding in &rule.lets {
+                    shadowing(&here, binding, &at, &mut lints);
+                }
+                self.portability_of_rule(rule, &location, &mut lints);
+            }
+        }
+        outer.clear();
+        lints
+    }
+
+    /// The rule-level portability checks.
+    fn portability_of_rule(&self, rule: &crate::schema::Rule, location: &str, lints: &mut Vec<Lint>) {
+        let context = rule.context.as_deref().unwrap_or_default();
+        let at = format!("{location}/rule[@context='{context}']");
+
+        // A context selecting text, comment or processing-instruction nodes.
+        // The reference walks the tree with `@*|*`, so it never offers such a
+        // node to a rule and the rule silently never fires.
+        if let Ok(Expr::Path(path)) = self.expression(context) {
+            if let Some(step) = path.steps.last() {
+                let kind = match step.node_test {
+                    NodeTest::Text => Some("text()"),
+                    NodeTest::Comment => Some("comment()"),
+                    NodeTest::ProcessingInstruction(_) => Some("processing-instruction()"),
+                    _ => None,
+                };
+                if let Some(kind) = kind {
+                    lints.push(Lint::new(
+                        LintKind::ContextSelectsANonElementKind,
+                        at.clone(),
+                        format!("the context selects {kind} nodes"),
+                        "the ISO reference implementation visits only elements \
+                         and attributes, so this rule never fires there. It \
+                         works here. See spec/conformance.md.",
+                    ));
+                }
+            }
+        }
+
+        // `@flag` or `@role` on the rule, inherited by an assertion that sets
+        // neither. The reference emits neither on the finding.
+        let inherits = rule
+            .assertions()
+            .any(|assertion| assertion.flag.is_none() && assertion.role.is_none());
+        if inherits && (rule.flag.is_some() || rule.role.is_some()) {
+            lints.push(Lint::new(
+                LintKind::FlagOrRoleOnTheRule,
+                at.clone(),
+                "the rule sets @flag or @role, and an assertion below it sets neither"
+                    .to_string(),
+                "findings inherit the rule's value here; the ISO reference \
+                 implementation leaves them off, so anything filtering on the \
+                 flag sees different results. Set it on the assertion to be \
+                 portable.",
+            ));
+        }
+
+        // `following::` taken from an attribute node. The reference gives the
+        // attribute's *element's* following nodes, excluding its children.
+        let mut sources: Vec<(&str, String)> = vec![(context, at.clone())];
+        for binding in &rule.lets {
+            if let crate::schema::LetValue::Expression(value) = &binding.value {
+                sources.push((value.as_str(), format!("{at}/let[@name='{}']", binding.name)));
+            }
+        }
+        for assertion in rule.assertions() {
+            sources.push((assertion.test.as_str(), at.clone()));
+        }
+        for (source, where_) in sources {
+            if source.is_empty() {
+                continue;
+            }
+            if let Ok(expr) = self.expression(source) {
+                if following_from_an_attribute(expr) {
+                    lints.push(Lint::new(
+                        LintKind::FollowingFromAnAttribute,
+                        where_,
+                        format!("{source} takes the following axis from an attribute"),
+                        "an attribute's following nodes include its own element's \
+                         children here, which is what XPath 1.0 says and what Java's \
+                         engine gives; the ISO reference implementation excludes them. \
+                         See spec/conformance.md.",
+                    ));
+                    break;
+                }
+            }
+        }
+
+        // Whitespace between two inline elements in a message, which the
+        // reference cannot preserve.
+        for assertion in rule.assertions() {
+            if space_between_inline_elements(&assertion.content) {
+                lints.push(Lint::new(
+                    LintKind::SpaceBetweenInlineElements,
+                    at.clone(),
+                    "the message has whitespace between two inline elements".to_string(),
+                    "the validator the reference generates is itself an XSLT \
+                     stylesheet, and XSLT strips whitespace-only text from a \
+                     stylesheet, so the space is lost there. Put a word between them, \
+                     or accept the difference.",
+                ));
+                break;
+            }
+        }
+
+        // `@subject`, which moves the reported location.
+        let subject = rule.subject.is_some()
+            || rule.assertions().any(|assertion| assertion.subject.is_some());
+        if subject {
+            lints.push(Lint::new(
+                LintKind::SubjectMovesTheLocation,
+                at,
+                "@subject moves the reported location to the node it selects".to_string(),
+                "the ISO reference implementation reports the context node \
+                 instead, although its own source says the subject should be \
+                 used. Consumers reading @location will disagree.",
+            ));
+        }
+    }
+
     /// Inspects this schema for constructs that are legal but probably wrong.
     ///
     /// Returns lints in schema order, so the output reads down the file. An
     /// empty result does not mean the schema is correct — only that none of
     /// the patterns in `spec/linting.md` matched.
+    ///
+    /// For constructs that are correct here but behave differently under
+    /// other processors, see [`Schema::portability`], which is deliberately
+    /// separate.
     ///
     /// # Examples
     ///
@@ -601,6 +857,66 @@ fn lint_phases(schema: &Schema, lints: &mut Vec<Lint>) {
 ///
 /// Deliberately conservative: it asks whether the name appears at all, not
 /// whether it is in scope where it is used. See `spec/linting.md`.
+/// Whether an expression takes the `following` axis from an attribute node.
+fn following_from_an_attribute(expr: &Expr) -> bool {
+    fn in_path(path: &crate::xpath::PathExpr) -> bool {
+        path.steps.windows(2).any(|pair| {
+            pair[0].axis == Axis::Attribute && pair[1].axis == Axis::Following
+        })
+    }
+    match expr {
+        Expr::Path(path) => in_path(path),
+        Expr::Binary(_, left, right) => {
+            following_from_an_attribute(left) || following_from_an_attribute(right)
+        }
+        Expr::Negate(inner) => following_from_an_attribute(inner),
+        Expr::Function { args, .. } => args.iter().any(following_from_an_attribute),
+        Expr::Sequence(items) => items.iter().any(following_from_an_attribute),
+        _ => false,
+    }
+}
+
+/// Whether a message holds whitespace-only text between two elements.
+///
+/// Only *between*: leading and trailing whitespace belongs to a text node
+/// that has other content, and every implementation keeps that.
+fn space_between_inline_elements(content: &[Content]) -> bool {
+    let inline = |item: &Content| !matches!(item, Content::Text(_));
+    content.windows(3).any(|window| {
+        inline(&window[0])
+            && matches!(&window[1], Content::Text(text) if !text.is_empty() && text.trim().is_empty())
+            && inline(&window[2])
+    })
+}
+
+/// Reports a binding that redeclares a name from an enclosing scope.
+///
+/// Nested scopes only. Two sibling rules each binding `$qty` is ordinary and
+/// portable: the reference compiles each rule into its own template, so their
+/// variables never meet.
+fn shadowing(
+    outer: &[(&str, &str)],
+    binding: &crate::schema::Let,
+    location: &str,
+    lints: &mut Vec<Lint>,
+) {
+    let Some((_, where_)) = outer.iter().find(|(name, _)| *name == binding.name) else {
+        return;
+    };
+    lints.push(Lint::new(
+        LintKind::VariableShadowsAnOuterScope,
+        format!("{location}/let[@name='{}']", binding.name),
+        format!(
+            "${} is already bound at {where_} level",
+            binding.name
+        ),
+        "the four nested scopes are what the standard describes, and this \
+         crate implements them — but the ISO reference implementation compiles \
+         every binding into one XSLT scope and refuses the schema outright. \
+         Rename one of them to be portable.",
+    ));
+}
+
 fn lint_variables(schema: &Schema, lints: &mut Vec<Lint>) {
     let model = schema.model();
 
@@ -736,7 +1052,8 @@ fn lint_unreferenced(schema: &Schema, lints: &mut Vec<Lint>) {
                 LintKind::UnreferencedKey,
                 format!("key[@name='{}']", key.name),
                 "no expression looks this key up",
-                "its index is built on every validation whether or not anything                  uses it. Reference it with key('…', …), or delete it.",
+                "its index is built on every validation whether or not anything \
+                 uses it. Reference it with key('…', …), or delete it.",
             ));
         }
     }

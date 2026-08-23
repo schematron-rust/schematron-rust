@@ -24,15 +24,34 @@ use crate::xml::{Document, NodeId};
 ///
 /// let doc = Document::from_str("<a/>").unwrap();
 /// let mut documents = Documents::new();
-/// documents.insert("parts.xml", doc.root());
+/// documents.insert("parts.xml", None, "/data/parts.xml", doc.root());
 ///
-/// assert_eq!(documents.lookup("parts.xml"), Some(doc.root()));
-/// assert_eq!(documents.lookup("missing.xml"), None);
-/// assert_eq!(documents.missing(), vec!["missing.xml".to_string()]);
+/// assert_eq!(documents.lookup("parts.xml", None), Some(doc.root()));
+/// assert_eq!(documents.lookup("missing.xml", None), None);
+/// assert_eq!(
+///     documents.missing(),
+///     vec![("missing.xml".to_string(), None)]
+/// );
+///
+/// // The same name asked for relative to a different base is a different
+/// // request: it may well be a different file.
+/// assert_eq!(documents.lookup("parts.xml", Some("/other/cat.xml")), None);
+///
+/// // And a loaded root remembers what it was called, so a node in it can
+/// // serve as the base for a further `document()` call.
+/// assert_eq!(documents.origin_of(doc.root()), Some("/data/parts.xml"));
 /// ```
 #[derive(Debug, Default)]
 pub struct Documents {
-    loaded: HashMap<String, NodeId>,
+    /// Keyed by the pair actually asked for: the URI as written, and the base
+    /// it is to be resolved against. `document('a.xml')` from the instance and
+    /// `document('a.xml', $node)` where `$node` came from another document are
+    /// different requests that may name different files, so they cannot share
+    /// a key.
+    loaded: HashMap<Request, NodeId>,
+    /// The URI each loaded root came from, so that a node in it can serve as
+    /// the base for a further `document()` call.
+    origins: HashMap<NodeId, String>,
     /// URIs asked for that are not in `loaded`, in a deterministic order so
     /// that a validation run is reproducible.
     ///
@@ -40,8 +59,12 @@ pub struct Documents {
     /// worker threads when patterns are evaluated in parallel, and a `RefCell`
     /// is not `Sync`. The lock is taken only on a miss, which happens once per
     /// URI per pass and never on the hot path.
-    missing: Mutex<BTreeSet<String>>,
+    missing: Mutex<BTreeSet<Request>>,
 }
+
+/// A request for a document: the URI as written, and what to resolve it
+/// against.
+pub type Request = (String, Option<String>);
 
 impl Documents {
     /// An empty registry, which makes every `document()` call a miss.
@@ -50,34 +73,49 @@ impl Documents {
         Self::default()
     }
 
-    /// Records that the document at `uri` is rooted at `root`.
-    pub fn insert(&mut self, uri: impl Into<String>, root: NodeId) {
-        self.loaded.insert(uri.into(), root);
+    /// Records that the document asked for as `uri` relative to `base` is
+    /// rooted at `root`, and that `root`'s own URI is `origin`.
+    pub fn insert(
+        &mut self,
+        uri: impl Into<String>,
+        base: Option<String>,
+        origin: impl Into<String>,
+        root: NodeId,
+    ) {
+        self.loaded.insert((uri.into(), base), root);
+        self.origins.insert(root, origin.into());
     }
 
-    /// Looks up a URI, recording a miss when it is absent.
+    /// Looks up a URI resolved against `base`, recording a miss when absent.
     #[must_use]
-    pub fn lookup(&self, uri: &str) -> Option<NodeId> {
-        if let Some(root) = self.loaded.get(uri) {
+    pub fn lookup(&self, uri: &str, base: Option<&str>) -> Option<NodeId> {
+        let request = (uri.to_string(), base.map(ToString::to_string));
+        if let Some(root) = self.loaded.get(&request) {
             return Some(*root);
         }
-        self.record_missing(uri);
+        self.record_missing(request);
         None
     }
 
-    /// Records a URI that was asked for and not found.
+    /// The URI a loaded root came from, for use as a base URI.
+    #[must_use]
+    pub fn origin_of(&self, root: NodeId) -> Option<&str> {
+        self.origins.get(&root).map(String::as_str)
+    }
+
+    /// Records a request that was not found.
     ///
     /// A poisoned lock cannot lose correctness here: the worst outcome is a
-    /// URI that is not recorded, which the next pass rediscovers.
-    fn record_missing(&self, uri: &str) {
+    /// request that is not recorded, which the next pass rediscovers.
+    fn record_missing(&self, request: Request) {
         if let Ok(mut missing) = self.missing.lock() {
-            missing.insert(uri.to_string());
+            missing.insert(request);
         }
     }
 
-    /// The URIs requested but not present, sorted.
+    /// The requests made but not satisfied, sorted.
     #[must_use]
-    pub fn missing(&self) -> Vec<String> {
+    pub fn missing(&self) -> Vec<Request> {
         self.missing
             .lock()
             .map(|missing| missing.iter().cloned().collect())

@@ -48,6 +48,18 @@
 - Rule shadowing generalised from three special cases to pairwise subsumption,
   which also removed a false positive
 - `extends href`, and fragment identifiers on both it and `include`
+- `document(uri, base)`, closing the last ISO gap: **every element of
+  ISO/IEC 19757-3 is now implemented** under the XPath 1.0 binding
+- XPath 2.0 kind tests as path node tests — `element()`, `attribute(id)`,
+  `document-node()` — which turned out to be separable from the numeric
+  hierarchy that keeps the rest of phase 4 last
+- `--portability`: constructs that behave differently under other processors,
+  each backed by a divergence established by running both
+- A denial of service in nested ranges and `for` loops, found by fuzzing: a
+  limit on one range cannot see that nesting multiplies
+- Three optimisations found by profiling — linear location building, rule
+  claims in a vector rather than a hash map, and a fused walk for the common
+  rule context
 - Generated differential testing: schema and document pairs drawn from a
   grammar and compared against the reference. It found two real XPath 1.0
   conformance bugs — node-set-to-boolean comparison, and `sum()` of an empty
@@ -95,9 +107,13 @@ Ordered by value, not by how the XPath 2.0 phases happened to be numbered.
 3. **XPath 2.0 phase 4: the numeric hierarchy** — tracking whether a number
    arrived as `xs:integer`, `xs:decimal`, `xs:float` or `xs:double`, rather
    than holding every number as a double, which is what would make
-   `1 instance of xs:integer` true. Kind tests as path node tests
-   (`a/element()`) belong here too, as does closing the semantic divergences
+   `1 instance of xs:integer` true, and closing the semantic divergences
    phase 1 documents.
+
+   Kind tests as path node tests — `a/element()` — were part of this item and
+   are **done**: they turned out to be orthogonal to the numeric hierarchy,
+   needing only a node test rather than a type lattice, so they carried none
+   of the risk that keeps the rest of phase 4 last.
 
    **Deliberately last.** It is the only remaining gap [xpath2.md](xpath2.md)
    records, and it is also the one worth least: a schema inspects untyped

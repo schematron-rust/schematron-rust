@@ -180,6 +180,30 @@ otherwise the context node.
 `count(LOCATION) = 1` under the XPath 1.0 binding, so a location that is not
 valid 1.0, or that selects the wrong number of nodes, fails the suite.
 
+Building one is linear in the node's depth: the chain is collected in a single
+walk upwards and the steps written in one pass. Recursing and formatting the
+parent's location at each level is quadratic, which a finding pays once per
+location — measurably, on any deeply nested document. The `location_generation`
+benchmarks cover the flat, namespaced and deep shapes.
+
+## Matching a rule context
+
+A context is an XSLT match pattern, rewritten to the rooted form described
+above: `line` becomes `/descendant-or-self::node()/child::line`.
+
+Evaluating that literally builds a node-set of the whole document and then
+filters it — for **every rule**, so a fifty-rule schema builds it fifty times.
+For the common shape, a bare name or wildcard with no predicate, the validator
+instead walks the tree once and keeps only the nodes that match. The result is
+identical by construction: `descendant-or-self::node()` from the root is every
+node bar attributes and namespaces, and the children of that set are the same
+minus the root.
+
+Anything else — a predicate, a longer path, an explicit axis — takes the
+general evaluator. In debug builds both are computed and compared on every
+rule context, so the test suite and the generated differential cases check
+that the fast path never disagrees.
+
 ## Parallel pattern evaluation
 
 Patterns are independent by definition: each gets its own pass over the

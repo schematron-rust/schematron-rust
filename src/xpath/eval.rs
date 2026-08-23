@@ -385,7 +385,9 @@ fn evaluate_for(
     body: &Expr,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
+    let _scope = SequenceScope::enter();
     let items = evaluate(input, context)?.into_items();
+    spend(items.len() as u64)?;
     let mut out = Vec::with_capacity(items.len());
 
     // One clone of the enclosing scope for the whole loop; the binding is
@@ -414,7 +416,11 @@ fn evaluate_quantified(
     test: &Expr,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
+    // `some`/`every` do not accumulate a sequence, but they iterate one, and
+    // nesting them multiplies the iterations exactly as `for` does.
+    let _scope = SequenceScope::enter();
     let items = evaluate(input, context)?.into_items();
+    spend(items.len() as u64)?;
     let mut scope = context.variables.clone();
     let mark = scope.mark();
     let name = variable.to_string();
@@ -1141,6 +1147,66 @@ fn temporal_kind_of(left: &Value, right: &Value) -> TemporalKind {
 /// one would be stopped by the allocator rather than by an error. The fuzz
 /// targets exist to keep "hostile input is an error" true, and this is part
 /// of it.
+/// A shared ceiling on the work a single expression may do in the constructs
+/// that **multiply**.
+///
+/// `MAX_RANGE` bounds one range, and that is not enough: each range in
+/// `for $i in 1 to 999 return for $j in 1 to 999 return for $k in 1 to 999
+/// return $k` is comfortably under it, and the three together ask for close
+/// to a billion items. A limit checked at each level separately can never
+/// see that, because no level exceeds it. The budget is shared by every
+/// nested construct in one expression, so the product is what is bounded.
+///
+/// Held in thread-local state rather than in [`EvalContext`], which is `Copy`
+/// — a counter stored by value would be duplicated at exactly the nesting
+/// points that need to share it. Evaluation is single-threaded within a
+/// pattern, so a thread-local is the right scope, and it is touched only by
+/// these rare constructs rather than on the hot path.
+const MAX_SEQUENCE_WORK: u64 = 10_000_000;
+
+thread_local! {
+    static SEQUENCE_WORK: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static SEQUENCE_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Enters a multiplying construct, starting a fresh budget at the outermost
+/// one and restoring the depth on the way out however the body exits.
+struct SequenceScope;
+
+impl SequenceScope {
+    fn enter() -> Self {
+        SEQUENCE_DEPTH.with(|depth| {
+            if depth.get() == 0 {
+                SEQUENCE_WORK.with(|work| work.set(MAX_SEQUENCE_WORK));
+            }
+            depth.set(depth.get() + 1);
+        });
+        Self
+    }
+}
+
+impl Drop for SequenceScope {
+    fn drop(&mut self) {
+        SEQUENCE_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+    }
+}
+
+/// Charges `items` against the shared budget.
+fn spend(items: u64) -> Result<(), EvalError> {
+    SEQUENCE_WORK.with(|work| {
+        let left = work.get();
+        if items > left {
+            return Err(EvalError::new(format!(
+                "this expression asks for more than {MAX_SEQUENCE_WORK} items across \
+                 its nested ranges and `for` expressions; each one may be within the \
+                 limit while the product is not"
+            )));
+        }
+        work.set(left - items);
+        Ok(())
+    })
+}
+
 const MAX_RANGE: f64 = 1_000_000.0;
 
 /// The items of `from to to`, ascending.
@@ -1168,6 +1234,13 @@ fn range_items(from: f64, to: f64) -> Result<Vec<Item>, EvalError> {
             to - from + 1.0
         )));
     }
+
+    // A range opens a scope of its own, so a bare `1 to 999999` starts a
+    // fresh budget rather than drawing on one that was never opened, and a
+    // range inside a `for` shares that loop's budget.
+    let _scope = SequenceScope::enter();
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    spend((to - from + 1.0) as u64)?;
 
     let mut items = Vec::new();
     let mut current = from;
@@ -1303,11 +1376,7 @@ fn collect_axis(document: &Document, node: NodeId, axis: Axis) -> Vec<NodeId> {
             nodes.extend(document.ancestors(node));
             nodes
         }
-        Axis::Descendant => {
-            let mut nodes = document.descendants_or_self(node);
-            nodes.remove(0);
-            nodes
-        }
+        Axis::Descendant => document.descendants(node),
         Axis::DescendantOrSelf => document.descendants_or_self(node),
         Axis::FollowingSibling => siblings(document, node, true),
         Axis::PrecedingSibling => siblings(document, node, false),
@@ -1382,7 +1451,7 @@ const fn principal_kind(axis: Axis) -> NodeKind {
     }
 }
 
-fn matches_node_test(
+pub(crate) fn matches_node_test(
     document: &Document,
     node: NodeId,
     axis: Axis,
@@ -1402,6 +1471,33 @@ fn matches_node_test(
                         document.name(node).is_some_and(|n| &n.local == wanted)
                     }
                 }
+        }
+        // A kind test names the kind outright, so unlike `*` it does not
+        // depend on the axis: `child::attribute()` selects nothing, because
+        // the child axis yields no attributes.
+        NodeTest::Kind {
+            kind: wanted,
+            name: None,
+        } => kind == *wanted,
+        NodeTest::Kind {
+            kind: wanted,
+            name: Some(name),
+        } => {
+            if kind != *wanted {
+                return false;
+            }
+            let uri = match &name.prefix {
+                Some(prefix) => match context.namespaces.resolve(prefix) {
+                    Some(uri) => Some(uri),
+                    None => return false,
+                },
+                // As everywhere else here, an unprefixed name is in no
+                // namespace; there is no default namespace to fall back on.
+                None => None,
+            };
+            document
+                .name(node)
+                .is_some_and(|actual| actual.matches_parts(uri, &name.local))
         }
         NodeTest::Wildcard => kind == principal_kind(axis),
         NodeTest::NamespaceWildcard(prefix) => {

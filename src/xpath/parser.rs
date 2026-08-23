@@ -648,6 +648,7 @@ impl Parser {
             });
         }
 
+        let mut written = true;
         let axis = if self.eat(&TokenKind::At) {
             Axis::Attribute
         } else if let Some(TokenKind::AxisName(name)) = self.peek().cloned() {
@@ -658,10 +659,30 @@ impl Parser {
                 None => return self.error(format!("unknown axis {name:?}")),
             }
         } else {
+            written = false;
             Axis::Child
         };
 
         let node_test = self.parse_node_test(axis)?;
+
+        // XPath 2.0 section 3.2.1.1: a step whose node test is an attribute
+        // kind test defaults to the attribute axis, not the child axis. So
+        // `b/attribute()` means `b/attribute::attribute()` and selects b's
+        // attributes — otherwise the test could never match anything, since
+        // the child axis yields no attributes at all.
+        let axis = if !written
+            && matches!(
+                node_test,
+                NodeTest::Kind {
+                    kind: crate::xml::NodeKind::Attribute,
+                    ..
+                }
+            ) {
+            Axis::Attribute
+        } else {
+            axis
+        };
+
         let predicates = self.parse_predicates()?;
         Ok(Step {
             axis,
@@ -692,6 +713,30 @@ impl Parser {
                             NodeTest::ProcessingInstruction(Some(target))
                         } else {
                             NodeTest::ProcessingInstruction(None)
+                        }
+                    }
+                    // XPath 2.0 kind tests. A name may be given, and `*`
+                    // means the same as no name at all.
+                    "element" | "attribute" | "document-node" => {
+                        let node_kind = match kind.as_str() {
+                            "element" => crate::xml::NodeKind::Element,
+                            "attribute" => crate::xml::NodeKind::Attribute,
+                            _ => crate::xml::NodeKind::Root,
+                        };
+                        let mut name = None;
+                        if node_kind != crate::xml::NodeKind::Root {
+                            match self.peek().cloned() {
+                                Some(TokenKind::Star) => self.index += 1,
+                                Some(TokenKind::Name(written)) => {
+                                    self.index += 1;
+                                    name = Some(NameTest::parse(&written));
+                                }
+                                _ => {}
+                            }
+                        }
+                        NodeTest::Kind {
+                            kind: node_kind,
+                            name,
                         }
                     }
                     other => return self.error(format!("unknown node type {other}()")),

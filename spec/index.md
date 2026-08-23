@@ -13,7 +13,7 @@ XML data model, its own XPath 1.0 engine, and its own Schematron validator.
 |---|---|---|
 | XML data model and parser | [xml.md](xml.md) | Implemented |
 | XPath 1.0 engine | [xpath.md](xpath.md) | Implemented |
-| XPath 2.0 support | [xpath2.md](xpath2.md) | Phase 1 |
+| XPath 2.0 support | [xpath2.md](xpath2.md) | Phases 1–3, and kind tests |
 | Schematron data model | [data-model.md](data-model.md) | Implemented |
 | Schema parsing, include, abstract expansion | [parsing.md](parsing.md) | Implemented |
 | Validation semantics | [validation.md](validation.md) | Implemented |

@@ -141,7 +141,21 @@ pub(crate) struct LexError {
 }
 
 /// The node type names, which take precedence over function names.
-const NODE_TYPES: [&str; 4] = ["node", "text", "comment", "processing-instruction"];
+/// Names that are node tests rather than function calls when followed by `(`.
+///
+/// The last three are XPath 2.0 kind tests. They are lexed here whatever the
+/// query binding, because the lexer has no version; a 1.0 schema using one
+/// gets a compile-time refusal naming the construct, which is a better answer
+/// than "unknown function element()".
+const NODE_TYPES: [&str; 7] = [
+    "node",
+    "text",
+    "comment",
+    "processing-instruction",
+    "element",
+    "attribute",
+    "document-node",
+];
 
 /// Tokenizes an XPath expression.
 pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {

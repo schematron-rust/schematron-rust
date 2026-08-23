@@ -82,6 +82,22 @@ Add a corpus case that would fail under the old behaviour.
    only one caller performs".
 5. Re-run that target for at least 60 seconds.
 
+Not every artifact is a defect, and the two false ones cost real time:
+
+- **`slow-unit-*`**: a fuzz build carries a sanitizer and coverage and runs
+  about ninety times slower than release, so an input at a documented limit —
+  0.3 s released — is filed as slow at 27 s. Run with `-report_slow_units=30`,
+  above the slowest input the limits permit. What matters is whether the work
+  is *bounded*, not whether it is fast.
+- **`oom-*`**: `-rss_limit_mb` measures the whole process, and the fuzzer's own
+  corpus and coverage are most of it — 437 MB before a single iteration for
+  `fuzz_validate`. A ceiling near that files OOMs that reproduce in a
+  millisecond using 44 MB. Leave the default, or measure the baseline first.
+
+A genuine resource defect looks different: the nested-range denial of service
+was found *as* a slow unit, and the tell was that the input was 79 bytes and
+the work grew without bound.
+
 ## Add a lint
 
 1. `src/lint.rs` — a `LintKind` variant with a kebab-case `as_str()`, and the
@@ -96,9 +112,22 @@ Add a corpus case that would fail under the old behaviour.
 5. Check `cargo run -- --schema examples/invoice.sch --lint` is still clean;
    `tests/cli.rs` asserts the bundled example models good practice.
 
-Prefer a conservative check. `UnreachableRule` reports only the three
-contexts that certainly claim everything, because general subsumption of XPath
-patterns is not practical to decide and a guess would be a false positive.
+Prefer a conservative check. `UnreachableRule` decides shadowing by pairwise
+subsumption — the earlier rule must carry no predicates, and its steps must
+generalise a suffix of the later one's — because deciding general subsumption
+of XPath patterns is not practical and a guess would be a false positive. It
+was three hardcoded contexts before that, and the hardcoded version had one:
+it treated `@*` as claiming every node, so an element rule after it was called
+unreachable although both fire.
+
+**Is it a lint or a portability finding?** `lint()` is for constructs that are
+probably *wrong*. `portability()` is for constructs that are *correct here*
+and behave differently under another processor. A portability finding needs a
+divergence recorded in [`spec/conformance.md`](../spec/conformance.md),
+established by running both implementations — not a suspicion — and its test
+should point at the corpus case that demonstrates the divergence rather than
+at a schema written to match. They are separate because a check that reports
+correct code, mixed into the linter, teaches its reader to ignore the linter.
 
 ## Investigate "this schema does nothing"
 
@@ -140,8 +169,14 @@ the pull request, and confirm it does not pull in C.
 
 ## Release
 
-1. Version in `Cargo.toml`.
-2. `cargo package --list` — check nothing unwanted is included and that
+1. Version in `Cargo.toml`. In 0.x, a breaking change is a **minor** bump:
+   `^0.4` does not accept `0.5.0`.
+2. [`CHANGELOG.md`](../CHANGELOG.md). Lead with what changes for someone who
+   already depends on the crate — behaviour first, then additions, then fixes.
+   A release that alters output says so plainly.
+3. `cargo package --list` — check nothing unwanted is included and that
    `spec/` and `examples/` still are.
-3. All four gates, plus `cargo bench` for a regression check.
-4. `cargo publish --dry-run`.
+4. All four gates, plus the differential suite with `SCHEMATRON_SKELETON` set,
+   plus `cargo bench` against a saved baseline.
+5. `cargo publish --dry-run`.
+6. Tag `v<version>` and push it alongside the commit.

@@ -549,16 +549,7 @@ impl Schema {
                     }
                 }
                 for step in &path.steps {
-                    match &step.node_test {
-                        NodeTest::Name(NameTest {
-                            prefix: Some(prefix),
-                            ..
-                        })
-                        | NodeTest::NamespaceWildcard(prefix) => {
-                            self.check_prefix(prefix, source, location)?;
-                        }
-                        _ => {}
-                    }
+                    self.check_node_test(&step.node_test, source, location)?;
                     for predicate in &step.predicates {
                         self.check_expression(predicate, source, location)?;
                     }
@@ -566,6 +557,38 @@ impl Schema {
             }
         }
         Ok(())
+    }
+
+    /// Checks one step's node test: prefixes must be declared, and a kind
+    /// test needs an XPath 2.0 binding.
+    fn check_node_test(&self, test: &NodeTest, source: &str, location: &str) -> Result<()> {
+        match test {
+            NodeTest::Name(NameTest {
+                prefix: Some(prefix),
+                ..
+            })
+            | NodeTest::NamespaceWildcard(prefix) => self.check_prefix(prefix, source, location),
+            // A kind test as a node test is XPath 2.0. The lexer recognises
+            // it whatever the binding, so that a 1.0 schema is told what it
+            // wrote rather than being told `element` is an unknown function.
+            NodeTest::Kind { kind, name } => {
+                let written = match kind {
+                    crate::xml::NodeKind::Element => "element",
+                    crate::xml::NodeKind::Attribute => "attribute",
+                    _ => "document-node",
+                };
+                self.require_v2(&format!("the {written}() kind test"), source, location)?;
+                if let Some(NameTest {
+                    prefix: Some(prefix),
+                    ..
+                }) = name
+                {
+                    self.check_prefix(prefix, source, location)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 
     /// Rejects an XPath 2.0 construct under an XPath 1.0 query binding.

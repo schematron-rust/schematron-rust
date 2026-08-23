@@ -116,6 +116,11 @@ struct Cli {
     #[arg(long)]
     lint: bool,
 
+    /// Report constructs that behave differently under other Schematron
+    /// processors, then exit. Not mistakes; see spec/linting.md.
+    #[arg(long)]
+    portability: bool,
+
     /// Print the compiled schema — patterns, rules, contexts, tests — and exit.
     #[arg(long)]
     explain: bool,
@@ -183,8 +188,12 @@ fn run(cli: &Cli) -> Result<u8, Exit> {
         print!("{}", explain(&schema));
         return Ok(EXIT_VALID);
     }
-    if cli.lint {
-        let lints = schema.lint();
+    if cli.lint || cli.portability {
+        let lints = if cli.portability {
+            schema.portability()
+        } else {
+            schema.lint()
+        };
         if !cli.quiet {
             write_output(cli.output.as_deref(), &render_lints(&lints))?;
         }

@@ -221,7 +221,8 @@ states the limits and deliberate divergences in full.
 | `queryBinding="xslt2"`, `"xpath2"` | Partly — see [spec/xpath2.md](spec/xpath2.md) |
 | `queryBinding="xslt3"` and later | Refused by default |
 | `extends rule` and `extends href`, with `#fragment` identifiers | Full |
-| `document(uri, base)` | Not implemented — the one-argument form is |
+| `document(uri, base)` | Full — resolves against the second argument's first node |
+| XPath 2.0 kind tests as node tests — `element()`, `attribute(id)`, `document-node()` | Full, under an `xslt2` binding |
 
 Beyond the standard, the crate lints a schema for constructs that are legal
 but almost certainly wrong — a rule shadowed by an earlier one in the same
@@ -234,6 +235,21 @@ schematron --schema rules.sch --lint
 ```
 
 See [spec/linting.md](spec/linting.md).
+
+A separate check asks a different question — **will this schema behave the
+same under another Schematron processor?**
+
+```sh
+schematron --schema rules.sch --portability
+```
+
+What it reports is not wrong. It is correct, and works here, and the ISO
+reference implementation treats it differently: a `let` shadowing an outer
+one, which that implementation refuses outright; a rule on `comment()`, which
+it never fires; a rule's `@flag`, which it drops. Each check is backed by a
+divergence in [spec/conformance.md](spec/conformance.md), established by
+running both implementations against the same schema. Kept out of `--lint`,
+because a linter that reports correct code gets switched off.
 
 XPath 2.0 is a different language, not XPath 1.0 with extra functions. The
 crate implements a documented subset of it — regular expressions,

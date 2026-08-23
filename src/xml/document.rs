@@ -321,9 +321,36 @@ impl Document {
     /// the `descendant-or-self` axis.
     #[must_use]
     pub fn descendants_or_self(&self, id: NodeId) -> Vec<NodeId> {
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(self.subtree_capacity(id));
         self.push_descendants_or_self(id, &mut out);
         out
+    }
+
+    /// Every node in the subtree rooted at `id` **except** `id`.
+    ///
+    /// Separate from [`Document::descendants_or_self`] rather than that
+    /// result with its first element removed: `Vec::remove(0)` shifts every
+    /// remaining element, and this axis is evaluated against the whole
+    /// document once per rule.
+    #[must_use]
+    pub fn descendants(&self, id: NodeId) -> Vec<NodeId> {
+        let mut out = Vec::with_capacity(self.subtree_capacity(id));
+        for &child in self.children(id) {
+            self.push_descendants_or_self(child, &mut out);
+        }
+        out
+    }
+
+    /// An upper bound on the nodes in a subtree, for sizing a vector once
+    /// instead of growing it.
+    ///
+    /// Document order numbers attribute and namespace nodes too, so this
+    /// over-counts for the axes that exclude them — which is what an upper
+    /// bound is for.
+    fn subtree_capacity(&self, id: NodeId) -> usize {
+        self.subtree_end(id)
+            .saturating_sub(self.order(id))
+            .saturating_add(1)
     }
 
     fn push_descendants_or_self(&self, id: NodeId, out: &mut Vec<NodeId>) {
@@ -443,54 +470,99 @@ impl Document {
     /// ```
     #[must_use]
     pub fn location(&self, id: NodeId) -> String {
+        // Walk up once, collecting the chain, then write the steps in a
+        // single pass. Recursing and formatting `{parent}/{step}` per level
+        // copies the whole ancestor prefix again at every level, which is
+        // quadratic in depth — and a finding pays it once per location, so a
+        // document nested a few hundred deep pays it thousands of times.
+        if self.kind(id) == NodeKind::Root {
+            return "/".to_string();
+        }
+        let mut chain = Vec::new();
+        let mut current = Some(id);
+        while let Some(node) = current {
+            if self.kind(node) == NodeKind::Root {
+                break;
+            }
+            chain.push(node);
+            current = self.parent(node);
+        }
+
+        let mut out = String::new();
+        for &node in chain.iter().rev() {
+            out.push('/');
+            self.push_location_step(node, &mut out);
+        }
+        out
+    }
+
+    /// One step of a location, without its leading `/`.
+    fn push_location_step(&self, id: NodeId, out: &mut String) {
         match self.kind(id) {
-            NodeKind::Root => "/".to_string(),
+            NodeKind::Root => out.push('/'),
             NodeKind::Attribute => {
-                let parent = self.parent(id).map_or_else(|| "/".to_string(), |p| self.location(p));
-                let step = self.name(id).map_or_else(
-                    || "@*".to_string(),
-                    |name| match name.uri.as_deref() {
+                out.push('@');
+                match self.name(id) {
+                    Some(name) => match name.uri.as_deref() {
                         Some(uri) => {
-                            format!("@*[{}]", name_predicate(&name.local, uri))
+                            out.push_str("*[");
+                            out.push_str(&name_predicate(&name.local, uri));
+                            out.push(']');
                         }
-                        None => format!("@{}", name.local),
+                        None => out.push_str(&name.local),
                     },
-                );
-                format!("{parent}/{step}")
+                    None => out.push('*'),
+                }
             }
             NodeKind::Namespace => {
-                let parent = self.parent(id).map_or_else(|| "/".to_string(), |p| self.location(p));
-                let name = self.name(id).map_or_else(String::new, |n| n.local.clone());
-                format!("{parent}/namespace::{name}")
+                out.push_str("namespace::");
+                if let Some(name) = self.name(id) {
+                    out.push_str(&name.local);
+                }
             }
             kind => {
-                let parent = self.parent(id).map_or_else(String::new, |p| {
-                    if self.kind(p) == NodeKind::Root {
-                        String::new()
-                    } else {
-                        self.location(p)
-                    }
-                });
-                let position = self.position_among_siblings(id);
-                let step = match kind {
-                    NodeKind::Element => self.name(id).map_or_else(
-                        || "*".to_string(),
-                        |name| match name.uri.as_deref() {
-                            Some(uri) => format!("*[{}]", name_predicate(&name.local, uri)),
-                            None => name.local.clone(),
+                match kind {
+                    NodeKind::Element => match self.name(id) {
+                        Some(name) => match name.uri.as_deref() {
+                            Some(uri) => {
+                                out.push_str("*[");
+                                out.push_str(&name_predicate(&name.local, uri));
+                                out.push(']');
+                            }
+                            None => out.push_str(&name.local),
                         },
-                    ),
-                    NodeKind::Text => "text()".to_string(),
-                    NodeKind::Comment => "comment()".to_string(),
-                    NodeKind::ProcessingInstruction => "processing-instruction()".to_string(),
+                        None => out.push('*'),
+                    },
+                    NodeKind::Text => out.push_str("text()"),
+                    NodeKind::Comment => out.push_str("comment()"),
+                    NodeKind::ProcessingInstruction => out.push_str("processing-instruction()"),
                     NodeKind::Root | NodeKind::Attribute | NodeKind::Namespace => {
                         unreachable!("handled by the outer match arms")
                     }
-                };
-                format!("{parent}/{step}[{position}]")
+                }
+                out.push('[');
+                out.push_str(itoa(self.position_among_siblings(id)).as_str());
+                out.push(']');
             }
         }
     }
+}
+
+/// A positive integer as a string, avoiding `format!`'s machinery on a path
+/// that runs once per step of every location.
+fn itoa(value: usize) -> String {
+    let mut buffer = [0u8; 20];
+    let mut index = buffer.len();
+    let mut value = value;
+    loop {
+        index -= 1;
+        buffer[index] = b'0' + u8::try_from(value % 10).expect("a digit");
+        value /= 10;
+        if value == 0 {
+            break;
+        }
+    }
+    String::from_utf8_lossy(&buffer[index..]).into_owned()
 }
 
 /// The predicate that identifies a namespaced name in XPath 1.0.

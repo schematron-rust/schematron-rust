@@ -396,15 +396,26 @@ fn the_lint_table_in_the_spec_matches_the_linter() {
     let source = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lint.rs"))
         .expect("src/lint.rs should exist");
 
+    // Any match arm mapping a variant to its string, however rustfmt has
+    // wrapped it: a long variant name puts the string on the next line, and
+    // matching only the one-line form reports the lint as missing when it is
+    // merely formatted differently.
     let mut kinds = Vec::new();
     for line in source.lines() {
-        let Some(rest) = line.trim().strip_prefix("LintKind::") else {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix("LintKind::") else {
             continue;
         };
-        let Some((name, _)) = rest.split_once(" => \"") else {
+        if !line.contains("=>") {
             continue;
-        };
-        kinds.push(name.to_string());
+        }
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if !name.is_empty() {
+            kinds.push(name);
+        }
     }
     assert!(!kinds.is_empty(), "no LintKind variants were found");
 

@@ -15,6 +15,8 @@ repeating what they say.
 | Use the library | [spec/api.md](spec/api.md) |
 | Use the command line tool | [spec/cli.md](spec/cli.md) |
 | Work out why a schema does nothing | [spec/linting.md](spec/linting.md) |
+| Check a schema behaves the same elsewhere | [spec/linting.md](spec/linting.md#portability) |
+| See what changed between releases | [CHANGELOG.md](CHANGELOG.md) |
 | Decide whether to depend on this | [spec/conformance.md](spec/conformance.md) |
 | Work on the crate | [AGENTS.md](AGENTS.md) |
 
