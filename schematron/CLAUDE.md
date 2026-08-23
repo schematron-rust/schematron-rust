@@ -34,9 +34,16 @@ is Claude-specific mechanics that do not belong there.
   Budget for it; the default run is unbounded.
 - **Benchmarks are slow by default.** For a quick signal use
   `--warm-up-time 1 --measurement-time 2 --sample-size 10`.
-- **`cargo clippy --fix` needs `--allow-no-vcs`** here, since the repository
-  has no version control initialised. Do not run `git init` to work around
-  that — it is not this project's decision to make.
+- **The crate root is `schematron/`, not the repository root.** The repository
+  holds the crate and the website as peers, so run `cargo` from here. Anything
+  that reads the crate root at compile time — `env!("CARGO_MANIFEST_DIR")`, which
+  five of the test files use — bakes in the path it was built with, and cargo
+  does not rebuild on a directory move. A `target/` from before the move makes
+  those tests look for `spec/` and `examples/` at the old path and fail with
+  exit code 3 and empty output. `cargo clean` is the fix, not a source change.
+- **`cargo clippy --fix` refuses on a dirty tree**, so commit or stash first
+  rather than reaching for `--allow-dirty`; the point of the refusal is that
+  the rewrite is otherwise unreviewable.
 - **The MSRV toolchain `1.94` is installed.** If a bump is needed,
   `rustup toolchain install <version> --profile minimal` first, then actually
   run the tests on it.
