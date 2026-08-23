@@ -1,0 +1,4 @@
+# Single-package repo. This file exists only to record build-script approval:
+# pnpm 10+ reads it instead of package.json's onlyBuiltDependencies.
+allowBuilds:
+  esbuild: true
