@@ -11,6 +11,7 @@ repeating what they say.
 | You want to | Go to |
 |---|---|
 | Understand what Schematron is and why | [README.md](README.md) |
+| Read all of this as a website | <https://schematron-rust.github.io/> |
 | Learn to write schemas | [spec/tutorial.md](spec/tutorial.md) |
 | Use the library | [spec/api.md](spec/api.md) |
 | Use the command line tool | [spec/cli.md](spec/cli.md) |

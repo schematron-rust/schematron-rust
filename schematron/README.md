@@ -6,6 +6,14 @@ with no `libxml2`, no XSLT processor, no C toolchain, and no FFI.
 [![crates.io](https://img.shields.io/crates/v/schematron.svg)](https://crates.io/crates/schematron)
 [![docs.rs](https://docs.rs/schematron/badge.svg)](https://docs.rs/schematron)
 [![license](https://img.shields.io/crates/l/schematron.svg)](#license)
+[![website](https://img.shields.io/badge/website-schematron--rust.github.io-8b3a1f)](https://schematron-rust.github.io/)
+
+<https://schematron-rust.github.io/> is the same material as this README and
+`spec/`, in a form you can link someone to: a
+[worked example](https://schematron-rust.github.io/example/) of one schema and
+two documents with the real output at each step, the
+[report formats](https://schematron-rust.github.io/reports/) side by side, and
+the [conformance table](https://schematron-rust.github.io/conformance/).
 
 Every other route to Schematron in Rust goes through C: bind to `libxml2`, or
 shell out to Saxon, or compile the schema into XSLT and find an XSLT engine to
