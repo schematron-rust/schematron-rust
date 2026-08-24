@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  A worked Schematron schema for the tutorial in spec/tutorial.md.
+  A worked Schematron schema for the tutorial in spec/tutorial/.
 
   Read a rule as: "for every node matching @context, check these assertions".
   Remember that within one pattern a node is claimed by the FIRST matching

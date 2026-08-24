@@ -70,7 +70,7 @@ absorbs the text of the diagnostics beneath it.
 | Attribute | Value |
 |---|---|
 | `test` | The assertion's XPath source text, verbatim |
-| `location` | Absolute XPath to the subject node, see [validation.md](validation.md) |
+| `location` | Absolute XPath to the subject node, see [validation/](../validation/index.md) |
 | `id` | The assertion's `@id`, if any |
 | `role` | Resolved role: assertion's, else rule's |
 | `flag` | Resolved flag: assertion's, else rule's |

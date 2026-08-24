@@ -5,7 +5,7 @@
 //! and a stable document order — not a stream of events. This module provides
 //! exactly that and nothing more; it is not a general-purpose XML toolkit.
 //!
-//! See `spec/xml.md` for the design and its deliberate limits.
+//! See `spec/xml/` for the design and its deliberate limits.
 //!
 //! # Examples
 //!

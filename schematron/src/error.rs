@@ -2,7 +2,7 @@
 //!
 //! One enum covers everything, and every variant names both what failed and
 //! where, because a schema error that says only "invalid XPath" costs the
-//! reader more time than the crate saved them. See `spec/errors.md`.
+//! reader more time than the crate saved them. See `spec/errors/`.
 //!
 //! The distinction that matters: a **finding** is a document breaking a rule,
 //! and lives in a [`Report`](crate::Report). An **error** is the crate being

@@ -139,7 +139,7 @@ evaluated with the firing node as context, so it can depend on the node.
 
 Note the comparison: XPath 1.0 has no `abs()`, so a tolerance is written as a
 pair of inequalities. If you reach for a function and the schema refuses to
-compile, check [xpath.md](xpath.md) — the message will tell you whether the
+compile, check [xpath/](../xpath/index.md) — the message will tell you whether the
 function is an XPath 2.0 one.
 
 ## 7. Diagnostics
@@ -417,7 +417,7 @@ difference is one of complexity rather than a constant factor.
 
 `<sch:key>` is a Schematron 1.5 element that ISO dropped, and this crate keeps
 as an extension — a schema using it will not run on a processor that does
-not. [keys.md](keys.md) states that trade.
+not. [keys/](../keys/index.md) states that trade.
 
 ## 16. Using the library
 
@@ -458,10 +458,10 @@ schematron -s rules.sch --explain            # what will this schema do?
 
 ## 18. Where to go next
 
-- [validation.md](validation.md) — the exact algorithm, if a result surprises you
-- [xpath.md](xpath.md) — what the expression language does and does not have
-- [conformance.md](conformance.md) — the limits, stated up front
-- [api.md](api.md) — the library API in full
+- [validation/](../validation/index.md) — the exact algorithm, if a result surprises you
+- [xpath/](../xpath/index.md) — what the expression language does and does not have
+- [conformance/](../conformance/index.md) — the limits, stated up front
+- [api/](../api/index.md) — the library API in full
 
 Runnable code for everything above:
 

@@ -89,7 +89,7 @@ SCHEMATRON_SKELETON=/tmp/skeleton cargo test --test differential -- --ignored
 
 Every corpus case the reference can run agrees exactly. The exceptions are
 listed in the test itself, each with its reason, and in
-[conformance.md](conformance.md). Two lists drive it:
+[conformance/](../conformance/index.md). Two lists drive it:
 
 - `KNOWN_DIVERGENCES` — cases where the two legitimately differ.
 - `REFERENCE_CANNOT_RUN` — cases the reference cannot compile at all.
@@ -137,7 +137,7 @@ SCHEMATRON_FUZZ_SEED=25 SCHEMATRON_FUZZ_CASES=1 \
 This found a real bug: node-set compared to boolean was being evaluated
 existentially like the string and number cases, when XPath 1.0 section 3.4
 requires a `boolean()` conversion. `missing >= false()` is true, and this
-crate said false. See [xpath.md](xpath.md).
+crate said false. See [xpath/](../xpath/index.md).
 
 **The generator is only as good as its grammar, and this is measured rather
 than assumed.** Deliberately breaking a comparison rule and checking that the
@@ -272,7 +272,7 @@ for $i in 1 to 999 return for $j in 1 to 999 return for $k in 1 to 999 return $k
 is comfortably inside the single-range limit, and together they ask for close
 to a billion items — from a 79-byte expression. The fix is a budget shared by
 every nested construct in one expression, so the product is what is bounded;
-see [conformance.md](conformance.md) for both limits.
+see [conformance/](../conformance/index.md) for both limits.
 
 libFuzzer reports a **slow unit** long before the crate's limits are reached,
 because its threshold is measured against a microsecond budget. A range of
@@ -304,7 +304,7 @@ Two of these earn their keep specifically:
 - **`validate` at 1 000 and 10 000 elements** is what caught a real quadratic:
   generating an SVRL location rescanned the parent's child list once per
   finding. Fixing it — by precomputing sibling positions and subtree ranges,
-  see [xml.md](xml.md) — made the 10 000-element case fourteen times faster
+  see [xml/](../xml/index.md) — made the 10 000-element case fourteen times faster
   and restored linear scaling.
 
 Indicative numbers on an M-series laptop:
@@ -328,7 +328,7 @@ The cross-reference pair measures a complexity difference rather than a
 constant factor, and the scaling shows it. Going from 200 references to 1 000
 — five times the data — the keyed version takes 4.7 times as long, and the
 unkeyed one 24.6 times, which is 5². That is the whole justification for
-[keys.md](keys.md), and it is measured rather than asserted.
+[keys/](../keys/index.md), and it is measured rather than asserted.
 
 The parallel pair is worth reading as a warning as much as a result: on a
 small document, turning threading on makes validation slower. That is why

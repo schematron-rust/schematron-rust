@@ -723,7 +723,7 @@ fn matches_item_type(item: &Item, item_type: &ItemType, context: &EvalContext<'_
                 Item::Node(_) => false,
                 Item::String(_) => matches!(local, "string" | "anyAtomicType" | "untypedAtomic"),
                 Item::Boolean(_) => matches!(local, "boolean" | "anyAtomicType"),
-                // Every number here is a double; see `spec/xpath2.md`.
+                // Every number here is a double; see `spec/xpath2/`.
                 Item::Number(_) => matches!(local, "double" | "anyAtomicType"),
                 Item::Temporal(temporal) => {
                     local == "anyAtomicType"
@@ -888,7 +888,7 @@ fn lone_duration(value: &Value) -> Option<Duration> {
 /// duration to a date moves it. Anything else — a date plus a date, or two
 /// durations of different subtypes — is a type error rather than a number,
 /// because XPath 2.0 gives it no meaning and inventing one would hide a
-/// mistake. See `spec/xpath2.md`.
+/// mistake. See `spec/xpath2/`.
 fn temporal_arithmetic(op: BinaryOp, left: &Value, right: &Value) -> Result<Value, EvalError> {
     let subtract = op == BinaryOp::Subtract;
     let item = |item: Item| Ok(Value::Sequence(vec![item]));
@@ -963,7 +963,7 @@ fn temporal_arithmetic(op: BinaryOp, left: &Value, right: &Value) -> Result<Valu
         }
 
         _ => Err(EvalError::new(format!(
-            "`{}` has no meaning for these operands; see spec/xpath2.md for the \
+            "`{}` has no meaning for these operands; see spec/xpath2/ for the \
              date and duration arithmetic that is defined",
             op.as_str()
         ))),
@@ -986,7 +986,7 @@ fn temporal_arithmetic(op: BinaryOp, left: &Value, right: &Value) -> Result<Valu
 ///   `@n eq 1` is an error even when `@n` is `"1"`. That is `eq` reporting
 ///   that the comparison written is not the one meant.
 ///
-/// See `spec/xpath2.md`.
+/// See `spec/xpath2/`.
 fn compare_by_value(
     op: BinaryOp,
     left: &Value,

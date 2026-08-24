@@ -11,7 +11,7 @@
 //! Expressions are parsed once when a schema is compiled and evaluated many
 //! times, which is where the performance comes from.
 //!
-//! See `spec/xpath.md` for the grammar and the semantics.
+//! See `spec/xpath/` for the grammar and the semantics.
 //!
 //! # Examples
 //!
@@ -52,7 +52,7 @@
 //! registry. Evaluating an expression directly through this module has no
 //! registry, and `document()` is then an error rather than an empty node-set:
 //! silently returning nothing would turn a broken lookup into a passing
-//! assertion. See `spec/xpath.md`.
+//! assertion. See `spec/xpath/`.
 
 mod ast;
 mod context;

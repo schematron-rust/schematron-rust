@@ -31,7 +31,7 @@ That evaluates `//part` once for every `line`, and scans it. A document with
 and each lookup is a hash probe: *n* work to build, and *n* probes.
 
 Figures and the benchmark that produces them are in
-[testing.md](testing.md#benchmarks).
+[testing/](../testing/index.md#benchmarks).
 
 ## Declaring one
 
@@ -91,4 +91,4 @@ ISO-conformant.
   which the linter reports.
 - **`match` is a match pattern**, so the same restriction applies as to
   `rule/@context`: a leading reverse axis is rejected. See
-  [validation.md](validation.md).
+  [validation/](../validation/index.md).

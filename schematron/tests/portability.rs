@@ -2,7 +2,7 @@
 //!
 //! What makes this feature trustworthy is not that it reports something, but
 //! that what it reports is *grounded*. Every kind corresponds to a divergence
-//! recorded in `spec/conformance.md`, each established by running this crate
+//! recorded in `spec/conformance/`, each established by running this crate
 //! and the ISO reference implementation against the same schema and comparing
 //! their output.
 //!
@@ -46,7 +46,7 @@ fn the_cases_the_reference_cannot_compile_are_reported() {
 
 #[test]
 fn the_documented_divergences_are_reported() {
-    // Each of these is a numbered divergence in spec/conformance.md.
+    // Each of these is a numbered divergence in spec/conformance/.
     for (case, kind) in [
         ("node-kinds", schematron::LintKind::ContextSelectsANonElementKind),
         ("subject", schematron::LintKind::SubjectMovesTheLocation),

@@ -242,14 +242,14 @@ fn every_expected_location_resolves_to_exactly_one_node() {
 
 #[test]
 fn every_corpus_case_is_documented_and_every_documented_case_exists() {
-    // spec/testing.md tabulates what each case pins down. Drift in either
+    // spec/testing/ tabulates what each case pins down. Drift in either
     // direction is a defect: an undocumented case is invisible to a reader
     // deciding whether a behaviour is covered, and a documented case that
     // does not exist is a claim of coverage that is not there.
     let spec = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/testing.md"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/testing/index.md"),
     )
-    .expect("spec/testing.md should exist");
+    .expect("spec/testing/ should exist");
 
     // Only the corpus table counts. The file holds other tables whose first
     // column is also a backticked lowercase name — the sabotage coverage
@@ -259,7 +259,7 @@ fn every_corpus_case_is_documented_and_every_documented_case_exists() {
     let table = {
         let start = spec
             .find("## Corpus tests")
-            .expect("spec/testing.md should have a '## Corpus tests' section");
+            .expect("spec/testing/ should have a '## Corpus tests' section");
         let rest = &spec[start + "## Corpus tests".len()..];
         let end = rest.find("\n## ").unwrap_or(rest.len());
         &rest[..end]
@@ -270,7 +270,7 @@ fn every_corpus_case_is_documented_and_every_documented_case_exists() {
         assert!(
             table.contains(&format!("| `{name}` |")),
             "corpus case {name:?} is not in the table under '## Corpus tests' \
-             in spec/testing.md"
+             in spec/testing/"
         );
     }
 
@@ -282,7 +282,7 @@ fn every_corpus_case_is_documented_and_every_documented_case_exists() {
         let path = corpus_root().join(name);
         assert!(
             path.is_dir(),
-            "spec/testing.md documents corpus case {name:?}, which does not exist"
+            "spec/testing/ documents corpus case {name:?}, which does not exist"
         );
     }
 }
@@ -291,7 +291,7 @@ fn every_corpus_case_is_documented_and_every_documented_case_exists() {
 ///
 /// SVRL's `fired-rule` element has nowhere to record which node the rule
 /// fired on, so that one field is compared as empty on both sides. See
-/// `spec/svrl.md`.
+/// `spec/svrl/`.
 fn without_fired_rule_locations(mut report: schematron::Report) -> schematron::Report {
     for pattern in &mut report.patterns {
         for rule in &mut pattern.rules {

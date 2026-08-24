@@ -9,7 +9,7 @@
 //! And everything outside the subset must be a **hard error naming the
 //! construct** — never a wrong answer. That is what makes a partial
 //! implementation of a different language honest rather than dangerous. See
-//! `spec/xpath2.md`.
+//! `spec/xpath2/`.
 
 use assertables::*;
 use schematron::{Document, Schema};
@@ -150,7 +150,7 @@ fn constructs_still_needing_phase_two_b_say_so() {
     ] {
         let message = compile_error("xslt2", test);
         assert_contains!(message, expected);
-        assert_contains!(message, "spec/xpath2.md");
+        assert_contains!(message, "spec/xpath2/");
     }
 }
 
@@ -160,7 +160,7 @@ fn constructs_still_needing_the_type_system_say_so() {
     // misbehaving.
     let message = compile_error("xslt2", "adjust-date-to-timezone(@d, @z)");
     assert_contains!(message, "date and time");
-    assert_contains!(message, "spec/xpath2.md");
+    assert_contains!(message, "spec/xpath2/");
 }
 
 #[test]
@@ -211,7 +211,7 @@ fn bindings_above_two_point_zero_are_still_refused() {
 
 #[test]
 fn the_documented_divergence_from_real_xpath_two_holds() {
-    // spec/xpath2.md states that where XPath 2.0 raises a type error, this
+    // spec/xpath2/ states that where XPath 2.0 raises a type error, this
     // crate produces NaN and the test is simply false. Asserting it here
     // means the documentation cannot drift away from the behaviour.
     assert!(!check("number(@x) + 1 &gt; 0", r#"<a x="not-a-number"/>"#));
@@ -1101,7 +1101,7 @@ fn instance_of_matches_atomic_types() {
 
 #[test]
 fn every_number_reports_as_a_double() {
-    // Documented in spec/xpath2.md: the crate holds every number as an IEEE
+    // Documented in spec/xpath2/: the crate holds every number as an IEEE
     // 754 double and does not track how it arrived. Asserting it here means
     // the documentation cannot drift from the behaviour.
     assert!(check("1 instance of xs:double", "<a/>"));

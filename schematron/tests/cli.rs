@@ -242,7 +242,7 @@ fn long_flags(source: &str) -> std::collections::BTreeSet<String> {
 
 #[test]
 fn every_cli_flag_is_documented_and_every_documented_flag_exists() {
-    // The binary is the source of truth; spec/cli.md must match it exactly.
+    // The binary is the source of truth; spec/cli/ must match it exactly.
     // Drift in either direction is a defect: an undocumented flag is hidden,
     // and a documented flag that does not exist is a promise the tool breaks.
     let help = stdout(&run(&["--help"]));
@@ -252,14 +252,14 @@ fn every_cli_flag_is_documented_and_every_documented_flag_exists() {
     actual.remove("help");
     actual.remove("version");
 
-    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/cli.md");
-    let spec = std::fs::read_to_string(&spec_path).expect("spec/cli.md should exist");
+    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/cli/index.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("spec/cli/ should exist");
     let documented = long_flags(&spec);
 
     let undocumented: Vec<&String> = actual.difference(&documented).collect();
     assert!(
         undocumented.is_empty(),
-        "flag(s) the tool accepts but spec/cli.md does not document: {undocumented:?}"
+        "flag(s) the tool accepts but spec/cli/ does not document: {undocumented:?}"
     );
 
     // Anything in the spec that looks like a flag must actually exist. The
@@ -274,7 +274,7 @@ fn every_cli_flag_is_documented_and_every_documented_flag_exists() {
     let missing: Vec<&String> = promised.difference(&actual).collect();
     assert!(
         missing.is_empty(),
-        "spec/cli.md documents flag(s) the tool does not accept: {missing:?}"
+        "spec/cli/ documents flag(s) the tool does not accept: {missing:?}"
     );
 }
 
@@ -282,7 +282,7 @@ fn every_cli_flag_is_documented_and_every_documented_flag_exists() {
 fn every_documented_exit_code_is_described_consistently() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let help = stdout(&run(&["--help"]));
-    let spec = std::fs::read_to_string(root.join("spec/cli.md")).expect("spec/cli.md");
+    let spec = std::fs::read_to_string(root.join("spec/cli/index.md")).expect("spec/cli/");
     let readme = std::fs::read_to_string(root.join("README.md")).expect("README.md");
 
     // All three places must agree on what each code means.
@@ -293,7 +293,7 @@ fn every_documented_exit_code_is_described_consistently() {
         (3, "schema error"),
         (4, "document error"),
     ] {
-        for (name, text) in [("--help", &help), ("spec/cli.md", &spec), ("README.md", &readme)] {
+        for (name, text) in [("--help", &help), ("spec/cli/", &spec), ("README.md", &readme)] {
             // Case-insensitive: a table cell reasonably starts with a capital.
             let text = text.to_lowercase();
             assert!(

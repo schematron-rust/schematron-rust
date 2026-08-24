@@ -17,12 +17,12 @@ schematron [OPTIONS] --schema <SCHEMA> [DOCUMENT]...
 | `-o, --output <PATH>` | Write the report here instead of stdout |
 | `--flag <FLAG>` | Report only assertions with this flag. Repeatable. |
 | `--max-failures <N>` | Stop after N findings |
-| `--parallel` | Evaluate patterns on separate threads; see [validation.md](validation.md) |
+| `--parallel` | Evaluate patterns on separate threads; see [validation/](../validation/index.md) |
 | `--svrl-findings-only` | Omit `fired-rule` events from SVRL |
 | `--allow-unknown-query-binding` | Compile an `xslt2`/`xslt3` schema anyway, best effort |
 | `--list-phases` | Print the schema's phases and exit |
 | `--explain` | Print the compiled schema: patterns, rules, contexts, tests |
-| `--lint` | Check the schema for likely mistakes and exit; see [linting.md](linting.md) |
+| `--lint` | Check the schema for likely mistakes and exit; see [linting/](../linting/index.md) |
 | `--portability` | Report constructs other Schematron processors treat differently, and exit |
 | `-q, --quiet` | Suppress the report; use the exit code only |
 | `-v, --verbose` | Show the test and rule behind each finding, and rules that fired without finding anything |

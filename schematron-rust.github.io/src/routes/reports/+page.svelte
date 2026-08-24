@@ -326,7 +326,7 @@ assert_eq!(report.count_failures(), 2);`}</code></pre>
   </InformationCallout>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={specUrl('svrl.md')}>spec/svrl.md</a>
+    <a class="button button-primary" href={specUrl('svrl/index.md')}>spec/svrl/</a>
     <a class="button button-secondary" href="/example/">The run behind these outputs</a>
   </p>
 </section>

@@ -58,7 +58,7 @@ non-associative level; the difference shows only for a chained comparison such
 as `a eq b eq c`, which is an error either way. The top production is
 `Expr := ExprSingle ("," ExprSingle)*`, where the comma builds a sequence, and
 function arguments and predicates take an `ExprSingle` so that a comma there
-still separates arguments. See [xpath2.md](xpath2.md).
+still separates arguments. See [xpath2/](../xpath2/index.md).
 
 ```
 Expr        := OrExpr
@@ -159,7 +159,7 @@ makes available:
 | `current()` | The node the rule fired on, unaffected by predicates. Unlike `.`, it does not change inside a predicate, which is the whole point of it. |
 | `document(uri)` | The root nodes of external documents. See below. |
 | `document(uri, base)` | The same, with relative URIs resolved against `base`'s first node. |
-| `key(name, value)` | The nodes a named index holds under a value. See [keys.md](keys.md). |
+| `key(name, value)` | The nodes a named index holds under a value. See [keys/](../keys/index.md). |
 
 With one argument, a relative URI resolves against the **instance
 document's** base URI. With two, XSLT 1.0 section 12.1 resolves it against the
@@ -225,7 +225,7 @@ Two consequences worth stating plainly:
 
 `pattern/@documents` remains the better tool when the goal is to *validate*
 external documents rather than to read values out of them; see
-[validation.md](validation.md).
+[validation/](../validation/index.md).
 
 Arity is checked twice: once when the schema is compiled, so a typo fails
 immediately, and again in the function library itself, because [`evaluate`] is

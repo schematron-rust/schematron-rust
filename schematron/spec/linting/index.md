@@ -22,7 +22,7 @@ with lints is still valid and still runs.
 
 The crate never refuses to run a schema because it has lints. The decision to
 treat them as fatal belongs to the caller — see the exit code in
-[cli.md](cli.md).
+[cli/](../cli/index.md).
 
 ## The lints
 
@@ -122,7 +122,7 @@ was reported, so a build can gate on it. No document is needed.
 
 ## Relationship to `--explain`
 
-[`--explain`](cli.md) prints what the compiled schema *will do* — patterns,
+[`--explain`](../cli/index.md) prints what the compiled schema *will do* — patterns,
 rules, contexts, tests — and notes which rules can only see nodes no earlier
 rule claimed. `--lint` is the automated form of reading that output and
 noticing something wrong. Use `--explain` to understand a schema, `--lint` to
@@ -137,7 +137,7 @@ The constructs it reports are **not mistakes**. Each one is correct, is what
 the standard describes, and works here. But the ISO reference implementation —
 the XSLT skeleton most other tools are built on — behaves differently for each,
 and a schema author has no way to find that out. Every entry is backed by a
-divergence in [conformance.md](conformance.md), established by running both.
+divergence in [conformance/](../conformance/index.md), established by running both.
 
 | Kind | What differs elsewhere |
 |---|---|
@@ -149,7 +149,7 @@ divergence in [conformance.md](conformance.md), established by running both.
 | `CollidingAttributeContexts` | Rules on both `@x` and `@p:x`: the reference's `@x` rule claims both, so the second never fires |
 | `SpaceBetweenInlineElements` | Whitespace between two inline elements in a message: the reference cannot preserve it |
 
-That is every divergence in [conformance.md](conformance.md) that a schema
+That is every divergence in [conformance/](../conformance/index.md) that a schema
 can be checked for on its own. The remaining four cannot be, and saying so is
 part of the answer:
 

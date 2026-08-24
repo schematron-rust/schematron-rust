@@ -110,4 +110,4 @@ looks maintained and is not.
 This policy governs the toolchain only. It says nothing about the crate's own
 public API stability, which is versioned separately, and nothing about which
 version of Schematron is implemented — that is
-[conformance.md](conformance.md).
+[conformance/](../conformance/index.md).

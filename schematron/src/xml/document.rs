@@ -32,7 +32,7 @@ pub struct Document {
     /// trees never become each other's ancestors.
     ///
     /// Empty for an ordinary parsed document, which is the case that must
-    /// stay free of any cost. See `spec/xpath.md`.
+    /// stay free of any cost. See `spec/xpath/`.
     pub(crate) extra_roots: Vec<NodeId>,
 }
 
@@ -365,7 +365,7 @@ impl Document {
     ///
     /// This is the visiting order Schematron rules are offered nodes in: an
     /// element, then its namespace nodes, then its attribute nodes, then its
-    /// children. See `spec/validation.md`.
+    /// children. See `spec/validation/`.
     #[must_use]
     pub fn all_nodes_in_document_order(&self) -> Vec<NodeId> {
         let mut out = Vec::with_capacity(self.nodes.len());
@@ -457,7 +457,7 @@ impl Document {
     ///
     /// Names are written in the `*:local` wildcard form so that the result is
     /// usable without knowing the consumer's prefix bindings, which is what
-    /// SVRL `@location` requires. See `spec/validation.md`.
+    /// SVRL `@location` requires. See `spec/validation/`.
     ///
     /// # Examples
     ///

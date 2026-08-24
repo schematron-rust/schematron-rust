@@ -3,7 +3,7 @@
 //! A key is a named index over a document, declared once and looked up many
 //! times. It exists because cross-reference checks are the most common
 //! expensive thing a Schematron schema does, and without an index they are
-//! quadratic. See `spec/keys.md`.
+//! quadratic. See `spec/keys/`.
 
 use assertables::*;
 use schematron::{Document, Schema};

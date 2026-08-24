@@ -14,7 +14,7 @@ use crate::xml::{Document, NodeId};
 /// `document()` call cannot load anything on the spot. Instead a miss is
 /// *recorded*: the validator loads whatever was requested, merges it into the
 /// arena, and runs again. Two passes suffice unless one loaded document names
-/// another. See `spec/xpath.md`.
+/// another. See `spec/xpath/`.
 ///
 /// # Examples
 ///
@@ -201,7 +201,7 @@ impl Namespaces {
 /// The named indexes that XPath `key()` looks up.
 ///
 /// Built once per document per validation run, before any pattern runs. See
-/// `spec/keys.md`.
+/// `spec/keys/`.
 ///
 /// # Examples
 ///
@@ -388,7 +388,7 @@ pub struct EvalContext<'a> {
     /// in minutes from UTC.
     ///
     /// Defaults to zero, which keeps a validation run reproducible on any
-    /// machine. See `spec/xpath2.md`.
+    /// machine. See `spec/xpath2/`.
     pub implicit_timezone: i32,
     /// The named indexes `key()` looks up, when the caller supplies any.
     ///

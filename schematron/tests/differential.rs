@@ -55,7 +55,7 @@ struct Finding {
 ///
 /// Recorded individually so that the rest of the corpus stays a strict
 /// comparison. A case listed here must have its reason written down, in
-/// `spec/conformance.md` as well as here.
+/// `spec/conformance/` as well as here.
 const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
     (
         "message-inline-whitespace",
@@ -65,7 +65,7 @@ const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
          XSLT 1.0 strips whitespace-only text nodes from a stylesheet, so the \
          space cannot survive the way it compiles a schema. Text with any \
          non-whitespace content is preserved by both. See \
-         spec/conformance.md.",
+         spec/conformance/.",
     ),
     (
         "subject",
@@ -76,7 +76,7 @@ const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
          Schematron subject attribute is folded into the location attribute\", \
          and then never uses the `$subject` parameter it declares. The \
          reference documents this crate's behaviour and does not implement \
-         it. See spec/conformance.md.",
+         it. See spec/conformance/.",
     ),
     (
         "rich-metadata",
@@ -86,7 +86,7 @@ const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
          under the reference that attribute has no observable effect at all — \
          it reaches neither the finding nor `fired-rule`. Making a permitted \
          attribute inert is the less defensible reading, and flags exist to \
-         classify findings for filtering. See spec/conformance.md.",
+         classify findings for filtering. See spec/conformance/.",
     ),
     (
         "namespaced-attribute-context",
@@ -96,7 +96,7 @@ const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
          where `match=\"@x\"` matches both — and Java's XPath agrees with \
          libxml2, so this is a defect in the matcher rather than a reading of \
          the standard. Elements are unaffected, and `@p:x` correctly matches \
-         only itself. See spec/conformance.md.",
+         only itself. See spec/conformance/.",
     ),
     (
         "following-axis-from-attribute",
@@ -106,7 +106,7 @@ const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
          the *context node's* descendants, and an attribute has none, so the \
          children follow the attribute. Java's XPath engine agrees with this \
          crate, so the reference is the outlier rather than the arbiter. See \
-         spec/conformance.md.",
+         spec/conformance/.",
     ),
     (
     "node-kinds",
@@ -114,7 +114,7 @@ const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
      elements and attributes and its generated text(), comment() and \
      processing-instruction() templates can never fire. This crate visits all \
      seven node kinds, so a rule with context=\"comment()\" works. See \
-     spec/conformance.md.",
+     spec/conformance/.",
     ),
 ];
 
@@ -265,7 +265,7 @@ fn locations(svrl: &str) -> Result<Vec<String>, String> {
 /// **This crate's location must always resolve to exactly one node** — that
 /// is a hard failure, because a location that does not identify the node is
 /// the one thing a location must not be. The reference's frequently does not
-/// (see `spec/conformance.md`), and those pairs are counted and skipped
+/// (see `spec/conformance/`), and those pairs are counted and skipped
 /// rather than failed, so its defects do not drown out a real disagreement.
 ///
 /// Returns the number of pairs skipped for that reason.
@@ -322,7 +322,7 @@ fn compare_locations(
         // The reference's position counter ignores namespaces while the
         // predicate it emits does not, so any location naming a namespaced
         // element may point at the wrong node or at none — see
-        // `spec/conformance.md`. Those pairs are counted, not compared;
+        // `spec/conformance/`. Those pairs are counted, not compared;
         // everything else stays strict, and this crate's side is checked
         // above either way.
         if !held(format!("T{index}")) || theirs[index].contains("local-name()") {

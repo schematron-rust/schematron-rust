@@ -156,7 +156,7 @@ pub struct Schema {
     ///
     /// Recorded at compile time so that the overwhelmingly common case — a
     /// schema that does not — pays nothing for the machinery that supports
-    /// it. See `spec/xpath.md`.
+    /// it. See `spec/xpath/`.
     pub(crate) uses_document_function: bool,
 }
 
@@ -300,7 +300,7 @@ impl Schema {
 
         // Every name any `let` binds, at any scope. Checking against the
         // union rather than the exact scope keeps the check free of false
-        // positives; see `spec/parsing.md`.
+        // positives; see `spec/parsing/`.
         let bindable = self.bindable_names();
 
         for (source, location, is_pattern) in work {
@@ -606,7 +606,7 @@ impl Schema {
             format!(
                 "{construct} is XPath 2.0 syntax; this schema's query binding is \
                  XPath 1.0. Set queryBinding=\"xslt2\" to use it, and see \
-                 spec/xpath2.md for what that enables."
+                 spec/xpath2/ for what that enables."
             ),
         ))
     }

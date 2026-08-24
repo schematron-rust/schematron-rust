@@ -12,7 +12,7 @@ bytes ──1── XML tree ──2── includes resolved ──3── model
 ## Pass 1 — parse as XML
 
 The schema is an XML document. It is parsed with the crate's own parser
-([xml.md](xml.md)). A schema that is not well-formed XML fails here.
+([xml/](../xml/index.md)). A schema that is not well-formed XML fails here.
 
 ## Pass 2 — resolve `include` and `extends href`
 
@@ -70,7 +70,7 @@ one is a cycle.
 
 ## Pass 3 — build the model
 
-The tree is walked and mapped onto the types in [data-model.md](data-model.md).
+The tree is walked and mapped onto the types in [data-model/](../data-model/index.md).
 This pass validates the schema against Schematron's own content model:
 
 - Unknown elements in the Schematron namespace are errors.

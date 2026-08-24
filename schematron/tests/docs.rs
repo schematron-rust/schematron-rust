@@ -7,7 +7,7 @@
 //! - every schema shown in `spec/*.md` and `README.md` compiles
 //! - every example `.sch` file compiles
 //! - every relative link resolves
-//! - every `spec/*.md` is reachable from `spec/index.md`
+//! - every `spec/*/index.md` is reachable from `spec/index.md`
 //! - the MSRV in the spec matches the one `Cargo.toml` enforces
 //! - the XPath function list in the spec matches the engine's
 //! - every runnable example is referenced from the documentation
@@ -142,16 +142,13 @@ fn every_spec_document_is_linked_from_the_index() {
 
     for entry in fs::read_dir(root.join("spec")).expect("spec/ should exist") {
         let path = entry.expect("directory entry").path();
-        if path.extension().is_none_or(|e| e != "md") {
+        if !path.is_dir() {
             continue;
         }
         let name = path.file_name().unwrap().to_string_lossy().to_string();
-        if name == "index.md" {
-            continue;
-        }
         assert!(
-            index.contains(&format!("({name})")),
-            "spec/{name} is not linked from spec/index.md"
+            index.contains(&format!("({name}/index.md)")),
+            "spec/{name}/index.md is not linked from spec/index.md"
         );
     }
 }
@@ -179,31 +176,31 @@ fn the_msrv_spec_agrees_with_cargo_toml() {
     // sync by hand is exactly the kind of bookkeeping that rots quietly.
     let msrv = declared_msrv();
     let spec = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/rust-msrv-n-minus-3.md"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/rust-msrv-n-minus-3/index.md"),
     )
-    .expect("spec/rust-msrv-n-minus-3.md should exist");
+    .expect("spec/rust-msrv-n-minus-3/index.md should exist");
 
     assert!(
         spec.contains(&format!("rust-version = \"{msrv}\"")),
-        "spec/rust-msrv-n-minus-3.md does not show rust-version = {msrv:?}, \
+        "spec/rust-msrv-n-minus-3/index.md does not show rust-version = {msrv:?}, \
          which is what Cargo.toml declares"
     );
     assert!(
         spec.contains(&format!("**{msrv}**")),
-        "spec/rust-msrv-n-minus-3.md does not name {msrv:?} as the current MSRV \
+        "spec/rust-msrv-n-minus-3/index.md does not name {msrv:?} as the current MSRV \
          in its value table"
     );
     assert!(
         spec.contains(&format!("cargo +{msrv} test")),
-        "spec/rust-msrv-n-minus-3.md does not show how to verify {msrv:?}"
+        "spec/rust-msrv-n-minus-3/index.md does not show how to verify {msrv:?}"
     );
 
     // The same command must be the one the testing spec tells people to run.
-    let testing = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/testing.md"))
-        .expect("spec/testing.md should exist");
+    let testing = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/testing/index.md"))
+        .expect("spec/testing/index.md should exist");
     assert!(
         testing.contains(&format!("cargo +{msrv} test")),
-        "spec/testing.md does not list the MSRV check for {msrv:?}"
+        "spec/testing/index.md does not list the MSRV check for {msrv:?}"
     );
 }
 
@@ -271,16 +268,29 @@ fn documentation_files() -> Vec<PathBuf> {
         if !directory.is_dir() {
             continue;
         }
-        let mut found: Vec<PathBuf> = fs::read_dir(&directory)
-            .expect("documentation directory should be readable")
-            .filter_map(std::result::Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().is_some_and(|e| e == "md"))
-            .collect();
+        let mut found = Vec::new();
+        collect_markdown(&directory, &mut found);
         found.sort();
         files.extend(found);
     }
     files
+}
+
+/// Every `.md` file under `directory`, recursively.
+///
+/// Spec documents live one level down as `<name>/index.md`, so a flat scan
+/// would silently exclude all of them from the checks below — the worst kind
+/// of failure for tests whose whole job is to catch rot.
+fn collect_markdown(directory: &Path, found: &mut Vec<PathBuf>) {
+    let entries = fs::read_dir(directory).expect("documentation directory should be readable");
+    for entry in entries.filter_map(std::result::Result::ok) {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_markdown(&path, found);
+        } else if path.extension().is_some_and(|e| e == "md") {
+            found.push(path);
+        }
+    }
 }
 
 /// Extracts `[text](target)` links, skipping absolute URLs and anchors.
@@ -354,8 +364,8 @@ fn documentation_files_are_within_the_size_budget() {
 #[test]
 fn the_xpath_function_list_in_the_spec_matches_the_engine() {
     // The engine is the source of truth; the spec must not drift from it.
-    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath.md"))
-        .expect("spec/xpath.md should exist");
+    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath/index.md"))
+        .expect("spec/xpath/index.md should exist");
 
     for function in schematron::xpath::function_names() {
         // Either spelling counts: the core functions are listed bare, while
@@ -364,22 +374,22 @@ fn the_xpath_function_list_in_the_spec_matches_the_engine() {
         let called = format!("`{function}(");
         assert!(
             spec.contains(&bare) || spec.contains(&called),
-            "spec/xpath.md does not mention the `{function}` function"
+            "spec/xpath/index.md does not mention the `{function}` function"
         );
     }
 }
 
 #[test]
 fn the_xpath_two_function_list_in_the_spec_matches_the_engine() {
-    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath2.md"))
-        .expect("spec/xpath2.md should exist");
+    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath2/index.md"))
+        .expect("spec/xpath2/index.md should exist");
 
     for function in schematron::xpath::function_names_v2() {
         let bare = format!("`{function}`");
         let called = format!("`{function}(");
         assert!(
             spec.contains(&bare) || spec.contains(&called),
-            "spec/xpath2.md does not document the `{function}` function"
+            "spec/xpath2/index.md does not document the `{function}` function"
         );
     }
 }
@@ -388,8 +398,8 @@ fn the_xpath_two_function_list_in_the_spec_matches_the_engine() {
 fn the_lint_table_in_the_spec_matches_the_linter() {
     // Every lint must be documented, and every documented lint must exist.
     // A lint nobody can look up is a lint nobody acts on.
-    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/linting.md"))
-        .expect("spec/linting.md should exist");
+    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/linting/index.md"))
+        .expect("spec/linting/index.md should exist");
 
     // The kind names as the source spells them, taken from the source rather
     // than from a list here, so the two cannot drift.
@@ -429,7 +439,7 @@ fn the_lint_table_in_the_spec_matches_the_linter() {
     for kind in &kinds {
         assert!(
             documented.contains(kind),
-            "spec/linting.md does not document the {kind} lint"
+            "spec/linting/index.md does not document the {kind} lint"
         );
     }
     for name in &documented {
@@ -440,7 +450,7 @@ fn the_lint_table_in_the_spec_matches_the_linter() {
         }
         assert!(
             kinds.contains(name),
-            "spec/linting.md documents a {name} lint, which does not exist"
+            "spec/linting/index.md documents a {name} lint, which does not exist"
         );
     }
 }
@@ -450,7 +460,7 @@ fn every_runnable_example_is_referenced_from_the_documentation() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let readme = fs::read_to_string(root.join("README.md")).expect("README.md");
     let tutorial =
-        fs::read_to_string(root.join("spec/tutorial.md")).expect("spec/tutorial.md");
+        fs::read_to_string(root.join("spec/tutorial/index.md")).expect("spec/tutorial/index.md");
     let both = format!("{readme}{tutorial}");
 
     let mut unreferenced = Vec::new();
@@ -467,14 +477,14 @@ fn every_runnable_example_is_referenced_from_the_documentation() {
 
     assert!(
         unreferenced.is_empty(),
-        "example(s) not referenced from README.md or spec/tutorial.md: {}",
+        "example(s) not referenced from README.md or spec/tutorial/index.md: {}",
         unreferenced.join(", ")
     );
 }
 
 #[test]
 fn directories_are_lowercase() {
-    // spec/agents-directory-name-is-lowercase.md. The check is worth having
+    // spec/agents-directory-name-is-lowercase/index.md. The check is worth having
     // because macOS and Windows filesystems are case-insensitive: a directory
     // that regressed to `AGENTS/` would work on the machine that made the
     // change and fail only on Linux, in CI, later.
@@ -498,7 +508,7 @@ fn directories_are_lowercase() {
 
     assert!(
         offenders.is_empty(),
-        "directory names must be lowercase; see spec/agents-directory-name-is-lowercase.md: {}",
+        "directory names must be lowercase; see spec/agents-directory-name-is-lowercase/index.md: {}",
         offenders.join(", ")
     );
 }

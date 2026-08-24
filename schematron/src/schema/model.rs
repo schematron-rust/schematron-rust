@@ -1,7 +1,7 @@
 //! The Schematron document model.
 //!
 //! One Rust type per element of ISO/IEC 19757-3, as catalogued in
-//! `spec/data-model.md`. XPath expressions are held as source strings here;
+//! `spec/data-model/`. XPath expressions are held as source strings here;
 //! they are parsed once by the compiler and cached on the
 //! [`Schema`](crate::Schema), which is why abstract-pattern parameter
 //! substitution — which is textual — can happen before anything is parsed.
@@ -21,7 +21,7 @@ pub const SCHEMATRON_1_5_NAMESPACE: &str = "http://www.ascc.net/xml/schematron";
 ///
 /// This crate implements XPath 1.0, which is what `xslt` and `xpath` mean.
 /// Later bindings are a different language with a different type system, so
-/// they are refused rather than approximated. See `spec/conformance.md`.
+/// they are refused rather than approximated. See `spec/conformance/`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 // Variants will be added: further query bindings are on the roadmap. Marking
@@ -35,7 +35,7 @@ pub enum QueryBinding {
     Xslt,
     /// `queryBinding="xpath"` — plain XPath 1.0.
     Xpath,
-    /// `queryBinding="xslt2"` — XPath 2.0, phase 1; see `spec/xpath2.md`.
+    /// `queryBinding="xslt2"` — XPath 2.0, phase 1; see `spec/xpath2/`.
     Xslt2,
     /// `queryBinding="xpath2"` — XPath 2.0, phase 1.
     Xpath2,
@@ -111,7 +111,7 @@ pub struct Ns {
 ///
 /// A Schematron 1.5 element that ISO/IEC 19757-3 dropped, kept here as an
 /// extension because ISO Schematron gives no other way to declare a key —
-/// and a cross-reference check without one is quadratic. See `spec/keys.md`.
+/// and a cross-reference check without one is quadratic. See `spec/keys/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Key {
@@ -160,7 +160,7 @@ pub struct Phase {
 /// A group of competing rules, from `<sch:pattern>`.
 ///
 /// The pattern is the unit of rule competition: within one pattern a node is
-/// processed by at most one rule. See `spec/validation.md`.
+/// processed by at most one rule. See `spec/validation/`.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Pattern {

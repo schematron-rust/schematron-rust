@@ -55,7 +55,7 @@
   <h1>Command line</h1>
   <p>
     The binary is a thin shell over the library. The authoritative reference is
-    <a href={specUrl('cli.md')}>spec/cli.md</a>.
+    <a href={specUrl('cli/index.md')}>spec/cli/</a>.
   </p>
 </div>
 
@@ -197,6 +197,6 @@ schematron -s rules.sch --verbose --phase '#ALL' data.xml`}</code></pre>
 
   <p style="margin-top: 2rem;">
     <a class="button button-primary" href="/help/">Diagnosing a schema that does nothing</a>
-    <a class="button button-secondary" href={specUrl('cli.md')}>spec/cli.md</a>
+    <a class="button button-secondary" href={specUrl('cli/index.md')}>spec/cli/</a>
   </p>
 </section>

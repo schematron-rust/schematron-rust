@@ -435,7 +435,7 @@ fn parse(source: &str) -> Result<Document> {
 
             // The XML declaration carries no node. A DOCTYPE is skipped: the
             // crate does no DTD processing, and says so plainly rather than
-            // half-honouring it. See spec/conformance.md.
+            // half-honouring it. See spec/conformance/.
             Event::Decl(_) | Event::DocType(_) => {}
 
             Event::Start(start) => {

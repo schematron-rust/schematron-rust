@@ -23,16 +23,16 @@
     { area: 'diagnostics, properties, value-of, name, emph, span, dir', status: 'Full' },
     { area: '@flag, @role, @subject, @see, @icon, @fpi', status: 'Full' },
     { area: 'pattern/@documents', status: 'Full' },
-    { area: 'key and key()', status: 'Full', note: 'A non-ISO extension — see spec/keys.md.' },
+    { area: 'key and key()', status: 'Full', note: 'A non-ISO extension — see spec/keys/.' },
     { area: 'Phases, #ALL, #DEFAULT, @defaultPhase', status: 'Full' },
     { area: 'SVRL output', status: 'Full' },
     { area: 'XPath 1.0 — 13 axes, 27 core functions, exact conversion semantics', status: 'Full' },
     { area: 'XPath document(), with cross-document node-sets', status: 'Full' },
     { area: 'document(uri, base)', status: 'Full', note: "Resolves against the second argument's first node." },
     { area: 'XPath 2.0 kind tests as node tests — element(), attribute(id), document-node()', status: 'Full', note: 'Under an xslt2 binding.' },
-    { area: 'XPath 2.0 sequences, dates, durations, type operators, value and node comparisons, for, some, every, ranges, regular expressions', status: 'Subset', note: 'See spec/xpath2.md.' },
+    { area: 'XPath 2.0 sequences, dates, durations, type operators, value and node comparisons, for, some, every, ranges, regular expressions', status: 'Subset', note: 'See spec/xpath2/.' },
     { area: 'queryBinding="xslt", "xpath", or absent', status: 'Full' },
-    { area: 'queryBinding="xslt2", "xpath2"', status: 'Subset', note: 'See spec/xpath2.md.' },
+    { area: 'queryBinding="xslt2", "xpath2"', status: 'Subset', note: 'See spec/xpath2/.' },
     { area: 'queryBinding="xslt3" and later', status: 'Refused', note: 'By default.' },
     { area: 'extends rule and extends href, with #fragment identifiers', status: 'Full' }
   ];
@@ -49,7 +49,7 @@
 <div class="page-header">
   <h1>Conformance</h1>
   <p>
-    A summary. <a href={specUrl('conformance.md')}>spec/conformance.md</a> is
+    A summary. <a href={specUrl('conformance/index.md')}>spec/conformance/</a> is
     authoritative, and states the limits and deliberate divergences in full.
   </p>
 </div>
@@ -104,7 +104,7 @@
 
   <Alert type="warning" role="status" heading="An xslt2 schema may still evaluate some things with XPath 1.0 semantics.">
     <p>
-      <a href={specUrl('xpath2.md')}>spec/xpath2.md</a> is explicit about what is
+      <a href={specUrl('xpath2/index.md')}>spec/xpath2/</a> is explicit about what is
       in, what is out, and the handful of places where that happens. Read it
       before depending on an <code>xslt2</code> binding.
     </p>
@@ -155,7 +155,7 @@ SCHEMATRON_SKELETON=/tmp/skeleton cargo test --test differential -- --ignored`}<
     under another Schematron processor. What it reports is <strong>not
     wrong</strong> — it is correct, and works here, and the reference
     implementation treats it differently. Each of the seven checks is backed by
-    a divergence in <code>spec/conformance.md</code>, established by running
+    a divergence in <code>spec/conformance/</code>, established by running
     both implementations against the same schema.
   </p>
 
@@ -169,7 +169,7 @@ SCHEMATRON_SKELETON=/tmp/skeleton cargo test --test differential -- --ignored`}<
   </p>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={specUrl('conformance.md')}>The authoritative conformance document</a>
+    <a class="button button-primary" href={specUrl('conformance/index.md')}>The authoritative conformance document</a>
     <a class="button button-secondary" href="/roadmap/">What is next, and what is not planned</a>
     <a class="button button-secondary" href="/spec/">The whole specification</a>
   </p>

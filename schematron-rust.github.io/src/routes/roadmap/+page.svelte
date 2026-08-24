@@ -41,7 +41,7 @@
   <h1>Roadmap</h1>
   <p>
     What is shipped, what is next, and — just as usefully — what was considered
-    and rejected. <a href={specUrl('roadmap.md')}>spec/roadmap.md</a> is the
+    and rejected. <a href={specUrl('roadmap/index.md')}>spec/roadmap/</a> is the
     source.
   </p>
 </div>
@@ -131,7 +131,7 @@
       <code>1 instance of xs:integer</code> true.
     </p>
     <p>
-      It is the only remaining gap <a href={specUrl('xpath2.md')}>xpath2.md</a>
+      It is the only remaining gap <a href={specUrl('xpath2/index.md')}>spec/xpath2/</a>
       records, and it is also the one worth least: a schema inspects untyped
       document data, where <code>castable as xs:integer</code> already gives the
       right answer, and the distinction between integer and double rarely
@@ -202,6 +202,6 @@
 
   <p style="margin-top: 2rem;">
     <a class="button button-primary" href={REPO + '/issues'}>Make the case for something</a>
-    <a class="button button-secondary" href={specUrl('roadmap.md')}>spec/roadmap.md</a>
+    <a class="button button-secondary" href={specUrl('roadmap/index.md')}>spec/roadmap/</a>
   </p>
 </section>

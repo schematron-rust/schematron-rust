@@ -82,7 +82,7 @@ the single most dangerous thing a validator can do.
 ### A finding is not an error
 
 A document breaking a rule is a `Report` entry, not `Err`. Keep the two
-categories separate; see [`spec/errors.md`](../spec/errors.md).
+categories separate; see [`spec/errors/`](../spec/errors/index.md).
 
 ### A successful report is not a failure
 
@@ -127,7 +127,7 @@ errors, so a misspelled variable is one too — consistency matters more here
 than the small extra analysis. The check is against the union of every name
 any `let` binds, which catches every typo with no false positives; a variable
 that exists but is out of reach stays a validation error. See
-`spec/parsing.md`.
+`spec/parsing/`.
 
 - Test: `tests/validation.rs::a_variable_nothing_binds_is_caught_when_the_schema_loads`
 - Test: `tests/validation.rs::an_evaluation_error_is_an_error_not_a_silent_false`
@@ -151,7 +151,7 @@ That is deliberate: a schema needs to *report* a bad value as a finding, which
 it cannot do if asking the question aborts the run.
 
 Keep them in step. A cast that succeeds where `castable as` said false, or the
-reverse, would make the guard pattern in `spec/tutorial.md` unsound.
+reverse, would make the guard pattern in `spec/tutorial/` unsound.
 
 - Test: `tests/xpath2.rs::cast_as_errors_where_castable_as_reports_false`
 - Test: `tests/xpath2.rs::castable_as_reports_instead_of_aborting`

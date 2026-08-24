@@ -54,5 +54,5 @@ does not need to shout; it needs to be findable and typable.
 
 ## Related
 
-- [index.md](index.md) — the specification map
-- [`AGENTS.md`](../AGENTS.md) — the agent entry point, which links into `agents/`
+- [index.md](../index.md) — the specification map
+- [`AGENTS.md`](../../AGENTS.md) — the agent entry point, which links into `agents/`

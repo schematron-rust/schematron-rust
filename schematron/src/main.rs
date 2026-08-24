@@ -2,7 +2,7 @@
 //!
 //! A thin shell over the library: parse arguments, compile the schema once,
 //! validate each document, render the report, and choose an exit code. See
-//! `spec/cli.md`.
+//! `spec/cli/`.
 
 #![forbid(unsafe_code)]
 
@@ -117,7 +117,7 @@ struct Cli {
     lint: bool,
 
     /// Report constructs that behave differently under other Schematron
-    /// processors, then exit. Not mistakes; see spec/linting.md.
+    /// processors, then exit. Not mistakes; see spec/linting/.
     #[arg(long)]
     portability: bool,
 

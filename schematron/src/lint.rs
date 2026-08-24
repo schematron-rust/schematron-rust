@@ -9,7 +9,7 @@
 //!
 //! A lint is not a validation finding and not a compile error. It is a remark
 //! about the schema, made without looking at any document. See
-//! `spec/linting.md`.
+//! `spec/linting/`.
 //!
 //! # Examples
 //!
@@ -167,7 +167,7 @@ impl Schema {
     /// reference implementation — the XSLT skeleton most other tools are
     /// built on — behaves differently for each of the constructs reported
     /// here, and a schema author has no way to discover that. Every one is
-    /// backed by a divergence recorded in `spec/conformance.md`, established
+    /// backed by a divergence recorded in `spec/conformance/`, established
     /// by running both implementations.
     ///
     /// They are deliberately kept out of [`Schema::lint`]. A linter that
@@ -258,7 +258,7 @@ impl Schema {
                          no-namespace attribute here, correctly; the reference's \
                          template matcher ignores the namespace, so its earlier rule \
                          claims both and this one never fires. See \
-                         spec/conformance.md.",
+                         spec/conformance/.",
                     ));
                 }
             }
@@ -299,7 +299,7 @@ impl Schema {
                         format!("the context selects {kind} nodes"),
                         "the ISO reference implementation visits only elements \
                          and attributes, so this rule never fires there. It \
-                         works here. See spec/conformance.md.",
+                         works here. See spec/conformance/.",
                     ));
                 }
             }
@@ -347,7 +347,7 @@ impl Schema {
                         "an attribute's following nodes include its own element's \
                          children here, which is what XPath 1.0 says and what Java's \
                          engine gives; the ISO reference implementation excludes them. \
-                         See spec/conformance.md.",
+                         See spec/conformance/.",
                     ));
                     break;
                 }
@@ -390,7 +390,7 @@ impl Schema {
     ///
     /// Returns lints in schema order, so the output reads down the file. An
     /// empty result does not mean the schema is correct — only that none of
-    /// the patterns in `spec/linting.md` matched.
+    /// the patterns in `spec/linting/` matched.
     ///
     /// For constructs that are correct here but behave differently under
     /// other processors, see [`Schema::portability`], which is deliberately
@@ -856,7 +856,7 @@ fn lint_phases(schema: &Schema, lints: &mut Vec<Lint>) {
 /// Reports a `let` whose name no expression anywhere mentions.
 ///
 /// Deliberately conservative: it asks whether the name appears at all, not
-/// whether it is in scope where it is used. See `spec/linting.md`.
+/// whether it is in scope where it is used. See `spec/linting/`.
 /// Whether an expression takes the `following` axis from an attribute node.
 fn following_from_an_attribute(expr: &Expr) -> bool {
     fn in_path(path: &crate::xpath::PathExpr) -> bool {
@@ -1041,7 +1041,7 @@ fn lint_unreferenced(schema: &Schema, lints: &mut Vec<Lint>) {
     }
 
     // A key's index is built eagerly, so one nothing looks up is work done
-    // for nothing on every validation. See spec/keys.md.
+    // for nothing on every validation. See spec/keys/.
     for key in &model.keys {
         let looked_up = schema
             .expressions

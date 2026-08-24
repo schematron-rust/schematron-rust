@@ -1,7 +1,7 @@
 # Testing
 
 How to prove a change works. The reference for what exists is
-[`spec/testing.md`](../spec/testing.md); this file is about *how to work*.
+[`spec/testing/`](../spec/testing/index.md); this file is about *how to work*.
 
 ## The layers, and which one to reach for
 
@@ -127,7 +127,7 @@ cargo +1.94 test --all-features
 
 Must run on the boundary toolchain itself. A newer compiler accepts strictly
 more and proves nothing. See
-[`spec/rust-msrv-n-minus-3.md`](../spec/rust-msrv-n-minus-3.md).
+[`spec/rust-msrv-n-minus-3/`](../spec/rust-msrv-n-minus-3/index.md).
 
 ## What "done" means
 

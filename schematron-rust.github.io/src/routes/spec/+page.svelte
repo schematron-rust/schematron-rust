@@ -4,7 +4,7 @@
   import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
   import CodeBlock from '$lib/lily/CodeBlock.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
-  import { SPEC_DOCS, specUrl, REPO } from '$lib/site';
+  import { SPEC_DOCS, specUrl, REPO, specLabel } from '$lib/site';
 </script>
 
 <svelte:head>
@@ -28,7 +28,7 @@
   <div class="prose">
     <InformationCallout label="Start here">
       <p>
-        New to Schematron? Read <a href={specUrl('tutorial.md')}>spec/tutorial.md</a>
+        New to Schematron? Read <a href={specUrl('tutorial/index.md')}>spec/tutorial/</a>
         — eighteen steps from one rule to a real schema — or the
         <a href="/tutorial/">condensed tutorial on this site</a>.
       </p>
@@ -41,7 +41,7 @@
     {#each SPEC_DOCS as doc (doc.file)}
       <Card heading={doc.title} headingLevel={3} href={specUrl(doc.file)}>
         <p>{doc.covers}</p>
-        <p class="card-meta"><code>spec/{doc.file}</code></p>
+        <p class="card-meta"><code>{specLabel(doc.file)}</code></p>
       </Card>
     {/each}
   </div>

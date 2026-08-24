@@ -41,7 +41,7 @@ configurable implicit timezone.
 `castable as` and `treat as`, with the sequence types they take.
 
 **Phase 4** — the numeric type hierarchy, and the remaining type strictness —
-is roadmap item 1 in [roadmap.md](roadmap.md).
+is roadmap item 1 in [roadmap/](../roadmap/index.md).
 
 ### The sequence type, and why XPath 1.0 is unaffected
 

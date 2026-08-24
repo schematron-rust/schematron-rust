@@ -45,7 +45,7 @@
 //! the first whose context matches it. Rules in one pattern compete like the
 //! arms of a match expression; rules in different patterns do not. Putting
 //! two independent checks for the same element in one pattern silently
-//! disables the second. See `spec/validation.md`.
+//! disables the second. See `spec/validation/`.
 //!
 //! # Layout
 //!

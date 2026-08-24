@@ -1,6 +1,6 @@
 //! Validating documents, and the report that comes back.
 //!
-//! The algorithm is in `spec/validation.md`. The one rule to carry in your
+//! The algorithm is in `spec/validation/`. The one rule to carry in your
 //! head: **within a single pattern, each node is processed by at most one
 //! rule — the first whose context matches it.** Rules in one pattern compete
 //! like the arms of a match expression; rules in different patterns do not.

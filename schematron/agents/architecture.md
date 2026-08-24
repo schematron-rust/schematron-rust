@@ -81,7 +81,7 @@ which is the detail engines most often get wrong.
 
 ### `src/schema/`
 
-Five passes; see [`spec/parsing.md`](../spec/parsing.md). The important
+Five passes; see [`spec/parsing/`](../spec/parsing/index.md). The important
 structural decision: **XPath expressions are held as source strings through
 passes 1–4, and compiled in pass 5**, cached on the `Schema` keyed by source
 text. This is what lets abstract-pattern parameter substitution be textual,
@@ -93,7 +93,7 @@ name, not merely for a value.
 ### `src/validate/`
 
 `engine.rs` implements the algorithm in
-[`spec/validation.md`](../spec/validation.md). The performance-critical
+[`spec/validation/`](../spec/validation/index.md). The performance-critical
 decision is that a rule's context is evaluated **once per document**, rewritten
 into an absolute expression, rather than tested node by node:
 
@@ -131,7 +131,7 @@ Two consequences ripple through the layers, and both are easy to get wrong:
 
 Loading itself cannot happen during evaluation, because the tree is held
 immutably. A `document()` call records a miss; the validator loads what was
-asked for and runs again. See [`spec/xpath.md`](../spec/xpath.md).
+asked for and runs again. See [`spec/xpath/`](../spec/xpath/index.md).
 
 `Schema::uses_document_function()` is computed at compile time so that the
 common case — a schema that never calls it — takes an early return in

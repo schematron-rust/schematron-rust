@@ -6,7 +6,7 @@
 //! acquire 2.0 behaviour, and a construct belonging to a version the crate
 //! does not implement is a hard error rather than a wrong answer.
 //!
-//! See `spec/xpath2.md`, which is explicit about how much of XPath 2.0 is
+//! See `spec/xpath2/`, which is explicit about how much of XPath 2.0 is
 //! implemented and about where a 2.0 schema still evaluates with 1.0
 //! semantics.
 
@@ -21,7 +21,7 @@ pub enum XPathVersion {
     V1,
     /// XPath 2.0: the `xslt2` and `xpath2` query bindings.
     ///
-    /// Only the phase-1 subset in `spec/xpath2.md` is implemented. Anything
+    /// Only the phase-1 subset in `spec/xpath2/` is implemented. Anything
     /// outside it is an error naming the construct.
     V2,
 }

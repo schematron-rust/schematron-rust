@@ -12,13 +12,13 @@ repeating what they say.
 |---|---|
 | Understand what Schematron is and why | [README.md](README.md) |
 | Read all of this as a website | <https://schematron-rust.github.io/> |
-| Learn to write schemas | [spec/tutorial.md](spec/tutorial.md) |
-| Use the library | [spec/api.md](spec/api.md) |
-| Use the command line tool | [spec/cli.md](spec/cli.md) |
-| Work out why a schema does nothing | [spec/linting.md](spec/linting.md) |
-| Check a schema behaves the same elsewhere | [spec/linting.md](spec/linting.md#portability) |
+| Learn to write schemas | [spec/tutorial/](spec/tutorial/index.md) |
+| Use the library | [spec/api/](spec/api/index.md) |
+| Use the command line tool | [spec/cli/](spec/cli/index.md) |
+| Work out why a schema does nothing | [spec/linting/](spec/linting/index.md) |
+| Check a schema behaves the same elsewhere | [spec/linting/](spec/linting/index.md#portability) |
 | See what changed between releases | [CHANGELOG.md](CHANGELOG.md) |
-| Decide whether to depend on this | [spec/conformance.md](spec/conformance.md) |
+| Decide whether to depend on this | [spec/conformance/](spec/conformance/index.md) |
 | Work on the crate | [AGENTS.md](AGENTS.md) |
 
 ## The specification
@@ -29,23 +29,23 @@ that is a defect in one of them.
 | Document | Covers |
 |---|---|
 | [spec/index.md](spec/index.md) | Overview, design principles, reading order |
-| [spec/tutorial.md](spec/tutorial.md) | Eighteen steps from one rule to a real schema |
-| [spec/data-model.md](spec/data-model.md) | Every Schematron element and its Rust type |
-| [spec/validation.md](spec/validation.md) | The validation algorithm, exactly |
-| [spec/xpath.md](spec/xpath.md) | The XPath 1.0 engine |
-| [spec/xpath2.md](spec/xpath2.md) | The XPath 2.0 subset, and its limits |
-| [spec/xml.md](spec/xml.md) | The XML parser and data model |
-| [spec/parsing.md](spec/parsing.md) | The five schema compilation passes |
-| [spec/svrl.md](spec/svrl.md) | The SVRL report format, read and written |
-| [spec/keys.md](spec/keys.md) | Keys, and why a cross-reference check needs one |
-| [spec/linting.md](spec/linting.md) | Catching schemas that silently do nothing |
-| [spec/api.md](spec/api.md) | Library API |
-| [spec/cli.md](spec/cli.md) | Command line interface |
-| [spec/errors.md](spec/errors.md) | Error taxonomy, and error versus finding |
-| [spec/conformance.md](spec/conformance.md) | Limits and divergences, stated up front |
-| [spec/testing.md](spec/testing.md) | Tests, fuzzing, benchmarks, lints |
-| [spec/rust-msrv-n-minus-3.md](spec/rust-msrv-n-minus-3.md) | MSRV policy: current stable minus three |
-| [spec/roadmap.md](spec/roadmap.md) | What is shipped, what is next, what is not planned |
+| [spec/tutorial/](spec/tutorial/index.md) | Eighteen steps from one rule to a real schema |
+| [spec/data-model/](spec/data-model/index.md) | Every Schematron element and its Rust type |
+| [spec/validation/](spec/validation/index.md) | The validation algorithm, exactly |
+| [spec/xpath/](spec/xpath/index.md) | The XPath 1.0 engine |
+| [spec/xpath2/](spec/xpath2/index.md) | The XPath 2.0 subset, and its limits |
+| [spec/xml/](spec/xml/index.md) | The XML parser and data model |
+| [spec/parsing/](spec/parsing/index.md) | The five schema compilation passes |
+| [spec/svrl/](spec/svrl/index.md) | The SVRL report format, read and written |
+| [spec/keys/](spec/keys/index.md) | Keys, and why a cross-reference check needs one |
+| [spec/linting/](spec/linting/index.md) | Catching schemas that silently do nothing |
+| [spec/api/](spec/api/index.md) | Library API |
+| [spec/cli/](spec/cli/index.md) | Command line interface |
+| [spec/errors/](spec/errors/index.md) | Error taxonomy, and error versus finding |
+| [spec/conformance/](spec/conformance/index.md) | Limits and divergences, stated up front |
+| [spec/testing/](spec/testing/index.md) | Tests, fuzzing, benchmarks, lints |
+| [spec/rust-msrv-n-minus-3/](spec/rust-msrv-n-minus-3/index.md) | MSRV policy: current stable minus three |
+| [spec/roadmap/](spec/roadmap/index.md) | What is shipped, what is next, what is not planned |
 
 ## Contributor and agent documentation
 

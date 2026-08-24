@@ -1,7 +1,7 @@
 # All four report, which is to say all four counts are as XPath 1.0 specifies.
 # The first is where the ISO reference implementation disagrees: libxml2 gives
 # 1 rather than 3, treating an attribute's `following` as its element's. Java's
-# XPath engine agrees with this crate. See spec/conformance.md.
+# XPath engine agrees with this crate. See spec/conformance/.
 report | /root[1]/e[1] | from the attribute: the two inside e, plus the one after
 report | /root[1]/e[1] | from the element: only the one after
 report | /root[1]/e[1] | preceding from the attribute: only the one before

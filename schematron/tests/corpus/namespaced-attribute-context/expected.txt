@@ -2,7 +2,7 @@
 # implementation instead lets the `@x` rule claim all four, because libxslt's
 # template matcher ignores the namespace on an unprefixed attribute name test
 # — a bug contradicted by libxml2's own XPath in the second pattern below,
-# which counts correctly. See spec/conformance.md.
+# which counts correctly. See spec/conformance/.
 #
 # The order is document order of the matched nodes, not rule order, so `c`'s
 # two attributes come before `d`'s.

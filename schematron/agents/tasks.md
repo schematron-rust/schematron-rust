@@ -6,7 +6,7 @@ commands in [`AGENTS.md`](../AGENTS.md).
 ## Add a Schematron semantics test
 
 Almost always a corpus case, not Rust. See
-[`testing.md`](testing.md#adding-a-corpus-case). One directory, three files,
+[`testing/`](testing.md#adding-a-corpus-case). One directory, three files,
 no code.
 
 ## Add an XPath function
@@ -17,14 +17,14 @@ no code.
    `args` up to the declared minimum — and no further.
 3. Unit-test it in `src/xpath/eval.rs`, exercising the type conversions, not
    just the happy path.
-4. Add it to the function list in [`spec/xpath.md`](../spec/xpath.md).
+4. Add it to the function list in [`spec/xpath/`](../spec/xpath/index.md).
    `tests/docs.rs::the_xpath_function_list_in_the_spec_matches_the_engine`
    fails if you forget.
 
 For an **XPath 2.0** function, use `SIGNATURES_V2` instead. It becomes
 available only under an `xslt2` or `xpath2` query binding, because
 `check_function` gates on `XPathVersion`. Document it in the table in
-[`spec/xpath2.md`](../spec/xpath2.md);
+[`spec/xpath2/`](../spec/xpath2/index.md);
 `tests/docs.rs::the_xpath_two_function_list_in_the_spec_matches_the_engine`
 fails if you forget.
 
@@ -39,7 +39,7 @@ roadmap item 1.
    which becomes the help text.
 2. Wire it through `run()`. Keep the binary thin: real behaviour belongs in
    the library, behind an option type.
-3. Document it in the options table in [`spec/cli.md`](../spec/cli.md).
+3. Document it in the options table in [`spec/cli/`](../spec/cli/index.md).
    `tests/cli.rs::every_cli_flag_is_documented_and_every_documented_flag_exists`
    fails in **both** directions — an undocumented flag and a documented flag
    that does not exist are each a defect.
@@ -59,12 +59,12 @@ roadmap item 1.
    collection walk so they are compiled once and checked.
 5. `src/validate/engine.rs` — the behaviour.
 6. `src/svrl.rs` — if it appears in a report.
-7. `spec/data-model.md` and `spec/conformance.md`.
+7. `spec/data-model/` and `spec/conformance/`.
 8. A corpus case.
 
 ## Change validation behaviour
 
-Change [`spec/validation.md`](../spec/validation.md) **first**, then the code
+Change [`spec/validation/`](../spec/validation/index.md) **first**, then the code
 to match. The spec is the contract; a behaviour change that lands without it
 leaves the two disagreeing and the next reader unable to tell which is right.
 
@@ -108,7 +108,7 @@ the work grew without bound.
    **not** fire on the legitimate shape that resembles it. The second matters
    more — a linter with false positives gets switched off, after which it
    catches nothing at all.
-4. Document it in the table in [`spec/linting.md`](../spec/linting.md).
+4. Document it in the table in [`spec/linting/`](../spec/linting/index.md).
 5. Check `cargo run -- --schema examples/invoice.sch --lint` is still clean;
    `tests/cli.rs` asserts the bundled example models good practice.
 
@@ -123,7 +123,7 @@ unreachable although both fire.
 **Is it a lint or a portability finding?** `lint()` is for constructs that are
 probably *wrong*. `portability()` is for constructs that are *correct here*
 and behave differently under another processor. A portability finding needs a
-divergence recorded in [`spec/conformance.md`](../spec/conformance.md),
+divergence recorded in [`spec/conformance/`](../spec/conformance/index.md),
 established by running both implementations — not a suspicion — and its test
 should point at the corpus case that demonstrates the divergence rather than
 at a schema written to match. They are separate because a check that reports
@@ -150,7 +150,7 @@ first.
 
 ## Bump the MSRV
 
-Follow [`spec/rust-msrv-n-minus-3.md`](../spec/rust-msrv-n-minus-3.md)
+Follow [`spec/rust-msrv-n-minus-3/`](../spec/rust-msrv-n-minus-3/index.md)
 exactly. The step that matters is actually running the boundary toolchain;
 updating the numbers without it produces a value that looks maintained and is
 not.

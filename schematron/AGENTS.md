@@ -46,7 +46,7 @@ cargo bench                                   # criterion; see agents/testing.md
 cargo +nightly fuzz run fuzz_validate -- -max_total_time=60 -report_slow_units=30
 
 # Agreement with the ISO reference implementation, curated and generated.
-# Needs xsltproc and the skeleton; see spec/testing.md.
+# Needs xsltproc and the skeleton; see spec/testing/.
 SCHEMATRON_SKELETON=/path/to/skeleton cargo test --test differential -- --ignored
 ```
 
@@ -61,7 +61,7 @@ rather than working around it silently.
 Rules in one pattern compete like the arms of a match expression; rules in
 different patterns do not. Almost every confusing Schematron result traces
 back to this, or to a missing namespace prefix. See
-[`spec/validation.md`](spec/validation.md).
+[`spec/validation/`](spec/validation/index.md).
 
 ## Non-negotiables
 
@@ -101,7 +101,7 @@ Match the surrounding code. Specifically:
   comparison, NaN-yielding conversions, and the no-exponent number format are
   correct and deliberate.
 - Do not raise the MSRV outside its policy. See
-  [`spec/rust-msrv-n-minus-3.md`](spec/rust-msrv-n-minus-3.md).
+  [`spec/rust-msrv-n-minus-3/`](spec/rust-msrv-n-minus-3/index.md).
 
 ## Where facts live
 
@@ -114,6 +114,6 @@ Single source of truth, enforced by `tests/docs.rs` and `tests/cli.rs`:
 | Exit codes | `src/main.rs` | `every_documented_exit_code_is_described_consistently` |
 | XPath functions | `src/xpath/functions.rs` | `the_xpath_function_list_in_the_spec_matches_the_engine` |
 | Schema examples | the `.sch` and Markdown files | `every_documented_schema_compiles` |
-| Conformance | `spec/conformance.md` | reviewed by hand |
+| Conformance | `spec/conformance/` | reviewed by hand |
 
 If you add a fact that appears in two places, add a test tying them together.

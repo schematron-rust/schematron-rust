@@ -351,6 +351,6 @@ $ echo $?
 
   <p style="margin-top: 2rem;">
     <a class="button button-primary" href="/reports/">The same run as SVRL and JSON</a>
-    <a class="button button-secondary" href={specUrl('tutorial.md')}>The full tutorial</a>
+    <a class="button button-secondary" href={specUrl('tutorial/index.md')}>The full tutorial</a>
   </p>
 </section>

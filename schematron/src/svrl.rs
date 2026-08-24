@@ -2,7 +2,7 @@
 //!
 //! SVRL is the standard XML vocabulary for a Schematron validation report.
 //! Emitting it is what makes this crate's output consumable by existing
-//! Schematron tooling. See `spec/svrl.md`.
+//! Schematron tooling. See `spec/svrl/`.
 //!
 //! The output is deliberately *flat*: `active-pattern`, `fired-rule`,
 //! `failed-assert`, and `successful-report` are siblings, and the structure is
@@ -224,7 +224,7 @@ impl Report {
                         role: attribute(child, "role"),
                         flag: attribute(child, "flag"),
                         // SVRL has nowhere to record which node the rule fired
-                        // on; see `spec/svrl.md`.
+                        // on; see `spec/svrl/`.
                         location: String::new(),
                         assertions: Vec::new(),
                     });

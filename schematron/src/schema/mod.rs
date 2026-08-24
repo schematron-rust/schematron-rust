@@ -1,7 +1,7 @@
 //! The Schematron document model and its compiler.
 //!
 //! A `.sch` file becomes a runnable [`Schema`] in five passes, described in
-//! `spec/parsing.md`:
+//! `spec/parsing/`:
 //!
 //! 1. Parse the schema as XML.
 //! 2. Resolve `include` and `extends href`.

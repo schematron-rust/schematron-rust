@@ -116,7 +116,7 @@
     <p>
       A cross-reference needs a key. The crate implements <code>key</code> and
       <code>key()</code> as a documented non-ISO extension —
-      <a href={specUrl('keys.md')}>spec/keys.md</a> explains why a
+      <a href={specUrl('keys/index.md')}>spec/keys/</a> explains why a
       cross-reference check needs one, and what the alternative costs.
     </p>
   </Details>
@@ -125,7 +125,7 @@
     <p>
       By design: outside the implemented subset you get a hard error naming the
       construct, rather than a plausible wrong answer.
-      <a href={specUrl('xpath2.md')}>spec/xpath2.md</a> lists what is in and what
+      <a href={specUrl('xpath2/index.md')}>spec/xpath2/</a> lists what is in and what
       is out.
     </p>
   </Details>

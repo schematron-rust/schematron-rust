@@ -129,7 +129,7 @@ let report = schema.validate_with(&document, &options)?;`}</code></pre>
     <p>
       Measure before turning it on: on a small document the threads cost more
       than they save. Indicative figures and the benchmarks that produce them
-      live in <code>spec/testing.md</code>; run <code>cargo bench</code>
+      live in <code>spec/testing/</code>; run <code>cargo bench</code>
       yourself, because the numbers in any README are somebody else's hardware.
     </p>
   </InsetText>

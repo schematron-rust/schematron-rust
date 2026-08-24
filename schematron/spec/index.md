@@ -11,26 +11,26 @@ XML data model, its own XPath 1.0 engine, and its own Schematron validator.
 
 | Component | Spec | Status |
 |---|---|---|
-| XML data model and parser | [xml.md](xml.md) | Implemented |
-| XPath 1.0 engine | [xpath.md](xpath.md) | Implemented |
-| XPath 2.0 support | [xpath2.md](xpath2.md) | Phases 1–3, and kind tests |
-| Schematron data model | [data-model.md](data-model.md) | Implemented |
-| Schema parsing, include, abstract expansion | [parsing.md](parsing.md) | Implemented |
-| Validation semantics | [validation.md](validation.md) | Implemented |
-| SVRL report output | [svrl.md](svrl.md) | Implemented |
-| Keys | [keys.md](keys.md) | Implemented |
-| Schema linting | [linting.md](linting.md) | Implemented |
-| Library API | [api.md](api.md) | Implemented |
-| Command line interface | [cli.md](cli.md) | Implemented |
-| Errors | [errors.md](errors.md) | Implemented |
-| Testing | [testing.md](testing.md) | Implemented |
-| Conformance and limits | [conformance.md](conformance.md) | Implemented |
-| Rust MSRV policy | [rust-msrv-n-minus-3.md](rust-msrv-n-minus-3.md) | Implemented |
-| Agents directory naming | [agents-directory-name-is-lowercase.md](agents-directory-name-is-lowercase.md) | Implemented |
-| Tutorial | [tutorial.md](tutorial.md) | — |
-| Roadmap | [roadmap.md](roadmap.md) | — |
+| XML data model and parser | [xml/](xml/index.md) | Implemented |
+| XPath 1.0 engine | [xpath/](xpath/index.md) | Implemented |
+| XPath 2.0 support | [xpath2/](xpath2/index.md) | Phases 1–3, and kind tests |
+| Schematron data model | [data-model/](data-model/index.md) | Implemented |
+| Schema parsing, include, abstract expansion | [parsing/](parsing/index.md) | Implemented |
+| Validation semantics | [validation/](validation/index.md) | Implemented |
+| SVRL report output | [svrl/](svrl/index.md) | Implemented |
+| Keys | [keys/](keys/index.md) | Implemented |
+| Schema linting | [linting/](linting/index.md) | Implemented |
+| Library API | [api/](api/index.md) | Implemented |
+| Command line interface | [cli/](cli/index.md) | Implemented |
+| Errors | [errors/](errors/index.md) | Implemented |
+| Testing | [testing/](testing/index.md) | Implemented |
+| Conformance and limits | [conformance/](conformance/index.md) | Implemented |
+| Rust MSRV policy | [rust-msrv-n-minus-3/](rust-msrv-n-minus-3/index.md) | Implemented |
+| Agents directory naming | [agents-directory-name-is-lowercase/](agents-directory-name-is-lowercase/index.md) | Implemented |
+| Tutorial | [tutorial/](tutorial/index.md) | — |
+| Roadmap | [roadmap/](roadmap/index.md) | — |
 
-Remaining gaps are recorded in [conformance.md](conformance.md) rather than
+Remaining gaps are recorded in [conformance/](conformance/index.md) rather than
 left to be discovered. Query bindings above XPath 1.0 are refused rather than
 approximated.
 
@@ -78,7 +78,7 @@ in the past because future contracts are not allowed.</assert>
 ```
 
 That one **does** now run, under an `xslt2` query binding — `current-date()`
-and the date types arrived in XPath 2.0 phase 2b, see [xpath2.md](xpath2.md):
+and the date types arrived in XPath 2.0 phase 2b, see [xpath2/](xpath2/index.md):
 
 ```xml
 <schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
@@ -113,7 +113,7 @@ standard as part of the Document Schema Definition Languages (DSDL) family:
 | ISO/IEC 19757-3:2025 | Current edition |
 
 This crate targets the ISO namespace and the `xslt` / `xpath` query language
-bindings, which are XPath 1.0. See [conformance.md](conformance.md).
+bindings, which are XPath 1.0. See [conformance/](conformance/index.md).
 
 ## Design principles
 
@@ -126,18 +126,18 @@ bindings, which are XPath 1.0. See [conformance.md](conformance.md).
 3. **The standard is the contract.** Where the standard states a behaviour,
    the crate implements that behaviour, and the spec files here cite it.
    Where the crate deliberately diverges or does not yet reach, that is
-   recorded in [conformance.md](conformance.md) rather than left implicit.
+   recorded in [conformance/](conformance/index.md) rather than left implicit.
 4. **Library first, CLI second.** The CLI is a thin shell over the library.
 5. **Reports are data.** A validation result is a Rust value that can be
    rendered as SVRL, as JSON, or as human text — not a pile of strings.
 
 ## Reading order
 
-New to Schematron: start with [tutorial.md](tutorial.md), which walks from one
+New to Schematron: start with [tutorial/](tutorial/index.md), which walks from one
 rule to a schema that pulls its weight.
 
-Working on the crate: read [data-model.md](data-model.md), then
-[validation.md](validation.md). Those two carry the semantics of the language.
+Working on the crate: read [data-model/](data-model/index.md), then
+[validation/](validation/index.md). Those two carry the semantics of the language.
 The rest is machinery.
 
-Deciding whether to depend on it: [conformance.md](conformance.md) first.
+Deciding whether to depend on it: [conformance/](conformance/index.md) first.

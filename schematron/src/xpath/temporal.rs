@@ -11,7 +11,7 @@
 //! A value with no timezone is treated as UTC. XPath 2.0 uses an implicit
 //! timezone from the evaluation context; fixing it at UTC makes a validation
 //! run reproducible on any machine, which this crate values more. See
-//! `spec/xpath2.md`.
+//! `spec/xpath2/`.
 
 use std::fmt;
 
@@ -553,7 +553,7 @@ impl Temporal {
     /// being in `implicit_minutes`.
     ///
     /// XPath 2.0 takes the implicit timezone from the evaluation context. See
-    /// `spec/xpath2.md` for why this crate defaults it to UTC.
+    /// `spec/xpath2/` for why this crate defaults it to UTC.
     #[must_use]
     #[allow(clippy::cast_precision_loss)] // Day counts are far below 2^53.
     pub fn to_seconds_in(&self, implicit_minutes: i32) -> f64 {

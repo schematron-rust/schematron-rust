@@ -53,7 +53,7 @@ const SIGNATURES: &[(&str, usize, Option<usize>)] = &[
 /// The XPath 2.0 functions this crate implements, with their arities.
 ///
 /// Available only under an XPath 2.0 query binding. The set is deliberately
-/// the one that needs no sequence type; see `spec/xpath2.md`.
+/// the one that needs no sequence type; see `spec/xpath2/`.
 const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("matches", 2, Some(3)),
     ("replace", 3, Some(4)),
@@ -178,25 +178,25 @@ pub fn check_function(name: &str, arity: usize, version: XPathVersion) -> Result
     if !version.is_v2() && SIGNATURES_V2.iter().any(|(f, _, _)| *f == name) {
         return Err(format!(
             "{name}() is an XPath 2.0 function, and this schema's query binding is \
-             XPath 1.0. Set queryBinding=\"xslt2\" to use it; see spec/xpath2.md."
+             XPath 1.0. Set queryBinding=\"xslt2\" to use it; see spec/xpath2/."
         ));
     }
     if V2_FUNCTIONS_NEEDING_SEQUENCES.contains(&name) {
         return Err(format!(
             "{name}() returns or consumes an XPath 2.0 sequence, which this crate \
-             does not implement yet; see spec/xpath2.md"
+             does not implement yet; see spec/xpath2/"
         ));
     }
     if V2_FUNCTIONS_NEEDING_DATES.contains(&name) {
         return Err(format!(
             "{name}() needs the XPath 2.0 date and time types, which this crate \
-             does not implement yet; see spec/xpath2.md"
+             does not implement yet; see spec/xpath2/"
         ));
     }
     if V2_FUNCTIONS_NOT_IMPLEMENTED.contains(&name) {
         return Err(format!(
             "{name}() is an XPath 2.0 function this crate does not implement; \
-             see spec/xpath2.md"
+             see spec/xpath2/"
         ));
     }
     Err(format!("unknown function {name}()"))
@@ -815,7 +815,7 @@ fn extreme(args: &[Value], document: &Document, pick: fn(f64, f64) -> f64) -> f6
 /// Compiles a regular expression, honouring XPath 2.0's flag argument.
 ///
 /// The `regex` crate's syntax is close to the XML Schema regular expressions
-/// XPath 2.0 specifies, but not identical; `spec/xpath2.md` lists the
+/// XPath 2.0 specifies, but not identical; `spec/xpath2/` lists the
 /// differences. A pattern that does not compile is an error naming the
 /// pattern, never a silently false test.
 fn compile_regex(

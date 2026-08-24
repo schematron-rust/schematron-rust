@@ -10,10 +10,10 @@ has to discover a gap by hitting it in production.
 | absent | Yes — XPath 1.0, the standard's default |
 | `xslt` | Yes — XPath 1.0 plus `document()` and `current()` |
 | `xpath` | Yes — XPath 1.0 |
-| `xslt2`, `xpath2` | Partly — the phase-1 subset in [xpath2.md](xpath2.md) |
+| `xslt2`, `xpath2` | Partly — the phase-1 subset in [xpath2/](../xpath2/index.md) |
 | `xslt3`, `xpath3`, `xpath31` | No — rejected, unless `allow_unknown_query_binding` |
 
-**Read [xpath2.md](xpath2.md) before declaring `xslt2`.** The subset covers
+**Read [xpath2/](../xpath2/index.md) before declaring `xslt2`.** The subset covers
 regular expressions, conditionals, and the string and numeric functions that
 schemas actually use; everything outside it is a hard error naming the
 construct. But expressions still evaluate on the XPath 1.0 engine, so the
@@ -41,7 +41,7 @@ merely reporting an unknown function.
 | `ns`, `let`, `phase`, `active`, `include`, `extends` | Full |
 | `diagnostics`, `diagnostic` | Full |
 | `properties`, `property` | Full |
-| `key` | Full, as a **non-ISO extension** — see [keys.md](keys.md) |
+| `key` | Full, as a **non-ISO extension** — see [keys/](../keys/index.md) |
 | `param`, abstract patterns (`abstract`, `is-a`) | Full |
 | abstract rules (`rule/@abstract` + `extends`) | Full |
 | `title`, `p`, `emph`, `span`, `dir` | Full |
@@ -49,7 +49,7 @@ merely reporting an unknown function.
 | `extends rule="ID"` | Full, including transitive extension |
 | `extends href="URI"` | Full, including fragment identifiers |
 | `include`/`extends` `href="U#id"` | Full — `@id` or `@xml:id`, no DTD needed |
-| XPath `document(uri)` | Full, including cross-document node-sets — see [xpath.md](xpath.md) |
+| XPath `document(uri)` | Full, including cross-document node-sets — see [xpath/](../xpath/index.md) |
 | XPath `document(uri, base)` | Full — the URI resolves against the base URI of the second argument's first node |
 | `pattern/@documents` | Full; the expression's context node is the **root node**, per the ISO XSLT skeleton, so write `catalog/ref/@href`, not `ref/@href` |
 | `schema/@defaultPhase`, `#ALL`, `#DEFAULT` | Full |
@@ -64,7 +64,7 @@ unchanged.
 
 `<sch:key>` **is** implemented, together with the `key()` function — as an
 extension, because ISO/IEC 19757-3 dropped the element while leaving no other
-way to declare a key. See [keys.md](keys.md), which states the portability
+way to declare a key. See [keys/](../keys/index.md), which states the portability
 trade. 1.5's `pattern/@name` is not mapped onto `title`; use ISO spellings.
 
 ## XML support
@@ -104,7 +104,7 @@ Number-to-string conversion follows XPath 1.0's format, not Rust's `Display`.
 | `document()` loading passes | 8 | A schema deriving each URI from the document it just loaded |
 
 Each returns an error when exceeded — never a panic and never a crash. Four
-`cargo-fuzz` targets exist to keep that true; see [testing.md](testing.md).
+`cargo-fuzz` targets exist to keep that true; see [testing/](../testing/index.md).
 
 ## Security posture
 
@@ -121,7 +121,7 @@ Each returns an error when exceeded — never a panic and never a crash. Four
 
 The crate is compared against the ISO Schematron reference implementation —
 the XSLT stylesheets that compile a schema into a validator — over the whole
-corpus in [testing.md](testing.md). The comparison is of *findings*: for each,
+corpus in [testing/](../testing/index.md). The comparison is of *findings*: for each,
 whether it is a failed assertion or a successful report, the test that
 produced it, and the message.
 
@@ -136,7 +136,7 @@ walks elements and attributes only. A rule written against `text()`,
 `comment()` or `processing-instruction()` therefore cannot fire, silently.
 
 This crate visits all seven node kinds, so such a rule works. See
-[validation.md](validation.md), which documents the visiting order.
+[validation/](../validation/index.md), which documents the visiting order.
 
 ### A `let` that shadows another
 
@@ -146,7 +146,7 @@ not run at all. Two corpus cases hit this.
 
 The standard describes four nested scopes — schema, phase, pattern, rule —
 with an inner binding shadowing an outer one, and this crate implements that.
-See [validation.md](validation.md).
+See [validation/](../validation/index.md).
 
 ### What is not compared
 
@@ -165,12 +165,12 @@ resolves `/@x` to zero nodes. A finding whose location cannot be resolved
 does not do the one job a location has.
 
 This crate emits `/root[1]/c[1]/@x`, and every location in the corpus is
-checked to select exactly one node — see [validation.md](validation.md).
+checked to select exactly one node — see [validation/](../validation/index.md).
 
 ## Known divergences
 
 1. **Rule context patterns** are matched by the rooted `//` reduction
-   described in [validation.md](validation.md), not by a dedicated XSLT
+   described in [validation/](../validation/index.md), not by a dedicated XSLT
    pattern matcher. For the pattern subset Schematron schemas use, the results
    agree. A context pattern with a leading reverse axis is rejected rather
    than guessed at.

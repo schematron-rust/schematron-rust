@@ -117,7 +117,7 @@ let report = schema.validate_with(&document, &options)?;
 ```
 
 Measure before turning it on: on a small document the threads cost more than
-they save. See [spec/validation.md](spec/validation.md).
+they save. See [spec/validation/](spec/validation/index.md).
 
 `Schema` is immutable and `Send + Sync`. Compile once, validate in parallel:
 
@@ -161,7 +161,7 @@ schematron -s rules.sch --explain          # what the compiled schema will do
 schematron -s rules.sch --verbose data.xml # which rules actually fired
 ```
 
-Full option list: [spec/cli.md](spec/cli.md).
+Full option list: [spec/cli/](spec/cli/index.md).
 
 ---
 
@@ -207,7 +207,7 @@ has happened.
 
 ## What is implemented
 
-A summary. [spec/conformance.md](spec/conformance.md) is authoritative, and
+A summary. [spec/conformance/](spec/conformance/index.md) is authoritative, and
 states the limits and deliberate divergences in full.
 
 | Area | Status |
@@ -219,14 +219,14 @@ states the limits and deliberate divergences in full.
 | `diagnostics`, `properties`, `value-of`, `name`, `emph`, `span`, `dir` | Full |
 | `@flag`, `@role`, `@subject`, `@see`, `@icon`, `@fpi` | Full |
 | `pattern/@documents` | Full |
-| `key` and `key()` | Full, as a non-ISO extension — see [spec/keys.md](spec/keys.md) |
+| `key` and `key()` | Full, as a non-ISO extension — see [spec/keys/](spec/keys/index.md) |
 | Phases, `#ALL`, `#DEFAULT`, `@defaultPhase` | Full |
 | SVRL output | Full |
 | XPath 1.0 — 13 axes, 27 core functions, exact conversion semantics | Full |
 | XPath `document()`, with cross-document node-sets | Full |
-| XPath 2.0 sequences, dates, durations, type operators, value and node comparisons, `for`, `some`, `every`, ranges, regular expressions | Subset — see [spec/xpath2.md](spec/xpath2.md) |
+| XPath 2.0 sequences, dates, durations, type operators, value and node comparisons, `for`, `some`, `every`, ranges, regular expressions | Subset — see [spec/xpath2/](spec/xpath2/index.md) |
 | `queryBinding="xslt"`, `"xpath"`, or absent | Supported |
-| `queryBinding="xslt2"`, `"xpath2"` | Partly — see [spec/xpath2.md](spec/xpath2.md) |
+| `queryBinding="xslt2"`, `"xpath2"` | Partly — see [spec/xpath2/](spec/xpath2/index.md) |
 | `queryBinding="xslt3"` and later | Refused by default |
 | `extends rule` and `extends href`, with `#fragment` identifiers | Full |
 | `document(uri, base)` | Full — resolves against the second argument's first node |
@@ -242,7 +242,7 @@ schema silently does nothing:
 schematron --schema rules.sch --lint
 ```
 
-See [spec/linting.md](spec/linting.md).
+See [spec/linting/](spec/linting/index.md).
 
 A separate check asks a different question — **will this schema behave the
 same under another Schematron processor?**
@@ -255,7 +255,7 @@ What it reports is not wrong. It is correct, and works here, and the ISO
 reference implementation treats it differently: a `let` shadowing an outer
 one, which that implementation refuses outright; a rule on `comment()`, which
 it never fires; a rule's `@flag`, which it drops. Each check is backed by a
-divergence in [spec/conformance.md](spec/conformance.md), established by
+divergence in [spec/conformance/](spec/conformance/index.md), established by
 running both implementations against the same schema. Kept out of `--lint`,
 because a linter that reports correct code gets switched off.
 
@@ -263,7 +263,7 @@ XPath 2.0 is a different language, not XPath 1.0 with extra functions. The
 crate implements a documented subset of it — regular expressions,
 conditionals, and the string and numeric functions schemas actually use — and
 makes everything outside that subset a **hard error naming the construct**,
-never a wrong answer. [spec/xpath2.md](spec/xpath2.md) is explicit about what
+never a wrong answer. [spec/xpath2/](spec/xpath2/index.md) is explicit about what
 is in, what is out, and the handful of places where a `xslt2` schema still
 evaluates with XPath 1.0 semantics.
 
@@ -275,7 +275,7 @@ Beyond the test suite, the crate is compared against the **ISO Schematron
 reference implementation** — the XSLT stylesheets that compile a schema into a
 validator — over the whole corpus. Twenty of twenty-three cases agree exactly;
 the other three are documented in
-[spec/conformance.md](spec/conformance.md#measured-against-the-reference-implementation),
+[spec/conformance/](spec/conformance/index.md#measured-against-the-reference-implementation),
 and in each the difference is the reference's rather than this crate's.
 
 ```sh
@@ -308,7 +308,7 @@ matching is linear rather than quadratic in document size. Patterns can
 optionally evaluate in parallel.
 
 Indicative figures, and the benchmarks that produce them, are in
-[spec/testing.md](spec/testing.md#benchmarks). Run them yourself with
+[spec/testing/](spec/testing/index.md#benchmarks). Run them yourself with
 `cargo bench` — the numbers in any README are somebody else's hardware.
 
 ---
@@ -324,23 +324,23 @@ be read:
 | Document | What it covers |
 |---|---|
 | [spec/index.md](spec/index.md) | Overview and design principles |
-| [spec/tutorial.md](spec/tutorial.md) | **Start here** — eighteen steps from first rule to real schema |
-| [spec/data-model.md](spec/data-model.md) | Every Schematron element and its Rust type |
-| [spec/validation.md](spec/validation.md) | The validation algorithm, exactly |
-| [spec/xpath.md](spec/xpath.md) | The XPath 1.0 engine |
-| [spec/xpath2.md](spec/xpath2.md) | The XPath 2.0 subset, and its limits |
-| [spec/xml.md](spec/xml.md) | The XML parser and data model |
-| [spec/parsing.md](spec/parsing.md) | The five compilation passes |
-| [spec/svrl.md](spec/svrl.md) | The SVRL report format, read and written |
-| [spec/keys.md](spec/keys.md) | Keys, and why a cross-reference check needs one |
-| [spec/linting.md](spec/linting.md) | Catching schemas that silently do nothing |
-| [spec/api.md](spec/api.md) | Library API |
-| [spec/cli.md](spec/cli.md) | Command line interface |
-| [spec/errors.md](spec/errors.md) | Error taxonomy |
-| [spec/conformance.md](spec/conformance.md) | Limits and divergences, stated up front |
-| [spec/testing.md](spec/testing.md) | Tests, fuzzing, benchmarks, lints |
-| [spec/rust-msrv-n-minus-3.md](spec/rust-msrv-n-minus-3.md) | MSRV policy: current stable minus three |
-| [spec/roadmap.md](spec/roadmap.md) | What is next |
+| [spec/tutorial/](spec/tutorial/index.md) | **Start here** — eighteen steps from first rule to real schema |
+| [spec/data-model/](spec/data-model/index.md) | Every Schematron element and its Rust type |
+| [spec/validation/](spec/validation/index.md) | The validation algorithm, exactly |
+| [spec/xpath/](spec/xpath/index.md) | The XPath 1.0 engine |
+| [spec/xpath2/](spec/xpath2/index.md) | The XPath 2.0 subset, and its limits |
+| [spec/xml/](spec/xml/index.md) | The XML parser and data model |
+| [spec/parsing/](spec/parsing/index.md) | The five compilation passes |
+| [spec/svrl/](spec/svrl/index.md) | The SVRL report format, read and written |
+| [spec/keys/](spec/keys/index.md) | Keys, and why a cross-reference check needs one |
+| [spec/linting/](spec/linting/index.md) | Catching schemas that silently do nothing |
+| [spec/api/](spec/api/index.md) | Library API |
+| [spec/cli/](spec/cli/index.md) | Command line interface |
+| [spec/errors/](spec/errors/index.md) | Error taxonomy |
+| [spec/conformance/](spec/conformance/index.md) | Limits and divergences, stated up front |
+| [spec/testing/](spec/testing/index.md) | Tests, fuzzing, benchmarks, lints |
+| [spec/rust-msrv-n-minus-3/](spec/rust-msrv-n-minus-3/index.md) | MSRV policy: current stable minus three |
+| [spec/roadmap/](spec/roadmap/index.md) | What is next |
 
 If the code and the specification disagree, that is a defect in one of them.
 

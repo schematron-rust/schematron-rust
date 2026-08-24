@@ -24,7 +24,7 @@ Every element below maps to a Rust type in `schematron::schema`.
 | `id` | Identifier for the schema |
 | `schemaVersion` | Version of the *schema*, opaque to the processor |
 | `defaultPhase` | `phase/@id` to use when the caller does not name one |
-| `queryBinding` | Query language binding, see [conformance.md](conformance.md) |
+| `queryBinding` | Query language binding, see [conformance/](../conformance/index.md) |
 | `xml:lang` | Natural language of the human-readable text |
 
 Rust: `Schema { id, schema_version, default_phase, query_binding, lang, title, namespaces, lets, phases, patterns, diagnostics, properties, paragraphs }`
@@ -67,7 +67,7 @@ Rust: `Phase { id, actives: Vec<Active>, lets, paragraphs }`, `Active { pattern 
 ```
 
 A pattern is the unit of rule competition: within one pattern, at most one
-rule fires per node. See [validation.md](validation.md).
+rule fires per node. See [validation/](../validation/index.md).
 
 Three kinds:
 
@@ -80,7 +80,7 @@ Three kinds:
 `@documents` holds an XPath expression evaluated against the instance
 document; each resulting node's string value is a URI of an *external*
 document, and the pattern's rules run against each such document instead of
-the instance. See [validation.md](validation.md).
+the instance. See [validation/](../validation/index.md).
 
 Rust: `Pattern { id, is_abstract, is_a, documents, title, lets, rules, params, paragraphs }`
 
@@ -93,7 +93,7 @@ Rust: `Pattern { id, is_abstract, is_a, documents, title, lets, rules, params, p
 Both attributes required. Inside an instance pattern, every occurrence of
 `$name` in the abstract pattern's `@context`, `@test`, `@select`, `@value`,
 and `@subject` attributes is replaced by `value` textually. See
-[parsing.md](parsing.md) for the exact substitution rule.
+[parsing/](../parsing/index.md) for the exact substitution rule.
 
 Rust: `Param { name, value }`
 
@@ -195,7 +195,7 @@ Rust: `Property { id, role, scheme, content: Vec<Content> }`
 ```
 
 Replaced by the element the `href` points to, before any other processing.
-See [parsing.md](parsing.md).
+See [parsing/](../parsing/index.md).
 
 ## `extends`
 
@@ -209,7 +209,7 @@ Inside a rule, splices in assertions from elsewhere. `@rule` names an abstract
 rule in this schema and is expanded after the model is built; `@href` names a
 document, or a fragment of one, and is spliced in with `include` before the
 model exists. Either way what the rule gains is the assertions, at the
-position the `extends` element occupies. See [parsing.md](parsing.md).
+position the `extends` element occupies. See [parsing/](../parsing/index.md).
 
 ## `title` and `p`
 

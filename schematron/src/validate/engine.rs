@@ -1,6 +1,6 @@
 //! The validation algorithm.
 //!
-//! Implements `spec/validation.md`: active patterns, four scopes of variable,
+//! Implements `spec/validation/`: active patterns, four scopes of variable,
 //! and — the piece that defines the language — first-matching-rule-wins
 //! within each pattern.
 
@@ -101,7 +101,7 @@ pub(crate) fn validate(
 /// incomplete document set.
 ///
 /// The repeated work is bounded and only paid by schemas that use the
-/// feature. See `spec/xpath.md`.
+/// feature. See `spec/xpath/`.
 fn validate_loading_documents(
     schema: &Schema,
     document: &Document,
@@ -337,7 +337,7 @@ fn run_patterns_in_parallel(
 /// Eager rather than lazy: a schema that declares a key almost certainly uses
 /// it, and building on demand would need interior mutability in the
 /// evaluation path for no real gain. The linter reports a key nothing looks
-/// up, which is the case eagerness would waste work on. See `spec/keys.md`.
+/// up, which is the case eagerness would waste work on. See `spec/keys/`.
 fn build_keys(schema: &Schema, document: &Document) -> Result<Keys> {
     let mut keys = Keys::new();
     if schema.keys().is_empty() {
@@ -565,7 +565,7 @@ const UNCLAIMED: u32 = u32::MAX;
 ///
 /// A rule context is an XSLT match pattern, which selects downwards from some
 /// ancestor. The standard reduction is to evaluate the pattern from the root
-/// across the descendant-or-self axis; see `spec/validation.md`.
+/// across the descendant-or-self axis; see `spec/validation/`.
 fn matched_nodes(run: Run<'_>, rule: &Rule, variables: &Variables) -> Result<Vec<NodeId>> {
     let Run { schema, document, .. } = run;
     let Some(source) = &rule.context else {

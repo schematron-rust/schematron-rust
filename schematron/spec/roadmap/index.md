@@ -115,7 +115,7 @@ Ordered by value, not by how the XPath 2.0 phases happened to be numbered.
    needing only a node test rather than a type lattice, so they carried none
    of the risk that keeps the rest of phase 4 last.
 
-   **Deliberately last.** It is the only remaining gap [xpath2.md](xpath2.md)
+   **Deliberately last.** It is the only remaining gap [xpath2/](../xpath2/index.md)
    records, and it is also the one worth least: a schema inspects untyped
    document data, where `castable as xs:integer` already gives the right
    answer, and the distinction between integer and double rarely decides
@@ -139,7 +139,7 @@ Recorded so they are not proposed again.
   `assert` with `report` is the classic Schematron mistake, and catching it
   would be valuable. But the only available signal is the wording of English
   prose, and a lint that misfires on "this invoice must be reviewed manually"
-  teaches its reader to ignore the linter — which [linting.md](linting.md)
+  teaches its reader to ignore the linter — which [linting/](../linting/index.md)
   argues is the one outcome worth avoiding above all.
 
 ## Not planned

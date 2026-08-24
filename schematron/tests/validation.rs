@@ -1,6 +1,6 @@
 //! Integration tests for validation semantics.
 //!
-//! These exercise the behaviours specified in `spec/validation.md` through
+//! These exercise the behaviours specified in `spec/validation/` through
 //! the public API only, so they also serve as a check that the public API is
 //! sufficient to do real work.
 

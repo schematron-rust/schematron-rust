@@ -94,9 +94,9 @@ external fetch a schema can make.
 | `phase` | `PhaseSelection::Default` | `Default`, `All`, or `Named(String)` |
 | `max_failures` | none | Stop after N failed assertions |
 | `record_fired_rules` | `true` | Set false to skip bookkeeping for rules that found nothing |
-| `parallel_patterns` | `false` | Evaluate patterns on separate threads; the report is unchanged. See [validation.md](validation.md) |
+| `parallel_patterns` | `false` | Evaluate patterns on separate threads; the report is unchanged. See [validation/](../validation/index.md) |
 | `current_time` | system clock, read once | The instant `current-date()` reports. Set it to make a run with date rules reproducible |
-| `implicit_timezone` | UTC | The timezone a date with no offset is read as being in. See [xpath2.md](xpath2.md) |
+| `implicit_timezone` | UTC | The timezone a date with no offset is read as being in. See [xpath2/](../xpath2/index.md) |
 
 `PhaseSelection::from("#ALL")`, `from("#DEFAULT")`, and `from("my-phase")` all
 do what you would expect, so a string from a config file can be passed
@@ -199,4 +199,4 @@ See `examples/xpath_engine.rs`.
 ## Errors
 
 Everything returns `schematron::Result<T>` = `Result<T, schematron::Error>`.
-See [errors.md](errors.md).
+See [errors/](../errors/index.md).

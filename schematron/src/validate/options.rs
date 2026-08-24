@@ -83,7 +83,7 @@ pub struct ValidateOptions {
     ///
     /// The ceiling is the number of active patterns, so a single-pattern
     /// schema gains nothing. Setting [`ValidateOptions::max_failures`] keeps
-    /// evaluation sequential; see `spec/validation.md`.
+    /// evaluation sequential; see `spec/validation/`.
     pub parallel_patterns: bool,
     /// The instant `current-date()` and its companions report, in seconds
     /// since the Unix epoch.
@@ -92,14 +92,14 @@ pub struct ValidateOptions {
     /// Supplying a value makes the run reproducible, which is how a test for
     /// a date rule should be written — a validator whose result depends on
     /// the wall clock cannot be tested, and its failures cannot be
-    /// reproduced. See `spec/xpath2.md`.
+    /// reproduced. See `spec/xpath2/`.
     pub current_time: Option<f64>,
     /// The timezone a date or time with no offset is read as being in, in
     /// minutes from UTC.
     ///
     /// `None` means UTC, which keeps a validation run reproducible on any
     /// machine — XPath 2.0 would take the machine's local offset. Set it when
-    /// local semantics are what the documents mean. See `spec/xpath2.md`.
+    /// local semantics are what the documents mean. See `spec/xpath2/`.
     pub implicit_timezone: Option<i32>,
 }
 

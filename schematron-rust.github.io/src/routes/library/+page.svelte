@@ -20,7 +20,7 @@
   <h1>Library</h1>
   <p>
     Compile a schema once; validate many documents. The full API surface is
-    <a href={specUrl('api.md')}>spec/api.md</a> and
+    <a href={specUrl('api/index.md')}>spec/api/</a> and
     <a href={DOCS_RS}>docs.rs</a>.
   </p>
 </div>
@@ -140,7 +140,7 @@ let report = schema.validate_with(&document, &options)?;`}</code></pre>
 
   <p>
     Measure before turning it on — on a small document the threads cost more
-    than they save. See <a href={specUrl('validation.md')}>spec/validation.md</a>.
+    than they save. See <a href={specUrl('validation/index.md')}>spec/validation/</a>.
   </p>
 </section>
 

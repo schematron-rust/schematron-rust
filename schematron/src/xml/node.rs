@@ -178,7 +178,7 @@ pub(crate) struct NodeData {
     pub(crate) namespaces: Vec<NodeId>,
     pub(crate) name: Option<QName>,
     pub(crate) value: String,
-    /// Position in document order; see `spec/xml.md`.
+    /// Position in document order; see `spec/xml/`.
     pub(crate) order: usize,
     /// The highest document-order value in this node's subtree, itself
     /// included.

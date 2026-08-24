@@ -54,7 +54,7 @@ Two consequences that bite people:
    rule after it in the same pattern.
 
 The crate reports which rule fired for which node, so this is observable
-rather than mysterious — see `svrl:fired-rule` in [svrl.md](svrl.md).
+rather than mysterious — see `svrl:fired-rule` in [svrl/](../svrl/index.md).
 
 ## Context matching
 
@@ -116,7 +116,7 @@ binding in the same scope is visible to a later one. An inner binding shadows
 an outer binding of the same name for the rest of the inner scope. A reference
 to a variable that nothing anywhere binds is caught when the schema loads; a
 reference to one that exists but is out of reach here is an error at
-validation, not an empty node-set. See [parsing.md](parsing.md).
+validation, not an empty node-set. See [parsing/](../parsing/index.md).
 
 `<let name="x" value="expr"/>` binds the XPath value of `expr`.
 `<let name="x">content</let>` binds a string built from the rich content.
@@ -258,7 +258,7 @@ It is worth turning on for a schema with many patterns over a large document,
 and worth measuring rather than assuming — on the crate's own benchmark, an
 eight-pattern schema is **slower** in parallel on a 100-element document and
 about four times faster on a 5 000-element one. Figures and the benchmark
-that produces them are in [testing.md](testing.md#benchmarks).
+that produces them are in [testing/](../testing/index.md#benchmarks).
 
 ### Implementation
 
@@ -276,7 +276,7 @@ if one is ever wanted, it belongs on `ValidateOptions`.
 assertion: the assertion's own attribute if present, otherwise the rule's,
 otherwise absent. `@flag` conventionally carries severity (`error`, `warning`,
 `info`); the crate does not assign it meaning, but the CLI can filter on it
-and derives its exit code from it — see [cli.md](cli.md).
+and derives its exit code from it — see [cli/](../cli/index.md).
 
 ## Diagnostics
 

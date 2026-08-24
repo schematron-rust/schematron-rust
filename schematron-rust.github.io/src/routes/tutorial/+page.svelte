@@ -20,7 +20,7 @@
   <p>
     Enough Schematron to write a real schema. The full eighteen-step version,
     with every worked file, is
-    <a href={specUrl('tutorial.md')}>spec/tutorial.md</a> in the repo.
+    <a href={specUrl('tutorial/index.md')}>spec/tutorial/</a> in the repo.
   </p>
 </div>
 
@@ -291,7 +291,7 @@ cargo run -- -s examples/invoice.sch -p strict -v examples/invoice-bad.xml`}</co
   </CodeBlock>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={specUrl('tutorial.md')}>The full eighteen-step tutorial</a>
+    <a class="button button-primary" href={specUrl('tutorial/index.md')}>The full eighteen-step tutorial</a>
     <a class="button button-secondary" href="/library/">Use the library</a>
   </p>
   <p><a class="back-link" href={REPO}>&larr; Everything else is in the repo</a></p>

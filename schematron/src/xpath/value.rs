@@ -37,7 +37,7 @@ pub enum Value {
     /// **Unreachable under XPath 1.0.** Nothing in the 1.0 grammar or
     /// function library constructs one, so a 1.0 expression evaluates through
     /// exactly the code it did before this variant existed, with exactly the
-    /// same results. See `spec/xpath2.md`.
+    /// same results. See `spec/xpath2/`.
     ///
     /// Sequences do not nest: building one from others flattens them.
     Sequence(Vec<Item>),
@@ -237,7 +237,7 @@ impl Value {
             Value::String(s) => s.clone(),
             // The string value of a sequence is its first item's, matching
             // how a node-set behaves; XPath 2.0 makes a multi-item sequence a
-            // type error here, which `spec/xpath2.md` records as a divergence.
+            // type error here, which `spec/xpath2/` records as a divergence.
             Value::Sequence(items) => items
                 .first()
                 .map_or_else(String::new, |item| item.to_xpath_string(document)),
