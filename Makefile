@@ -1,48 +1,39 @@
 # Publishing for the monorepo.
 #
-# The monorepo is the source of truth. `git subtree split` replays the history
-# of one subdirectory onto a synthetic branch rooted at that subdirectory, and
-# that branch is pushed to its standalone repo.
+# Only the site is published elsewhere, because GitHub Pages serves an
+# organization site at <org>.github.io only from a repository of that exact
+# name. That repository is derived output, not a second source: it is
+# regenerated from here and never edited directly.
+#
+# The crate is deliberately NOT published to a repository of its own. It lives
+# here and nowhere else, and `schematron/Cargo.toml` points crates.io and
+# docs.rs at its subdirectory of this repository.
+#
+# `git subtree split` replays the history of the site subdirectory onto a
+# branch rooted at that subdirectory, which is pushed to the Pages repo, where
+# its own .github/workflows/deploy.yml builds and deploys it.
 #
 # Only committed files are published — a split reads history, not the working
-# tree — so gitignored build output cannot leak into a public repo.
+# tree — so gitignored build output cannot leak into the public repo.
 #
 # `help` is the default target on purpose: a bare `make` must not push.
-# Pass FORCE=1 to overwrite a target repo whose history did not come from a
+# Pass FORCE=1 to overwrite a Pages repo whose history did not come from a
 # split of this monorepo.
-#
-# The recipe is factored through a recursive `_publish` because macOS ships
-# GNU Make 3.81, which has neither .ONESHELL nor .RECIPEPREFIX.
 
 FORCE_FLAG := $(if $(FORCE),--force,)
-SPLIT      := _split_$(TARGET)
+PREFIX     := schematron-rust.github.io
+REMOTE     := pages
+URL        := git@github.com:schematron-rust/schematron-rust.github.io.git
+SPLIT      := _split_site
 
-.PHONY: help publish publish-site publish-crate _publish
+.PHONY: help publish
 
 help:
-	@echo "make publish         publish site and crate to their standalone repos"
-	@echo "make publish-site    schematron-rust.github.io/ -> Pages repo"
-	@echo "make publish-crate   schematron/                -> crate repo"
+	@echo "make publish   publish $(PREFIX)/ to the Pages repo"
 	@echo ""
-	@echo "Add FORCE=1 to overwrite a target repo's history."
+	@echo "Add FORCE=1 to overwrite the Pages repo's history."
 
-publish: publish-site publish-crate
-
-publish-site:
-	@$(MAKE) --no-print-directory _publish \
-		  TARGET=site \
-		  PREFIX=schematron-rust.github.io \
-		  REMOTE=pages \
-		  URL=git@github.com:schematron-rust/schematron-rust.github.io.git
-
-publish-crate:
-	@$(MAKE) --no-print-directory _publish \
-		  TARGET=crate \
-		  PREFIX=schematron \
-		  REMOTE=crate \
-		  URL=git@github.com:schematron-rust/schematron.git
-
-_publish:
+publish:
 	@set -eu; \
 		echo "== $(PREFIX)/ -> $(URL)"; \
 		branch="$$(git branch --show-current)"; \
@@ -69,11 +60,19 @@ _publish:
 		  git branch -D '$(SPLIT)' >/dev/null; \
 		  echo "" >&2; \
 		  echo "Push rejected. $(URL)" >&2; \
-		  echo "has commits that did not come from a split of this monorepo — most" >&2; \
-		  echo "often an initial README created with the repo. These repos are" >&2; \
-		  echo "derived artifacts, so the fix is normally:" >&2; \
+		  echo "has commits that did not come from a split of this monorepo. That may" >&2; \
+		  echo "be a README created with the repo, or real history from before the" >&2; \
+		  echo "monorepo existed. Look before overwriting:" >&2; \
 		  echo "" >&2; \
-		  echo "    make publish-$(TARGET) FORCE=1" >&2; \
+		  echo "    git fetch $(REMOTE) && git log --oneline $(REMOTE)/main" >&2; \
+		  echo "" >&2; \
+		  echo "To keep that history, archive it onto a branch first:" >&2; \
+		  echo "" >&2; \
+		  echo "    git push $(REMOTE) $(REMOTE)/main:refs/heads/pre-monorepo" >&2; \
+		  echo "" >&2; \
+		  echo "Then overwrite:" >&2; \
+		  echo "" >&2; \
+		  echo "    make publish FORCE=1" >&2; \
 		  echo "" >&2; \
 		  exit 1; \
 		fi
