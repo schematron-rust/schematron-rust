@@ -1,0 +1,128 @@
+name: CI
+
+# Nothing enforced any of the crate's or the site's checks until this existed.
+# Both defects this repository has shipped — spec links that 404ed after the
+# crate moved into schematron/, and a site table of contents that drifted from
+# the crate's — survived precisely because the checks that would have caught
+# them only ever ran when someone remembered to run them.
+#
+# No `paths:` filters. The site's spec-sync test reads the crate's spec/
+# directory, so a change under schematron/ can break a site test and vice
+# versa; filtering by path would let exactly that pair through.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  crate:
+    name: Crate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: schematron
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: schematron
+
+      - name: Test
+        run: cargo test --all-features
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # AGENTS.md requires the documentation build to be warning-free, which
+      # only `-D warnings` actually enforces.
+      - name: Docs
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  msrv:
+    name: MSRV boundary
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: schematron
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Read the pin from Cargo.toml rather than repeating it here. The crate
+      # already forces Cargo.toml and the MSRV spec to agree; taking the
+      # toolchain from the same place stops CI becoming the third copy that
+      # rots. See spec/rust-msrv-n-minus-3/index.md.
+      - name: Read the declared MSRV
+        id: msrv
+        run: echo "version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust ${{ steps.msrv.outputs.version }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: schematron
+
+      - name: Test
+        run: cargo test --all-features
+
+  site:
+    name: Site
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: schematron-rust.github.io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No `version:` — pnpm/action-setup reads package.json's
+      # `packageManager` field, so CI uses the same pnpm that wrote the lockfile.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: schematron-rust.github.io/package.json
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: schematron-rust.github.io/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm check
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Includes spec-sync, which asserts SPEC_DOCS matches the crate's spec/
+      # directory. It runs here and cannot run in the published site repo,
+      # where the crate is absent.
+      - name: Test
+        run: pnpm test
