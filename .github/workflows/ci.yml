@@ -32,7 +32,7 @@ jobs:
         working-directory: schematron
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -65,7 +65,7 @@ jobs:
         working-directory: schematron
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Read the pin from Cargo.toml rather than repeating it here. The crate
       # already forces Cargo.toml and the MSRV spec to agree; taking the
@@ -96,17 +96,17 @@ jobs:
         working-directory: schematron-rust.github.io
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # No `version:` — pnpm/action-setup reads package.json's
       # `packageManager` field, so CI uses the same pnpm that wrote the lockfile.
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           package_json_file: schematron-rust.github.io/package.json
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
