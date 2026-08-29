@@ -12,7 +12,7 @@
     "test": "playwright test"
   },
   "dependencies": {
-    "lily-design-system-svelte-headless": "^0.2.0"
+    "lily-design-system-svelte-headless": "^0.3.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
