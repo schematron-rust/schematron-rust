@@ -150,7 +150,7 @@ first.
 
 ## Bump the MSRV
 
-Follow [`spec/rust-msrv-n-minus-3/`](../spec/rust-msrv-n-minus-3/index.md)
+Follow [`spec/rust-msrv-n-minus-2/`](../spec/rust-msrv-n-minus-2/index.md)
 exactly. The step that matters is actually running the boundary toolchain;
 updating the numbers without it produces a value that looks maintained and is
 not.

@@ -70,7 +70,7 @@ jobs:
       # Read the pin from Cargo.toml rather than repeating it here. The crate
       # already forces Cargo.toml and the MSRV spec to agree; taking the
       # toolchain from the same place stops CI becoming the third copy that
-      # rots. See spec/rust-msrv-n-minus-3/index.md.
+      # rots. See spec/rust-msrv-n-minus-2/index.md.
       - name: Read the declared MSRV
         id: msrv
         run: echo "version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"

@@ -36,7 +36,7 @@ Every one of these must pass before you claim a change is done:
 cargo test --all-features                     # unit, integration, corpus, CLI, docs
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features            # must be warning-free
-cargo +1.94 test --all-features               # the MSRV boundary
+cargo +1.96 test --all-features               # the MSRV boundary
 ```
 
 Slower, run when relevant:
@@ -101,7 +101,7 @@ Match the surrounding code. Specifically:
   comparison, NaN-yielding conversions, and the no-exponent number format are
   correct and deliberate.
 - Do not raise the MSRV outside its policy. See
-  [`spec/rust-msrv-n-minus-3/`](spec/rust-msrv-n-minus-3/index.md).
+  [`spec/rust-msrv-n-minus-2/`](spec/rust-msrv-n-minus-2/index.md).
 
 ## Where facts live
 

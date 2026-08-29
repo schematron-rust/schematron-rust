@@ -122,12 +122,12 @@ the regression is covered by `cargo test` and not only by a nightly run.
 ## The MSRV boundary
 
 ```sh
-cargo +1.94 test --all-features
+cargo +1.96 test --all-features
 ```
 
 Must run on the boundary toolchain itself. A newer compiler accepts strictly
 more and proves nothing. See
-[`spec/rust-msrv-n-minus-3/`](../spec/rust-msrv-n-minus-3/index.md).
+[`spec/rust-msrv-n-minus-2/`](../spec/rust-msrv-n-minus-2/index.md).
 
 ## What "done" means
 

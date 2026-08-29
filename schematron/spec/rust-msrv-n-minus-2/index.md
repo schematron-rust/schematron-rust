@@ -1,34 +1,34 @@
-# Rust MSRV policy: N-3
+# Rust MSRV policy: N-2
 
-The Minimum Supported Rust Version is **current stable minus three**.
+The Minimum Supported Rust Version is **current stable minus two**.
 
-If the current stable release is `1.N`, then this crate supports `1.N-3` and
+If the current stable release is `1.N`, then this crate supports `1.N-2` and
 everything newer. The MSRV is declared in `Cargo.toml`:
 
 ```toml
 [package]
-rust-version = "1.94"
+rust-version = "1.96"
 ```
 
 ## Current value
 
 | | |
 |---|---|
-| Current stable | 1.97 |
-| Policy | N-3 |
-| **MSRV** | **1.94** |
-| Verified | `cargo +1.94 test --all-features`, full suite passing |
+| Current stable | 1.98 |
+| Policy | N-2 |
+| **MSRV** | **1.96** |
+| Verified | `cargo +1.96 test --all-features`, full suite passing |
 
-## What N-3 means in practice
+## What N-2 means in practice
 
-Rust ships a stable release every six weeks, so three releases is roughly
-**eighteen weeks** — a little over four months. A downstream project that
-updates its toolchain even twice a year is never blocked by this crate.
+Rust ships a stable release every six weeks, so two releases is roughly
+**twelve weeks** — about three months. A downstream project that updates its
+toolchain even twice a year is never blocked by this crate.
 
-Counting is by release number, not by date: when stable becomes 1.98, the MSRV
-becomes 1.95, whether or not anything in the crate needed the change.
+Counting is by release number, not by date: when stable becomes 1.99, the MSRV
+becomes 1.97, whether or not anything in the crate needed the change.
 
-## Why N-3
+## Why N-2
 
 It is a deliberate middle position between the two failure modes.
 
@@ -44,7 +44,7 @@ breaks anyone whose toolchain is a week old, which includes most CI images,
 every Linux distribution package, and anyone whose employer gates toolchain
 upgrades.
 
-N-3 gives roughly four months of slack — enough for the toolchain-lag cases
+N-2 gives roughly three months of slack — enough for the toolchain-lag cases
 above — while keeping the language recent enough that the code can be written
 the way the language is meant to be written today.
 
@@ -73,22 +73,22 @@ An MSRV that is written down but never exercised is a guess. Verify with the
 exact toolchain, not with a newer one:
 
 ```sh
-rustup toolchain install 1.94 --profile minimal
-cargo +1.94 test --all-features
+rustup toolchain install 1.96 --profile minimal
+cargo +1.96 test --all-features
 ```
 
 Testing on a *newer* toolchain proves nothing about the MSRV, because newer
 compilers accept strictly more. The check has to run on the boundary version
 itself.
 
-Note that `cargo +1.94 clippy` needs the `clippy` component in that toolchain;
+Note that `cargo +1.96 clippy` needs the `clippy` component in that toolchain;
 the `--profile minimal` install above omits it. Day-to-day linting runs on
 current stable, where `clippy::incompatible_msrv` already catches the same
 class of problem by reading `rust-version`.
 
 ## Updating when stable moves
 
-When Rust `1.98` ships, the MSRV becomes `1.95`. Writing `NEW` for the new
+When Rust `1.99` ships, the MSRV becomes `1.97`. Writing `NEW` for the new
 value, so that nothing below can be copied as if it were a live command:
 
 1. Set `rust-version` to `NEW` in `Cargo.toml`.

@@ -2,7 +2,7 @@
 name = "schematron"
 version = "0.5.0"
 edition = "2021"
-rust-version = "1.94"  # Policy: current stable minus three. See spec/rust-msrv-n-minus-3/index.md.
+rust-version = "1.96"  # Policy: current stable minus two. See spec/rust-msrv-n-minus-2/index.md.
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Schematron: pure Rust implementation of ISO/IEC 19757-3 rule-based XML validation, with its own XML parser, XPath 1.0 engine, XPath 2.0 subset, schema linting, and SVRL reporting. By SixArm.com."
 documentation = "https://docs.rs/schematron"

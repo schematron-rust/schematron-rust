@@ -339,7 +339,7 @@ be read:
 | [spec/errors/](spec/errors/index.md) | Error taxonomy |
 | [spec/conformance/](spec/conformance/index.md) | Limits and divergences, stated up front |
 | [spec/testing/](spec/testing/index.md) | Tests, fuzzing, benchmarks, lints |
-| [spec/rust-msrv-n-minus-3/](spec/rust-msrv-n-minus-3/index.md) | MSRV policy: current stable minus three |
+| [spec/rust-msrv-n-minus-2/](spec/rust-msrv-n-minus-2/index.md) | MSRV policy: current stable minus two |
 | [spec/roadmap/](spec/roadmap/index.md) | What is next |
 
 If the code and the specification disagree, that is a defect in one of them.
@@ -362,7 +362,7 @@ cargo run --example xpath_engine         # the XPath engine on its own
 cargo test --all-features                                   # everything
 cargo clippy --all-targets --all-features -- -D warnings    # pedantic, and clean
 cargo doc --no-deps --all-features                          # warning-free
-cargo +1.94 test --all-features                             # the MSRV boundary
+cargo +1.96 test --all-features                             # the MSRV boundary
 ```
 
 Slower, run when relevant: `cargo bench`, and

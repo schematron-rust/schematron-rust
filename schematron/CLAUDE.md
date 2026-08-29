@@ -21,7 +21,7 @@ is Claude-specific mechanics that do not belong there.
   cargo test --all-features
   cargo clippy --all-targets --all-features -- -D warnings
   cargo doc --no-deps --all-features
-  cargo +1.94 test --all-features
+  cargo +1.96 test --all-features
   ```
 
 ## Working notes
@@ -44,7 +44,7 @@ is Claude-specific mechanics that do not belong there.
 - **`cargo clippy --fix` refuses on a dirty tree**, so commit or stash first
   rather than reaching for `--allow-dirty`; the point of the refusal is that
   the rewrite is otherwise unreviewable.
-- **The MSRV toolchain `1.94` is installed.** If a bump is needed,
+- **The MSRV toolchain `1.96` is installed.** If a bump is needed,
   `rustup toolchain install <version> --profile minimal` first, then actually
   run the tests on it.
 

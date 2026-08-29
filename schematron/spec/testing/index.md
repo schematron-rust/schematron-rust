@@ -356,7 +356,7 @@ cargo clippy --all-targets -- -D warnings
 cargo doc --no-deps               # must be warning-free
 cargo bench
 cargo +nightly fuzz run fuzz_validate
-cargo +1.94 test --all-features   # the MSRV boundary; see rust-msrv-n-minus-3.md
+cargo +1.96 test --all-features   # the MSRV boundary; see rust-msrv-n-minus-2.md
 ```
 
 The last one has to run on the boundary toolchain itself. Testing on a newer

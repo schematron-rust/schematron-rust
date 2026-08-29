@@ -176,23 +176,23 @@ fn the_msrv_spec_agrees_with_cargo_toml() {
     // sync by hand is exactly the kind of bookkeeping that rots quietly.
     let msrv = declared_msrv();
     let spec = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/rust-msrv-n-minus-3/index.md"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/rust-msrv-n-minus-2/index.md"),
     )
-    .expect("spec/rust-msrv-n-minus-3/index.md should exist");
+    .expect("spec/rust-msrv-n-minus-2/index.md should exist");
 
     assert!(
         spec.contains(&format!("rust-version = \"{msrv}\"")),
-        "spec/rust-msrv-n-minus-3/index.md does not show rust-version = {msrv:?}, \
+        "spec/rust-msrv-n-minus-2/index.md does not show rust-version = {msrv:?}, \
          which is what Cargo.toml declares"
     );
     assert!(
         spec.contains(&format!("**{msrv}**")),
-        "spec/rust-msrv-n-minus-3/index.md does not name {msrv:?} as the current MSRV \
+        "spec/rust-msrv-n-minus-2/index.md does not name {msrv:?} as the current MSRV \
          in its value table"
     );
     assert!(
         spec.contains(&format!("cargo +{msrv} test")),
-        "spec/rust-msrv-n-minus-3/index.md does not show how to verify {msrv:?}"
+        "spec/rust-msrv-n-minus-2/index.md does not show how to verify {msrv:?}"
     );
 
     // The same command must be the one the testing spec tells people to run.
