@@ -13,7 +13,7 @@ A change to how the project accepts money belongs here.
 
 | Document | Status |
 |---|---|
-| [Free and open source funding](free-open-source-funding/index.md) | Planned |
+| [Free and open source funding](free-open-source-funding/index.md) | In progress — GitHub Sponsors live, Open Collective pending |
 
 Each document lives in its own directory as `index.md`, and every directory
 under `spec/` must be linked from this file — the same convention

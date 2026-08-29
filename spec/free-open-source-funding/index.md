@@ -114,12 +114,12 @@ Open Collective goes live.
 
 ## `NEWS.md`
 
-This repository does not yet have a root `NEWS.md` (the crate's own release
-notes are [`schematron/CHANGELOG.md`](../../schematron/CHANGELOG.md)). When a
-funding channel goes live, it should get one line in whichever file is
-carrying repository-level news at the time, the same way any other
-repository-visible change is recorded — not a special announcement, just an
-honest entry.
+Repository-level news that is not a crate release lives in the root
+[`NEWS.md`](../../NEWS.md) (the crate's own release notes stay in
+[`schematron/CHANGELOG.md`](../../schematron/CHANGELOG.md)). A funding channel
+going live gets one line there, the same way any other repository-visible
+change is recorded — not a special announcement, just an honest entry. Do the
+same when Open Collective goes live.
 
 ## Status
 
@@ -129,7 +129,7 @@ honest entry.
 | Open Collective created for `schematron-rust` | Not started |
 | `.github/FUNDING.yml` added | **Done** — lists `github` only, until Open Collective exists |
 | `CONTRIBUTING.md` carries a funding section | **Done** |
-| Funding channels recorded in `NEWS.md` | Not started — `NEWS.md` does not exist yet |
+| Funding channels recorded in `NEWS.md` | **Done** |
 
 ## Order of operations
 
@@ -142,7 +142,7 @@ The dependency runs in one direction, so this is the order, not a menu:
 3. ~~Add `.github/FUNDING.yml` naming the channels that are actually
    live.~~ Done — `github: joelparkerhenderson` only, for now.
 4. ~~Add `CONTRIBUTING.md`, linking the same channels.~~ Done.
-5. Record the change in `NEWS.md`.
+5. ~~Record the change in `NEWS.md`.~~ Done.
 6. Once Open Collective exists, add `open_collective: schematron-rust` to
    `.github/FUNDING.yml` and update this table.
 
