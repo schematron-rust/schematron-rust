@@ -3,6 +3,16 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.5.1
+
+### Changed
+
+- **MSRV raised to 1.96** (current stable minus two, up from minus three).
+  Routine maintenance per
+  [spec/rust-msrv-n-minus-2/](spec/rust-msrv-n-minus-2/index.md); not a
+  breaking change. Verified with `cargo +1.96 test --all-features` on the
+  boundary toolchain itself.
+
 ## 0.5.0
 
 ### Changed
