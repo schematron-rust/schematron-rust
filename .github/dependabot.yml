@@ -1,0 +1,28 @@
+# See spec/dependabot/index.md for the policy behind this file.
+#
+# One entry per manifest directory in the monorepo, not one entry for the
+# whole repository: the crate, its nightly-only fuzz crate (a separate
+# Cargo.toml, deliberately excluded from the crate's own workspace, but
+# still a real dependency tree), and the site each pin dependencies
+# independently and need their own update PRs.
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/schematron"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "cargo"
+    directory: "/schematron/fuzz"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/schematron-rust.github.io"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
