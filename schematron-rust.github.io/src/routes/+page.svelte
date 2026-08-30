@@ -6,6 +6,7 @@
   import Tag from 'lily-design-system-svelte-headless/components/Tag/Tag.svelte';
   import CodeBlock from '$lib/lily/CodeBlock.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { VERSION, REPO, SPEC_DOCS } from '$lib/site';
 </script>
 
@@ -26,9 +27,9 @@
     validator that interprets a schema directly instead of transpiling it.
   </p>
   <div class="button-row">
-    <a class="button button-primary" href="/tutorial/">Start the tutorial</a>
-    <a class="button button-secondary" href="/library/">Use the library</a>
-    <a class="button button-secondary" href="/cli/">Use the CLI</a>
+    <CallToAction class="button button-primary" href="/tutorial/">Start the tutorial</CallToAction>
+    <CallToAction class="button button-secondary" href="/library/">Use the library</CallToAction>
+    <CallToAction class="button button-secondary" href="/cli/">Use the CLI</CallToAction>
   </div>
   <div class="tag-row" style="justify-content: center;">
     <Tag label="No unsafe code">no <code>unsafe</code></Tag>
@@ -262,9 +263,9 @@ cat data.xml | schematron -s rules.sch -`}</code></pre>
   </div>
 
   <div class="button-row">
-    <a class="button button-secondary" href="/example/">Follow a real run, end to end &rarr;</a>
-    <a class="button button-secondary" href="/reports/">See SVRL, JSON, and text output &rarr;</a>
-    <a class="button button-secondary" href="/roadmap/">Read the roadmap &rarr;</a>
+    <CallToAction class="button button-secondary" href="/example/">Follow a real run, end to end &rarr;</CallToAction>
+    <CallToAction class="button button-secondary" href="/reports/">See SVRL, JSON, and text output &rarr;</CallToAction>
+    <CallToAction class="button button-secondary" href="/roadmap/">Read the roadmap &rarr;</CallToAction>
   </div>
 </section>
 
@@ -315,6 +316,6 @@ cat data.xml | schematron -s rules.sch -`}</code></pre>
   </Details>
 
   <p style="text-align: center; margin-top: 2rem;">
-    <a class="button button-secondary" href={REPO}>Read the source on GitHub &rarr;</a>
+    <CallToAction class="button button-secondary" href={REPO}>Read the source on GitHub &rarr;</CallToAction>
   </p>
 </section>

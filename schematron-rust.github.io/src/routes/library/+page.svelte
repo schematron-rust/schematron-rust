@@ -5,6 +5,7 @@
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
   import SummaryList from 'lily-design-system-svelte-headless/components/SummaryList/SummaryList.svelte';
   import SummaryListItem from 'lily-design-system-svelte-headless/components/SummaryListItem/SummaryListItem.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { VERSION, MSRV, DOCS_RS, specUrl } from '$lib/site';
 </script>
 
@@ -173,7 +174,7 @@ cargo run --example xpath_engine         # the XPath engine on its own`}</code><
   </CodeBlock>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={DOCS_RS}>API documentation on docs.rs</a>
-    <a class="button button-secondary" href="/cli/">The command line tool</a>
+    <CallToAction class="button button-primary" href={DOCS_RS}>API documentation on docs.rs</CallToAction>
+    <CallToAction class="button button-secondary" href="/cli/">The command line tool</CallToAction>
   </p>
 </section>

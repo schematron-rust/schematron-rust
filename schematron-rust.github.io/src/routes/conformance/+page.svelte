@@ -11,6 +11,7 @@
   import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
   import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { specUrl } from '$lib/site';
 
   type Row = { area: string; status: string; note?: string };
@@ -169,8 +170,8 @@ SCHEMATRON_SKELETON=/tmp/skeleton cargo test --test differential -- --ignored`}<
   </p>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={specUrl('conformance/index.md')}>The authoritative conformance document</a>
-    <a class="button button-secondary" href="/roadmap/">What is next, and what is not planned</a>
-    <a class="button button-secondary" href="/spec/">The whole specification</a>
+    <CallToAction class="button button-primary" href={specUrl('conformance/index.md')}>The authoritative conformance document</CallToAction>
+    <CallToAction class="button button-secondary" href="/roadmap/">What is next, and what is not planned</CallToAction>
+    <CallToAction class="button button-secondary" href="/spec/">The whole specification</CallToAction>
   </p>
 </section>

@@ -12,6 +12,7 @@
   import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
   import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { specUrl } from '$lib/site';
 
   type ElementRow = { element: string; emitted: string };
@@ -326,7 +327,7 @@ assert_eq!(report.count_failures(), 2);`}</code></pre>
   </InformationCallout>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={specUrl('svrl/index.md')}>spec/svrl/</a>
-    <a class="button button-secondary" href="/example/">The run behind these outputs</a>
+    <CallToAction class="button button-primary" href={specUrl('svrl/index.md')}>spec/svrl/</CallToAction>
+    <CallToAction class="button button-secondary" href="/example/">The run behind these outputs</CallToAction>
   </p>
 </section>

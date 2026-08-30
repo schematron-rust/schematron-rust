@@ -5,6 +5,7 @@
   import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
   import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { REPO, specUrl } from '$lib/site';
 </script>
 
@@ -170,7 +171,7 @@
   </p>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={REPO + '/issues'}>Open an issue</a>
-    <a class="button button-secondary" href="/spec/">Read the specification</a>
+    <CallToAction class="button button-primary" href={REPO + '/issues'}>Open an issue</CallToAction>
+    <CallToAction class="button button-secondary" href="/spec/">Read the specification</CallToAction>
   </p>
 </section>

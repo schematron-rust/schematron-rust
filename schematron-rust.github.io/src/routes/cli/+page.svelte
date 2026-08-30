@@ -9,6 +9,7 @@
   import TableTD from '$lib/lily/TableTD.svelte';
   import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { specUrl } from '$lib/site';
 
   type Option = { flag: string; description: string };
@@ -196,7 +197,7 @@ schematron -s rules.sch --verbose --phase '#ALL' data.xml`}</code></pre>
   </CodeBlock>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href="/help/">Diagnosing a schema that does nothing</a>
-    <a class="button button-secondary" href={specUrl('cli/index.md')}>spec/cli/</a>
+    <CallToAction class="button button-primary" href="/help/">Diagnosing a schema that does nothing</CallToAction>
+    <CallToAction class="button button-secondary" href={specUrl('cli/index.md')}>spec/cli/</CallToAction>
   </p>
 </section>

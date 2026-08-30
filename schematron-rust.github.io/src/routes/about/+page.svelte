@@ -5,6 +5,7 @@
   import CodeBlock from '$lib/lily/CodeBlock.svelte';
   import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { VERSION, MSRV, REPO, CRATES_IO, DOCS_RS, LICENSE } from '$lib/site';
 </script>
 
@@ -109,7 +110,7 @@ pnpm dev`}</code></pre>
   </CodeBlock>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={REPO}>The crate on GitHub</a>
-    <a class="button button-secondary" href="/spec/">The specification</a>
+    <CallToAction class="button button-primary" href={REPO}>The crate on GitHub</CallToAction>
+    <CallToAction class="button button-secondary" href="/spec/">The specification</CallToAction>
   </p>
 </section>

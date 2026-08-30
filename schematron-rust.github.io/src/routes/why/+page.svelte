@@ -4,6 +4,7 @@
   import InsetText from 'lily-design-system-svelte-headless/components/InsetText/InsetText.svelte';
   import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { MSRV, REPO } from '$lib/site';
 </script>
 
@@ -163,7 +164,7 @@ let report = schema.validate_with(&document, &options)?;`}</code></pre>
   </ul>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href="/conformance/">See exactly what is implemented</a>
-    <a class="button button-secondary" href={REPO}>Read the source</a>
+    <CallToAction class="button button-primary" href="/conformance/">See exactly what is implemented</CallToAction>
+    <CallToAction class="button button-secondary" href={REPO}>Read the source</CallToAction>
   </p>
 </section>

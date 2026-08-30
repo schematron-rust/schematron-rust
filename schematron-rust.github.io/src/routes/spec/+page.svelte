@@ -4,6 +4,7 @@
   import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
   import CodeBlock from '$lib/lily/CodeBlock.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { SPEC_DOCS, specUrl, REPO, specLabel, MSRV } from '$lib/site';
 </script>
 
@@ -74,8 +75,8 @@ cargo +${MSRV} test --all-features`}</code></pre>
   </p>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={REPO}>Browse the repository</a>
-    <a class="button button-secondary" href="/conformance/">Conformance summary</a>
-    <a class="button button-secondary" href="/roadmap/">Roadmap</a>
+    <CallToAction class="button button-primary" href={REPO}>Browse the repository</CallToAction>
+    <CallToAction class="button button-secondary" href="/conformance/">Conformance summary</CallToAction>
+    <CallToAction class="button button-secondary" href="/roadmap/">Roadmap</CallToAction>
   </p>
 </section>

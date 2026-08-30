@@ -5,6 +5,7 @@
   import InsetText from 'lily-design-system-svelte-headless/components/InsetText/InsetText.svelte';
   import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { REPO, specUrl } from '$lib/site';
 </script>
 
@@ -350,7 +351,7 @@ $ echo $?
   </p>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href="/reports/">The same run as SVRL and JSON</a>
-    <a class="button button-secondary" href={specUrl('tutorial/index.md')}>The full tutorial</a>
+    <CallToAction class="button button-primary" href="/reports/">The same run as SVRL and JSON</CallToAction>
+    <CallToAction class="button button-secondary" href={specUrl('tutorial/index.md')}>The full tutorial</CallToAction>
   </p>
 </section>

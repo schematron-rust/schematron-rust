@@ -6,6 +6,7 @@
   import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
   import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
   import { REPO, VERSION, specUrl } from '$lib/site';
 
   const SHIPPED: string[] = [
@@ -184,7 +185,7 @@
   </InsetText>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={REPO + '/issues'}>Make the case for something</a>
-    <a class="button button-secondary" href={specUrl('roadmap/index.md')}>spec/roadmap/</a>
+    <CallToAction class="button button-primary" href={REPO + '/issues'}>Make the case for something</CallToAction>
+    <CallToAction class="button button-secondary" href={specUrl('roadmap/index.md')}>spec/roadmap/</CallToAction>
   </p>
 </section>
