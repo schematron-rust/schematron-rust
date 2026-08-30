@@ -4,6 +4,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Mutex;
 
 use super::value::Value;
+#[cfg(test)]
+use super::value::NumericType;
 use super::version::XPathVersion;
 use crate::xml::{Document, NodeId};
 
@@ -289,15 +291,15 @@ impl Keys {
 /// # Examples
 ///
 /// ```
-/// use schematron::xpath::{Value, Variables};
+/// use schematron::xpath::{NumericType, Value, Variables};
 ///
 /// let mut vars = Variables::new();
-/// vars.bind("x", Value::Number(1.0));
+/// vars.bind("x", Value::Number(1.0, NumericType::default()));
 /// let mark = vars.mark();
-/// vars.bind("x", Value::Number(2.0));
-/// assert_eq!(vars.lookup("x"), Some(&Value::Number(2.0)));
+/// vars.bind("x", Value::Number(2.0, NumericType::default()));
+/// assert_eq!(vars.lookup("x"), Some(&Value::Number(2.0, NumericType::default())));
 /// vars.truncate(mark);
-/// assert_eq!(vars.lookup("x"), Some(&Value::Number(1.0)));
+/// assert_eq!(vars.lookup("x"), Some(&Value::Number(1.0, NumericType::default())));
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct Variables {
@@ -483,19 +485,19 @@ mod tests {
     #[test]
     fn inner_binding_shadows_outer() {
         let mut vars = Variables::new();
-        vars.bind("x", Value::Number(1.0));
-        vars.bind("x", Value::Number(2.0));
-        assert_eq!(vars.lookup("x"), Some(&Value::Number(2.0)));
+        vars.bind("x", Value::Number(1.0, NumericType::default()));
+        vars.bind("x", Value::Number(2.0, NumericType::default()));
+        assert_eq!(vars.lookup("x"), Some(&Value::Number(2.0, NumericType::default())));
     }
 
     #[test]
     fn truncate_restores_the_outer_scope() {
         let mut vars = Variables::new();
-        vars.bind("x", Value::Number(1.0));
+        vars.bind("x", Value::Number(1.0, NumericType::default()));
         let mark = vars.mark();
-        vars.bind("x", Value::Number(2.0));
+        vars.bind("x", Value::Number(2.0, NumericType::default()));
         vars.truncate(mark);
-        assert_eq!(vars.lookup("x"), Some(&Value::Number(1.0)));
+        assert_eq!(vars.lookup("x"), Some(&Value::Number(1.0, NumericType::default())));
     }
 
     #[test]

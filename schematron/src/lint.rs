@@ -614,7 +614,7 @@ fn looks_up_key(expr: &Expr, name: &str) -> bool {
             }
         }
         Expr::Function { args, .. } => args.iter().any(|arg| looks_up_key(arg, name)),
-        Expr::Literal(_) | Expr::Number(_) | Expr::Variable(_) => false,
+        Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) => false,
         Expr::Negate(inner) => looks_up_key(inner, name),
         Expr::Binary(_, left, right) => {
             looks_up_key(left, name) || looks_up_key(right, name)
@@ -732,7 +732,7 @@ fn constant_test(schema: &Schema, source: &str) -> Option<&'static str> {
         Expr::Function { name, args } if args.is_empty() && name == "false" => {
             Some("never holds")
         }
-        Expr::Number(_) | Expr::Literal(_) => Some("has a fixed outcome"),
+        Expr::Number(_, _) | Expr::Literal(_) => Some("has a fixed outcome"),
         _ => None,
     }
 }
@@ -744,7 +744,7 @@ fn constant_test(schema: &Schema, source: &str) -> Option<&'static str> {
 /// attribute really is in no namespace.
 fn first_unprefixed_element_name(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Literal(_) | Expr::Number(_) | Expr::Variable(_) => None,
+        Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) => None,
         Expr::Negate(inner) => first_unprefixed_element_name(inner),
         Expr::Binary(_, left, right) => {
             first_unprefixed_element_name(left).or_else(|| first_unprefixed_element_name(right))
@@ -975,7 +975,7 @@ fn lint_variables(schema: &Schema, lints: &mut Vec<Lint>) {
 fn references_variable(expr: &Expr, name: &str) -> bool {
     match expr {
         Expr::Variable(variable) => variable.to_string() == name,
-        Expr::Literal(_) | Expr::Number(_) => false,
+        Expr::Literal(_) | Expr::Number(_, _) => false,
         Expr::Negate(inner) => references_variable(inner, name),
         Expr::Binary(_, left, right) => {
             references_variable(left, name) || references_variable(right, name)

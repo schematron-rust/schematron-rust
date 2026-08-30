@@ -3,6 +3,35 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.6.0
+
+### Changed
+
+- **`Value::Number` and `Item::Number` gained a second field**, a
+  `NumericType` tag (`Integer`, `Decimal`, `Float`, or `Double`). Both enums
+  were already `#[non_exhaustive]`; this changes the shape of an existing
+  variant, so any code constructing or matching `Value::Number(n)` /
+  `Item::Number(n)` directly needs the tag added — `NumericType::Double`
+  reproduces the old behaviour everywhere except numeric literals and casts.
+
+### Added
+
+- **XPath 2.0 phase 4: the numeric type hierarchy.** `instance of` and its
+  companions now recognize `xs:integer`, `xs:decimal` and `xs:float` as well
+  as `xs:double`. The type is tracked lexically for numeric literals (`1` is
+  an integer, `1.0` a decimal, even though they are numerically equal) and
+  for the result of an explicit `cast as`/`castable as`; `xs:integer`
+  matches `instance of xs:decimal` too, since it derives from `xs:decimal`
+  by restriction in XML Schema. Arithmetic, every function in the library,
+  and `for`'s `to` ranges are deliberately left untracked and still produce
+  `xs:double`, so `(1 + 1) instance of xs:integer` is `false` — this crate
+  does not implement full XPath 2.0 numeric type promotion. See
+  [spec/xpath2/](spec/xpath2/index.md).
+- This also **corrects a documentation mistake**: `spec/xpath2/` previously
+  recorded `1 instance of xs:double` as agreeing with real XPath 2.0. It
+  does not — `1` is an `xs:integer`, which does not derive from `xs:double`
+  — and both the documentation and the crate's behavior now say `false`.
+
 ## 0.5.1
 
 ### Changed

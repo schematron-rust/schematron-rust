@@ -1099,15 +1099,66 @@ fn instance_of_matches_atomic_types() {
     assert!(!check("@n instance of xs:string", r#"<a n="1"/>"#));
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4: the numeric hierarchy.
+// ---------------------------------------------------------------------------
+
 #[test]
-fn every_number_reports_as_a_double() {
-    // Documented in spec/xpath2/: the crate holds every number as an IEEE
-    // 754 double and does not track how it arrived. Asserting it here means
-    // the documentation cannot drift from the behaviour.
-    assert!(check("1 instance of xs:double", "<a/>"));
-    assert!(!check("1 instance of xs:integer", "<a/>"));
-    // Casting is unaffected, because it reads the lexical form.
+fn a_literal_carries_the_type_it_is_written_as() {
+    // XPath 2.0 assigns these types lexically, not by value: `1.0` is a
+    // decimal even though it equals the integer `1`. Documented in
+    // spec/xpath2/.
+    assert!(check("1 instance of xs:integer", "<a/>"));
+    assert!(!check("1.0 instance of xs:integer", "<a/>"));
+    assert!(check("1.0 instance of xs:decimal", "<a/>"));
+    assert!(check("1.5 instance of xs:decimal", "<a/>"));
+    assert!(!check("1.5 instance of xs:integer", "<a/>"));
+}
+
+#[test]
+fn an_integer_is_also_a_decimal_but_not_a_double() {
+    // `xs:integer` derives from `xs:decimal` by restriction in XML Schema,
+    // so an integer matches `instance of xs:decimal` too. `xs:float` and
+    // `xs:double` are unrelated primitive types, so an integer matches
+    // neither — this corrects a divergence the crate previously had from
+    // real XPath 2.0, back when every number reported as `xs:double`.
+    assert!(check("1 instance of xs:decimal", "<a/>"));
+    assert!(!check("1 instance of xs:double", "<a/>"));
+    assert!(!check("1 instance of xs:float", "<a/>"));
+    assert!(check("1 instance of xs:anyAtomicType", "<a/>"));
+}
+
+#[test]
+fn cast_as_tags_the_result_with_the_type_named() {
+    assert!(check("'1' cast as xs:integer instance of xs:integer", "<a/>"));
+    assert!(check("'1.5' cast as xs:decimal instance of xs:decimal", "<a/>"));
+    assert!(check("'1.5' cast as xs:float instance of xs:float", "<a/>"));
+    assert!(check("'1.5' cast as xs:double instance of xs:double", "<a/>"));
+    // Casting itself is still lexical, unaffected by this: `'1'` is castable
+    // as `xs:integer` whether or not the source text looks like one.
     assert!(check("'1' castable as xs:integer", "<a/>"));
+}
+
+#[test]
+fn a_for_bound_item_keeps_its_tag() {
+    // Binding a sequence item to a variable does not launder its type.
+    assert!(check("some $x in (1, 2) satisfies $x instance of xs:integer", "<a/>"));
+    assert!(check(
+        "(for $x in (1.5) return $x) instance of xs:decimal",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn computed_numbers_are_still_double() {
+    // Deliberately out of scope: this crate tracks a numeric type only for
+    // literals and explicit casts. Arithmetic, every function in the
+    // library, and `to` ranges always produce `xs:double`, exactly as
+    // before this hierarchy existed. Documented in spec/xpath2/.
+    assert!(check("(1 + 1) instance of xs:double", "<a/>"));
+    assert!(!check("(1 + 1) instance of xs:integer", "<a/>"));
+    assert!(check("count((1, 2)) instance of xs:double", "<a/>"));
+    assert!(check("every $x in (1 to 3) satisfies $x instance of xs:double", "<a/>"));
 }
 
 #[test]

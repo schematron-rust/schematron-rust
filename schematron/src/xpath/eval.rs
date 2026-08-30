@@ -14,7 +14,7 @@ use super::functions;
 use super::temporal::{
     add_months, add_seconds, Duration, DurationKind, Temporal, TemporalKind,
 };
-use super::value::{flatten_into_sequence, Item, Value};
+use super::value::{flatten_into_sequence, Item, NumericType, Value};
 use crate::xml::{Document, NodeId, NodeKind};
 
 /// A failure during evaluation.
@@ -62,12 +62,12 @@ impl std::error::Error for EvalError {}
 /// let vars = Variables::new();
 /// let ns = Namespaces::new();
 /// let context = EvalContext::new(&doc, doc.document_element().unwrap(), &vars, &ns);
-/// assert_eq!(evaluate(&expr, &context).unwrap(), Value::Number(2.0));
+/// assert_eq!(evaluate(&expr, &context).unwrap(), Value::Number(2.0, Default::default()));
 /// ```
 pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalError> {
     match expr {
         Expr::Literal(text) => Ok(Value::String(text.clone())),
-        Expr::Number(value) => Ok(Value::Number(*value)),
+        Expr::Number(value, numeric_type) => Ok(Value::Number(*value, *numeric_type)),
 
         Expr::Variable(name) => {
             let key = name.to_string();
@@ -86,7 +86,10 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
 
         Expr::Negate(inner) => {
             let value = evaluate(inner, context)?;
-            Ok(Value::Number(-value.to_number(context.document)))
+            Ok(Value::Number(
+                -value.to_number(context.document),
+                NumericType::Double,
+            ))
         }
 
         Expr::Binary(op, left, right) => evaluate_binary(*op, left, right, context),
@@ -254,16 +257,22 @@ fn evaluate_binary(
         | BinaryOp::Modulo => {
             let a = left.to_number(document);
             let b = right.to_number(document);
-            Ok(Value::Number(match op {
-                BinaryOp::Add => a + b,
-                BinaryOp::Subtract => a - b,
-                BinaryOp::Multiply => a * b,
-                // IEEE division: no error on zero, the result is an infinity
-                // or NaN, exactly as XPath 1.0 requires.
-                BinaryOp::Divide => a / b,
-                BinaryOp::Modulo => a % b,
-                _ => unreachable!("outer match limits the operators"),
-            }))
+            Ok(Value::Number(
+                match op {
+                    BinaryOp::Add => a + b,
+                    BinaryOp::Subtract => a - b,
+                    BinaryOp::Multiply => a * b,
+                    // IEEE division: no error on zero, the result is an infinity
+                    // or NaN, exactly as XPath 1.0 requires.
+                    BinaryOp::Divide => a / b,
+                    BinaryOp::Modulo => a % b,
+                    _ => unreachable!("outer match limits the operators"),
+                },
+                // Arithmetic always yields `xs:double`, never the operands'
+                // own type — this crate does not implement XPath 2.0's
+                // numeric type promotion. See `spec/xpath2/`.
+                NumericType::Double,
+            ))
         }
     }
 }
@@ -301,7 +310,7 @@ fn compare_equality(left: &Value, right: &Value, document: &Document, want_equal
             // boolean first — that is, to whether it is non-empty — and does
             // not look at the nodes' values at all.
             Value::Boolean(b) => (nodes.is_empty() != *b) == want_equal,
-            Value::Number(n) => nodes.iter().any(|&node| {
+            Value::Number(n, _) => nodes.iter().any(|&node| {
                 let value = super::value::parse_number(&document.string_value(node));
                 // NaN is never equal to anything, so `!=` against a
                 // non-numeric string is true, and `=` is false.
@@ -318,7 +327,7 @@ fn compare_equality(left: &Value, right: &Value, document: &Document, want_equal
         (a, b) => {
             if matches!(a, Value::Boolean(_)) || matches!(b, Value::Boolean(_)) {
                 (a.to_boolean() == b.to_boolean()) == want_equal
-            } else if matches!(a, Value::Number(_)) || matches!(b, Value::Number(_)) {
+            } else if matches!(a, Value::Number(_, _)) || matches!(b, Value::Number(_, _)) {
                 (a.to_number(document) == b.to_number(document)) == want_equal
             } else {
                 test(&a.to_xpath_string(document), &b.to_xpath_string(document))
@@ -453,7 +462,8 @@ fn item_to_value(item: Item) -> Value {
         // from it: `for $x in a return $x/b`.
         Item::Node(node) => Value::NodeSet(vec![node]),
         Item::String(text) => Value::String(text),
-        Item::Number(number) => Value::Number(number),
+        // Preserves the tag: a `for`-bound integer literal is still one.
+        Item::Number(number, ty) => Value::Number(number, ty),
         Item::Boolean(boolean) => Value::Boolean(boolean),
         // Neither a temporal nor a duration has a scalar `Value` of its own;
         // XPath 2.0 treats every value as a sequence, and these are one-item
@@ -534,10 +544,13 @@ fn scale_duration(
                 b.kind().as_str()
             )));
         }
-        return Ok(Value::Number(match a.kind() {
-            DurationKind::YearMonth => as_f64_i64(a.to_months()) / as_f64_i64(b.to_months()),
-            DurationKind::DayTime => a.to_seconds() / b.to_seconds(),
-        }));
+        return Ok(Value::Number(
+            match a.kind() {
+                DurationKind::YearMonth => as_f64_i64(a.to_months()) / as_f64_i64(b.to_months()),
+                DurationKind::DayTime => a.to_seconds() / b.to_seconds(),
+            },
+            NumericType::Double,
+        ));
     }
 
     // Otherwise one side is a duration and the other must be a number.
@@ -723,8 +736,7 @@ fn matches_item_type(item: &Item, item_type: &ItemType, context: &EvalContext<'_
                 Item::Node(_) => false,
                 Item::String(_) => matches!(local, "string" | "anyAtomicType" | "untypedAtomic"),
                 Item::Boolean(_) => matches!(local, "boolean" | "anyAtomicType"),
-                // Every number here is a double; see `spec/xpath2/`.
-                Item::Number(_) => matches!(local, "double" | "anyAtomicType"),
+                Item::Number(_, ty) => numeric_type_matches(*ty, local),
                 Item::Temporal(temporal) => {
                     local == "anyAtomicType"
                         || local
@@ -751,6 +763,24 @@ fn matches_item_type(item: &Item, item_type: &ItemType, context: &EvalContext<'_
     }
 }
 
+/// Whether a numeric item's tracked type matches an atomic type name.
+///
+/// `xs:integer` derives from `xs:decimal` by restriction in XML Schema, so
+/// an `Integer`-tagged value also matches `xs:decimal`; the reverse is not
+/// true. `xs:float` and `xs:double` are separate primitive types, related to
+/// neither `xs:decimal` nor each other, so each matches only itself. See
+/// [`NumericType`] and `spec/xpath2/`.
+fn numeric_type_matches(ty: NumericType, local: &str) -> bool {
+    matches!(
+        (ty, local),
+        (_, "anyAtomicType")
+            | (NumericType::Double, "double")
+            | (NumericType::Float, "float")
+            | (NumericType::Decimal | NumericType::Integer, "decimal")
+            | (NumericType::Integer, "integer" | "long" | "int" | "short" | "byte")
+    )
+}
+
 /// Casts one item to an atomic type, by its lexical form.
 ///
 /// Reading the lexical form is what XML Schema specifies for untyped input,
@@ -772,21 +802,26 @@ fn cast_item(item: &Item, type_name: &str, document: &Document) -> Result<Item, 
             if number.is_nan() && text.trim() != "NaN" {
                 return Err(reject());
             }
-            Item::Number(number)
+            let numeric_type = if local == "float" {
+                NumericType::Float
+            } else {
+                NumericType::Double
+            };
+            Item::Number(number, numeric_type)
         }
         "decimal" => {
             let number = super::value::parse_number(&text);
             if number.is_nan() || number.is_infinite() {
                 return Err(reject());
             }
-            Item::Number(number)
+            Item::Number(number, NumericType::Decimal)
         }
         "integer" | "long" | "int" | "short" | "byte" => {
             let number = super::value::parse_number(&text);
             if number.is_nan() || number.fract() != 0.0 {
                 return Err(reject());
             }
-            Item::Number(number)
+            Item::Number(number, NumericType::Integer)
         }
         // The parse errors carry the specific reason; the framing is added
         // here so that every failed cast reads the same way whatever the
@@ -1063,7 +1098,7 @@ fn compare_items(
 
     match (&a, &b) {
         (Item::String(x), Item::String(y)) => Ok(Some(x.cmp(y))),
-        (Item::Number(x), Item::Number(y)) => Ok(x.partial_cmp(y)),
+        (Item::Number(x, _), Item::Number(y, _)) => Ok(x.partial_cmp(y)),
         (Item::Boolean(x), Item::Boolean(y)) => Ok(Some(x.cmp(y))),
         (Item::Temporal(x), Item::Temporal(y)) if x.kind() == y.kind() => {
             Ok(x.compare_in(y, implicit_timezone))
@@ -1245,7 +1280,9 @@ fn range_items(from: f64, to: f64) -> Result<Vec<Item>, EvalError> {
     let mut items = Vec::new();
     let mut current = from;
     while current <= to {
-        items.push(Item::Number(current));
+        // `to` is arithmetic-flavoured, not a literal or a cast, so its
+        // items are `xs:double` like every other computed number.
+        items.push(Item::Number(current, NumericType::Double));
         current += 1.0;
     }
     Ok(items)
@@ -1345,7 +1382,7 @@ fn filter_by_predicate(
         let value = evaluate(predicate, &inner)?;
         // A numeric predicate is shorthand for `position() = n`.
         let keep = match value {
-            Value::Number(n) => {
+            Value::Number(n, _) => {
                 #[allow(clippy::cast_precision_loss)]
                 let position = position as f64;
                 (n - position).abs() < f64::EPSILON
@@ -1749,10 +1786,13 @@ mod tests {
         let document = Document::from_str(DOC).unwrap();
         let expr = parse("$n + 1").unwrap();
         let mut variables = Variables::new();
-        variables.bind("n", Value::Number(41.0));
+        variables.bind("n", Value::Number(41.0, NumericType::Double));
         let namespaces = Namespaces::new();
         let context = EvalContext::new(&document, document.root(), &variables, &namespaces);
-        assert_eq!(evaluate(&expr, &context).unwrap(), Value::Number(42.0));
+        assert_eq!(
+            evaluate(&expr, &context).unwrap(),
+            Value::Number(42.0, NumericType::Double)
+        );
     }
 
     #[test]
@@ -1769,11 +1809,17 @@ mod tests {
         );
 
         let prefixed = parse("count(p:b)").unwrap();
-        assert_eq!(evaluate(&prefixed, &context).unwrap(), Value::Number(1.0));
+        assert_eq!(
+            evaluate(&prefixed, &context).unwrap(),
+            Value::Number(1.0, NumericType::Double)
+        );
 
         // An unprefixed name is in no namespace, so it matches nothing here.
         let bare = parse("count(b)").unwrap();
-        assert_eq!(evaluate(&bare, &context).unwrap(), Value::Number(0.0));
+        assert_eq!(
+            evaluate(&bare, &context).unwrap(),
+            Value::Number(0.0, NumericType::Double)
+        );
     }
 
     #[test]

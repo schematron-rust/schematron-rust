@@ -1,6 +1,6 @@
 [package]
 name = "schematron"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 rust-version = "1.96"  # Policy: current stable minus two. See spec/rust-msrv-n-minus-2/index.md.
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]

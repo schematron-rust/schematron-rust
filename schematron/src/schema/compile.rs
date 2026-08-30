@@ -350,7 +350,7 @@ impl Schema {
         enclosing: &mut Vec<String>,
     ) -> Result<()> {
         match expr {
-            Expr::Literal(_) | Expr::Number(_) => {}
+            Expr::Literal(_) | Expr::Number(_, _) => {}
 
             Expr::Variable(name) => {
                 let name = name.to_string();
@@ -468,7 +468,7 @@ impl Schema {
             // Literals need no checking. Variable references are checked
             // separately, by `check_variables`, which needs the set of names
             // the schema binds.
-            Expr::Literal(_) | Expr::Number(_) | Expr::Variable(_) => {}
+            Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) => {}
             Expr::Negate(inner) => self.check_expression(inner, source, location)?,
             Expr::Binary(op, left, right) => {
                 if op.is_value_comparison() {
@@ -929,7 +929,7 @@ fn check_literal_regex(
 /// Whether an expression calls `document()` anywhere inside it.
 fn calls_document_function(expr: &Expr) -> bool {
     match expr {
-        Expr::Literal(_) | Expr::Number(_) | Expr::Variable(_) => false,
+        Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) => false,
         Expr::Negate(inner) => calls_document_function(inner),
         Expr::Binary(_, left, right) => {
             calls_document_function(left) || calls_document_function(right)

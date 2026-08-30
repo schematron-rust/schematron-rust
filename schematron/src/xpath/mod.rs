@@ -79,4 +79,4 @@ pub use eval::{evaluate, EvalError};
 pub(crate) use eval::matches_node_test;
 pub use functions::{check_function, check_regex, function_names, function_names_v2};
 pub use parser::{parse, ParseError, MAX_RECURSION_DEPTH};
-pub use value::{flatten_into_sequence, format_number, parse_number, Item, Value};
+pub use value::{flatten_into_sequence, format_number, parse_number, Item, NumericType, Value};

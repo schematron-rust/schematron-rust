@@ -52,7 +52,8 @@
   ISO/IEC 19757-3 is now implemented** under the XPath 1.0 binding
 - XPath 2.0 kind tests as path node tests — `element()`, `attribute(id)`,
   `document-node()` — which turned out to be separable from the numeric
-  hierarchy that keeps the rest of phase 4 last
+  hierarchy phase 4 later added, needing only a node test rather than a
+  type lattice
 - `--portability`: constructs that behave differently under other processors,
   each backed by a divergence established by running both
 - A denial of service in nested ranges and `for` loops, found by fuzzing: a
@@ -75,6 +76,18 @@
   documents but does not implement
 - Fuzz targets, criterion benchmarks, clippy pedantic, corpus test suite,
   runnable examples, and this specification
+- XPath 2.0 phase 4: the numeric hierarchy — `instance of` and its
+  companions now recognize `xs:integer`, `xs:decimal` and `xs:float` as well
+  as `xs:double`, tracked for numeric literals (lexically: `1` is an
+  integer, `1.0` a decimal) and for explicit `cast as`/`castable as`.
+  Arithmetic, every function in the library, and `to` ranges are
+  deliberately left untracked and stay `xs:double`, which is what keeps the
+  XPath 1.0 arithmetic this crate's most-exercised code path — and an
+  invariant in `agents/invariants.md` — untouched by a full numeric type
+  lattice. This also corrected a pre-existing documentation mistake:
+  `1 instance of xs:double` was recorded as agreeing with real XPath 2.0;
+  it does not, since `1` is an `xs:integer` and does not derive from
+  `xs:double`.
 
 ## Next
 
@@ -104,25 +117,6 @@ Ordered by value, not by how the XPath 2.0 phases happened to be numbered.
    heavily-fuzzed one — a correctness risk taken *in a validator*, whose
    whole value is being right — bought for a target that WASM, the plausible
    use case, already reaches with `std`. Not worth it on today's evidence.
-3. **XPath 2.0 phase 4: the numeric hierarchy** — tracking whether a number
-   arrived as `xs:integer`, `xs:decimal`, `xs:float` or `xs:double`, rather
-   than holding every number as a double, which is what would make
-   `1 instance of xs:integer` true, and closing the semantic divergences
-   phase 1 documents.
-
-   Kind tests as path node tests — `a/element()` — were part of this item and
-   are **done**: they turned out to be orthogonal to the numeric hierarchy,
-   needing only a node test rather than a type lattice, so they carried none
-   of the risk that keeps the rest of phase 4 last.
-
-   **Deliberately last.** It is the only remaining gap [xpath2/](../xpath2/index.md)
-   records, and it is also the one worth least: a schema inspects untyped
-   document data, where `castable as xs:integer` already gives the right
-   answer, and the distinction between integer and double rarely decides
-   anything. Against that, threading a numeric type lattice underneath every
-   value would put the exactness of the XPath 1.0 arithmetic at risk — the
-   crate's most-exercised code path and an invariant in
-   `agents/invariants.md`.
 
 ## Examined and abandoned
 

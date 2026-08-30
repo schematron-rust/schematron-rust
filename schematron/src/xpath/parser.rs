@@ -773,7 +773,7 @@ impl Parser {
         match self.advance() {
             Some(TokenKind::Variable(name)) => Ok(Expr::Variable(NameTest::parse(&name))),
             Some(TokenKind::Literal(text)) => Ok(Expr::Literal(text)),
-            Some(TokenKind::Number(value)) => Ok(Expr::Number(value)),
+            Some(TokenKind::Number(value, numeric_type)) => Ok(Expr::Number(value, numeric_type)),
             Some(TokenKind::LeftParen) => {
                 // `()` is XPath 2.0's empty sequence, not an empty group.
                 if self.eat(&TokenKind::RightParen) {

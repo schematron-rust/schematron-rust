@@ -20,8 +20,9 @@ pub enum Expr {
     Path(Box<PathExpr>),
     /// A string literal.
     Literal(String),
-    /// A numeric literal.
-    Number(f64),
+    /// A numeric literal, tagged with the numeric type XPath 2.0 assigns it
+    /// lexically. See [`super::NumericType`].
+    Number(f64, super::NumericType),
     /// A variable reference, `$name`.
     Variable(NameTest),
     /// A function call.

@@ -8,6 +8,8 @@
 
 use std::fmt;
 
+use super::value::NumericType;
+
 /// One lexical token, with the byte offset it started at.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Token {
@@ -28,8 +30,9 @@ pub(crate) enum TokenKind {
     NodeType(String),
     /// A quoted string.
     Literal(String),
-    /// A numeric literal.
-    Number(f64),
+    /// A numeric literal, tagged `Integer` when no `.` was written and
+    /// `Decimal` when one was — XPath 2.0 assigns these types lexically.
+    Number(f64, NumericType),
     /// `$name`.
     Variable(String),
 
@@ -92,7 +95,7 @@ impl fmt::Display for TokenKind {
             }
             TokenKind::FunctionName(n) => write!(f, "{n}()"),
             TokenKind::Literal(s) => write!(f, "'{s}'"),
-            TokenKind::Number(n) => write!(f, "{n}"),
+            TokenKind::Number(n, _) => write!(f, "{n}"),
             TokenKind::Variable(v) => write!(f, "${v}"),
             TokenKind::Slash => f.write_str("/"),
             TokenKind::DoubleSlash => f.write_str("//"),
@@ -428,17 +431,25 @@ impl<'a> Lexer<'a> {
         while self.peek().is_some_and(|c| c.is_ascii_digit()) {
             self.position += 1;
         }
-        if self.peek() == Some(b'.') {
+        // A `.` makes this XPath 2.0's DecimalLiteral rather than
+        // IntegerLiteral — a lexical distinction, not a value one, so `1.0`
+        // is a decimal even though it equals the integer `1`. There is no
+        // exponent syntax in this grammar, so DoubleLiteral is never
+        // produced here.
+        let numeric_type = if self.peek() == Some(b'.') {
             self.position += 1;
             while self.peek().is_some_and(|c| c.is_ascii_digit()) {
                 self.position += 1;
             }
-        }
+            NumericType::Decimal
+        } else {
+            NumericType::Integer
+        };
         let text = &self.input[start..self.position];
         let value = text
             .parse::<f64>()
             .map_err(|_| Lexer::error(start, format!("invalid number {text:?}")))?;
-        self.push(TokenKind::Number(value), start);
+        self.push(TokenKind::Number(value, numeric_type), start);
         Ok(())
     }
 
@@ -654,9 +665,18 @@ mod tests {
 
     #[test]
     fn numbers_with_and_without_a_leading_digit() {
-        assert_eq!(kinds("1"), vec![TokenKind::Number(1.0)]);
-        assert_eq!(kinds(".5"), vec![TokenKind::Number(0.5)]);
-        assert_eq!(kinds("1.5"), vec![TokenKind::Number(1.5)]);
+        assert_eq!(
+            kinds("1"),
+            vec![TokenKind::Number(1.0, NumericType::Integer)]
+        );
+        assert_eq!(
+            kinds(".5"),
+            vec![TokenKind::Number(0.5, NumericType::Decimal)]
+        );
+        assert_eq!(
+            kinds("1.5"),
+            vec![TokenKind::Number(1.5, NumericType::Decimal)]
+        );
     }
 
     #[test]
