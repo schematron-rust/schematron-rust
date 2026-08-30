@@ -1,12 +1,5 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import Card from 'lily-design-system-svelte-headless/components/Card/Card.svelte';
-  import Details from 'lily-design-system-svelte-headless/components/Details/Details.svelte';
-  import InsetText from 'lily-design-system-svelte-headless/components/InsetText/InsetText.svelte';
-  import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
-  import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
-  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
+  import { Card, Details, InsetText, InformationCallout, WarningCallout, Separator, CallToAction, SectionHeading } from 'lily-design-system-svelte-headless';
   import { REPO, VERSION, specUrl } from '$lib/site';
 
   const SHIPPED: string[] = [

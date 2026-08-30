@@ -1,18 +1,5 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import Table from 'lily-design-system-svelte-headless/components/Table/Table.svelte';
-  import TableHead from '$lib/lily/TableHead.svelte';
-  import TableBody from '$lib/lily/TableBody.svelte';
-  import TableRow from '$lib/lily/TableRow.svelte';
-  import TableTH from '$lib/lily/TableTH.svelte';
-  import TableTD from '$lib/lily/TableTD.svelte';
-  import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
-  import InsetText from 'lily-design-system-svelte-headless/components/InsetText/InsetText.svelte';
-  import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
-  import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
-  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
+  import { Table, Alert, InsetText, InformationCallout, WarningCallout, Separator, CallToAction, SectionHeading, CodeBlock, TableHead, TableBody, TableRow, TableTH, TableTD } from 'lily-design-system-svelte-headless';
   import { specUrl } from '$lib/site';
 
   type ElementRow = { element: string; emitted: string };

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import SkipLink from 'lily-design-system-svelte-headless/components/SkipLink/SkipLink.svelte';
+  import { SkipLink } from 'lily-design-system-svelte-headless';
   import { REPO } from '$lib/site';
 
   let { children } = $props();

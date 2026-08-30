@@ -42,8 +42,12 @@ Components come from `lily-design-system-svelte-headless` (the Lily Design
 System). Lily components are **headless**: they render semantic HTML with
 correct ARIA and one stable kebab-case class hook each, and ship no CSS.
 
-- Import a component by its full path, e.g.
-  `import Card from 'lily-design-system-svelte-headless/components/Card/Card.svelte';`
+- Import components as named exports from the package root, e.g.
+  `import { Card } from 'lily-design-system-svelte-headless';` — the package's
+  `exports` map only exposes `.`, so a deep path like
+  `.../components/Card/Card.svelte` does not resolve. One `import { A, B, ... }`
+  line per file is the house style; keep it together rather than one import
+  per component.
 - **All** styling lives in `static/assets/style.css`. There are no `<style>`
   blocks in components, and there should not be.
 - Adding a Lily component to a page means adding a rule for its class hook to

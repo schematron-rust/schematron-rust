@@ -1,11 +1,5 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import SummaryList from 'lily-design-system-svelte-headless/components/SummaryList/SummaryList.svelte';
-  import SummaryListItem from 'lily-design-system-svelte-headless/components/SummaryListItem/SummaryListItem.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
-  import CallToAction from 'lily-design-system-svelte-headless/components/CallToAction/CallToAction.svelte';
+  import { SummaryList, SummaryListItem, InformationCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { VERSION, MSRV, REPO, CRATES_IO, DOCS_RS, LICENSE } from '$lib/site';
 </script>
 

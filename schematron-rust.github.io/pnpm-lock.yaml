@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       lily-design-system-svelte-headless:
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.3.1
+        version: 0.3.1(svelte@5.56.10)
     devDependencies:
       '@playwright/test':
         specifier: ^1.49.0
@@ -514,8 +514,10 @@ packages:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
 
-  lily-design-system-svelte-headless@0.2.0:
-    resolution: {integrity: sha512-gv6i8MoRntIcAaAZ5td1lhkxyG5kblASNPypH0rq+5Eb7CV47Qb8Jbwde6YuVsT4jaABBPfRq2ec8l49KHWM+w==}
+  lily-design-system-svelte-headless@0.3.1:
+    resolution: {integrity: sha512-MAxFNkSQd24f9e/2KQWASOTWDW7diw7wEjQ4Qu0tzG0IpZTgoOECn2DkQCPYRWFESblR22nqvv2lJvsAzt4KSg==}
+    peerDependencies:
+      svelte: ^5.0.0
 
   locate-character@3.0.0:
     resolution: {integrity: sha512-SW13ws7BjaeJ6p7Q6CO2nchbYEc3X3J6WrmTTDto7yMPqVSZTUyY5Tjbid+Ab8gLnATtygYtiDIJGQRRn2ZOiA==}
@@ -985,9 +987,10 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  lily-design-system-svelte-headless@0.2.0:
+  lily-design-system-svelte-headless@0.3.1(svelte@5.56.10):
     dependencies:
       aria-query: 5.3.2
+      svelte: 5.56.10
 
   locate-character@3.0.0: {}
 
