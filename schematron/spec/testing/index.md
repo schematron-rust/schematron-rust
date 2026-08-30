@@ -345,8 +345,10 @@ pedantic = { level = "warn", priority = -1 }
 ```
 
 Individual pedantic lints are allowed only with a comment explaining why, at
-the narrowest scope that works. `#![deny(missing_docs)]` is on: every public
-item carries documentation, and CI fails without it.
+the narrowest scope that works. `#![warn(missing_docs)]` is on and CI runs
+`cargo doc` with `RUSTDOCFLAGS=-D warnings`, so every public item needs
+documentation in practice: local `cargo doc` only warns, but CI fails without
+it.
 
 ## Commands
 

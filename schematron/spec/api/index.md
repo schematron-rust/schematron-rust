@@ -33,7 +33,7 @@ impl Schema {
 
     pub fn id(&self) -> Option<&str>;
     pub fn title(&self) -> Option<&str>;
-    pub fn query_binding(&self) -> QueryBinding;
+    pub fn query_binding(&self) -> &QueryBinding;
     pub fn phases(&self) -> impl Iterator<Item = &str>;
     pub fn default_phase(&self) -> Option<&str>;
 
@@ -119,7 +119,7 @@ pub struct ActivePattern { pub id, pub name, pub documents, pub rules: Vec<Fired
 pub struct FiredRule { pub id, pub context, pub role, pub flag, pub location, pub assertions: Vec<AssertionResult> }
 
 pub struct AssertionResult {
-    pub kind: AssertionKind,        // FailedAssert | SuccessfulReport
+    pub kind: ResultKind,        // FailedAssert | SuccessfulReport
     pub test: String,
     pub location: String,
     pub text: String,

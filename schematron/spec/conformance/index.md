@@ -10,16 +10,19 @@ has to discover a gap by hitting it in production.
 | absent | Yes — XPath 1.0, the standard's default |
 | `xslt` | Yes — XPath 1.0 plus `document()` and `current()` |
 | `xpath` | Yes — XPath 1.0 |
-| `xslt2`, `xpath2` | Partly — the phase-1 subset in [xpath2/](../xpath2/index.md) |
+| `xslt2`, `xpath2` | Partly — phases 1 through 4 of the subset in [xpath2/](../xpath2/index.md) |
 | `xslt3`, `xpath3`, `xpath31` | No — rejected, unless `allow_unknown_query_binding` |
 
 **Read [xpath2/](../xpath2/index.md) before declaring `xslt2`.** The subset covers
-regular expressions, conditionals, and the string and numeric functions that
-schemas actually use; everything outside it is a hard error naming the
-construct. But expressions still evaluate on the XPath 1.0 engine, so the
-handful of places where the two languages genuinely disagree — chiefly, where
-XPath 2.0 raises a type error and XPath 1.0 yields `NaN` — follow 1.0. That
-document lists them.
+the function library, conditionals, sequences (`for`, `some`, `every`,
+ranges), date and time types, value comparisons (`eq`/`ne`/`lt`/…), durations,
+node comparisons, an implicit timezone, the type operators (`instance of`,
+`cast as`, `castable as`, `treat as`), and the numeric type hierarchy
+(`xs:integer`/`xs:decimal`/`xs:float`/`xs:double`); everything outside it is a
+hard error naming the construct. But expressions still evaluate on the XPath
+1.0 engine, so the handful of places where the two languages genuinely
+disagree — chiefly, where XPath 2.0 raises a type error and XPath 1.0 yields
+`NaN` — follow 1.0. That document lists them.
 
 XPath 3.0 and later add more than this crate implements, so they stay refused:
 accepting them would overclaim. `allow_unknown_query_binding` compiles such a
@@ -28,10 +31,9 @@ subset, so a 2.0 construct in a forced 3.x schema is still an error.
 
 Practically, under an XPath 1.0 binding, expressions like `current-date()`,
 `if/then/else`, `for $x in ...`, `castable as`, and `matches()` are not
-available; under an XPath 2.0 binding, `if/then/else` and `matches()` are, and
-the rest are not. The error
-message names the construct and says that it belongs to XPath 2.0, rather than
-merely reporting an unknown function.
+available; under an XPath 2.0 binding, all of them are. The error message
+names the construct and says that it belongs to XPath 2.0, rather than merely
+reporting an unknown function.
 
 ## Schematron elements
 

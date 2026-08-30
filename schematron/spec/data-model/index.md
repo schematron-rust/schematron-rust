@@ -27,7 +27,7 @@ Every element below maps to a Rust type in `schematron::schema`.
 | `queryBinding` | Query language binding, see [conformance/](../conformance/index.md) |
 | `xml:lang` | Natural language of the human-readable text |
 
-Rust: `Schema { id, schema_version, default_phase, query_binding, lang, title, namespaces, lets, phases, patterns, diagnostics, properties, paragraphs }`
+Rust: `Schema { id, schema_version, default_phase, query_binding, lang, title, namespaces, lets, phases, patterns, keys, diagnostics, properties, paragraphs }`
 
 ## `ns` — namespace binding
 
@@ -56,7 +56,21 @@ values of `@phase` are reserved:
   `defaultPhase` and the caller names no phase.
 - `#DEFAULT` — use the schema's `defaultPhase`, falling back to `#ALL`.
 
-Rust: `Phase { id, actives: Vec<Active>, lets, paragraphs }`, `Active { pattern }`
+Rust: `Phase { id, actives: Vec<String>, lets, paragraphs }` — each `actives`
+entry is the referenced pattern's `id`, not a wrapper type.
+
+## `key` — a named index
+
+```xml
+<key name="..." match="..." use="..."/>
+```
+
+A Schematron 1.5 element that ISO/IEC 19757-3 dropped and this crate keeps as
+an extension, since ISO Schematron gives no other way to declare a key —
+without one, a cross-reference check is quadratic. `key(NAME, VALUE)` looks it
+up from any XPath expression in the schema. See [keys/](../keys/index.md).
+
+Rust: `Key { name, match_pattern, use_expression }`
 
 ## `pattern` — a group of rules
 
