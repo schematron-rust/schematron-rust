@@ -12,7 +12,7 @@
     "install_library": "cargo add schematron",
     "install_cli": "cargo install schematron"
   },
-  "canonical_source": "https://github.com/schematron-rust/schematron-rust/blob/main/llms.txt",
+  "canonical_source": "https://github.com/schematron-rust/schematron-rust/blob/main/llms.json",
   "sections": [
     {
       "title": "Start here",
