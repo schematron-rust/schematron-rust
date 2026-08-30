@@ -106,6 +106,12 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
 ///
 /// Naming them turns "unknown function" into a message that says what is
 /// actually wrong, and what it would take to support them.
+///
+/// The sequence type itself has been implemented since phase 2a — sequence
+/// construction, ranges, `for`/`some`/`every`, `tokenize()`,
+/// `distinct-values()`, `index-of()` — so these are not blocked on a missing
+/// type; they are specific sequence-manipulating functions nobody has added
+/// yet.
 const V2_FUNCTIONS_NEEDING_SEQUENCES: &[&str] = &[
     "subsequence",
     "insert-before",
@@ -115,8 +121,13 @@ const V2_FUNCTIONS_NEEDING_SEQUENCES: &[&str] = &[
     "for-each",
 ];
 
-/// XPath 2.0 functions this crate does not implement because they need the
-/// date and time types.
+/// XPath 2.0 date/time-related functions this crate does not implement yet.
+///
+/// Not blocked on the date and time types, which shipped in phase 2b:
+/// `duration()` needs the general `xs:duration` type, which
+/// `spec/xpath2/` documents as a deliberate omission (only the two ordered
+/// subtypes are implemented); the `adjust-*-to-timezone()` functions need a
+/// timezone-bearing cast, which nothing in the crate currently produces.
 const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &[
     "duration",
     "adjust-date-to-timezone",
@@ -183,13 +194,13 @@ pub fn check_function(name: &str, arity: usize, version: XPathVersion) -> Result
     }
     if V2_FUNCTIONS_NEEDING_SEQUENCES.contains(&name) {
         return Err(format!(
-            "{name}() returns or consumes an XPath 2.0 sequence, which this crate \
+            "{name}() is a sequence-manipulating XPath 2.0 function this crate \
              does not implement yet; see spec/xpath2/"
         ));
     }
     if V2_FUNCTIONS_NEEDING_DATES.contains(&name) {
         return Err(format!(
-            "{name}() needs the XPath 2.0 date and time types, which this crate \
+            "{name}() is an XPath 2.0 date and time function this crate \
              does not implement yet; see spec/xpath2/"
         ));
     }
