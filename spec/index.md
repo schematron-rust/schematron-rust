@@ -23,4 +23,7 @@ A change to how the project accepts money belongs here.
 Each document lives in its own directory as `index.md`, and every directory
 under `spec/` must be linked from this file — the same convention
 `schematron/spec/index.md` follows, enforced there by
-`every_spec_document_is_linked_from_the_index`.
+`every_spec_document_is_linked_from_the_index`. Nothing enforces it here yet:
+this repository has no test suite of its own, so a new directory added
+without a link here would go unnoticed. Keep the discipline by hand until
+that changes.

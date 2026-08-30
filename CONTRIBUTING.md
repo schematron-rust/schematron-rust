@@ -30,11 +30,12 @@ cd schematron
 cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features
+cargo +1.96 test --all-features   # the MSRV boundary
 ```
 
-All three must pass before a change is done. See
-[`schematron/AGENTS.md`](schematron/AGENTS.md) for the full gate, including
-the MSRV boundary check, and [`schematron-rust.github.io/README.md`](schematron-rust.github.io/README.md)
+All four must pass before a change is done. See
+[`schematron/AGENTS.md`](schematron/AGENTS.md) for the full gate, and
+[`schematron-rust.github.io/README.md`](schematron-rust.github.io/README.md)
 for the site's own `pnpm` commands.
 
 ## Making a change

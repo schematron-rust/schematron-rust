@@ -46,6 +46,7 @@ policy — not XPath semantics.
 - [spec/conformance/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/conformance/index.md): limits and divergences, stated up front
 - [spec/testing/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/testing/index.md): tests, fuzzing, benchmarks, lints
 - [spec/roadmap/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/roadmap/index.md): shipped, next, and not planned
+- [spec/agents-directory-name-is-lowercase/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/agents-directory-name-is-lowercase/index.md): why the agent documentation directory is lowercase
 
 ## Website
 
@@ -59,6 +60,8 @@ policy — not XPath semantics.
 - [Conformance](https://schematron-rust.github.io/conformance/)
 - [Roadmap](https://schematron-rust.github.io/roadmap/)
 - [Specification index](https://schematron-rust.github.io/spec/)
+- [Help](https://schematron-rust.github.io/help/)
+- [About](https://schematron-rust.github.io/about/)
 
 ## Repository
 

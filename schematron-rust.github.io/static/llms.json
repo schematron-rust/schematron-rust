@@ -42,7 +42,8 @@
         { "title": "spec/errors/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/errors/index.md", "description": "The error taxonomy — error versus finding." },
         { "title": "spec/conformance/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/conformance/index.md", "description": "Limits and divergences, stated up front." },
         { "title": "spec/testing/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/testing/index.md", "description": "Tests, fuzzing, benchmarks, lints." },
-        { "title": "spec/roadmap/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/roadmap/index.md", "description": "Shipped, next, and not planned." }
+        { "title": "spec/roadmap/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/roadmap/index.md", "description": "Shipped, next, and not planned." },
+        { "title": "spec/agents-directory-name-is-lowercase/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/agents-directory-name-is-lowercase/index.md", "description": "Why the agent documentation directory is lowercase." }
       ]
     },
     {
@@ -57,7 +58,9 @@
         { "title": "Report formats", "url": "https://schematron-rust.github.io/reports/" },
         { "title": "Conformance", "url": "https://schematron-rust.github.io/conformance/" },
         { "title": "Roadmap", "url": "https://schematron-rust.github.io/roadmap/" },
-        { "title": "Specification index", "url": "https://schematron-rust.github.io/spec/" }
+        { "title": "Specification index", "url": "https://schematron-rust.github.io/spec/" },
+        { "title": "Help", "url": "https://schematron-rust.github.io/help/" },
+        { "title": "About", "url": "https://schematron-rust.github.io/about/" }
       ]
     },
     {

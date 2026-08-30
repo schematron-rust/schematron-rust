@@ -277,6 +277,28 @@ Reversing them breaks `a and (b)`, which shipped broken in 0.1.0.
 
 - Test: `src/xpath/lexer.rs::tests::operator_names_beat_function_names`
 
+### A number's tracked type never changes how it is computed
+
+`Value::Number`/`Item::Number` carry a `NumericType` tag (`Integer`,
+`Decimal`, `Float`, `Double`) so `instance of` can answer what a number's
+declared type is — but every function that touches the `f64` next to the tag
+(`to_number`, arithmetic, `format_number`, comparisons) strips the tag first
+and is otherwise unchanged from before the tag existed. Only two things ever
+set a tag more specific than `Double`: a numeric literal, tagged lexically at
+the lexer (`1` is `Integer`, `1.0` is `Decimal`, regardless of value); and an
+explicit `cast as`/`castable as`. Arithmetic, every function in the library,
+and `for`'s `to` ranges always produce `Double`.
+
+Do not extend the tag to track anything through arithmetic or a function
+result — that is a deliberate, documented limit
+(`spec/xpath2/`, "Numbers, and what `instance of` reports"), not an
+oversight to "complete." Threading a numeric type lattice through every
+arithmetic operation and function is exactly the risk weighed against, and
+rejected, in `spec/roadmap/` before this tag was added.
+
+- Test: `tests/xpath2.rs::a_literal_carries_the_type_it_is_written_as`
+- Test: `tests/xpath2.rs::computed_numbers_are_still_double`
+
 ## Performance
 
 ### Expressions are parsed once per schema, not once per document
