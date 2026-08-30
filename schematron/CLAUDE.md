@@ -15,28 +15,18 @@ is Claude-specific mechanics that do not belong there.
   no XSLT, no FFI, no `unsafe`.
 - **Where the truth lives** — [`spec/`](spec/) is normative. Code and spec
   disagreeing is a defect in one of them.
-- **The gate** — these four must pass before any change is done:
-
-  ```sh
-  cargo test --all-features
-  cargo clippy --all-targets --all-features -- -D warnings
-  cargo doc --no-deps --all-features
-  cargo +1.96 test --all-features
-  ```
+- **The gate** — the four commands in [`AGENTS.md`](AGENTS.md#the-commands-that-gate-a-change)
+  must pass before any change is done. `cargo test --lib` is the fast loop
+  while iterating (see [`agents/testing.md`](agents/testing.md) for the full
+  layer-by-layer breakdown, including fuzzing and benchmarks); run the full
+  gate before declaring done, not just the fast loop.
 
 ## Working notes
 
-- **`tests/cli.rs` spawns the built binary per test**, so it is measurably
-  slower than the rest of the suite. `cargo test --lib` is the fast loop for
-  iterating; run the full suite before declaring done. Time
-  `cargo test --test cli` yourself if the number matters — see
-  [`agents/conventions.md`](agents/conventions.md) on not hard-coding volatile
-  numbers in prose.
-- **Fuzzing needs nightly**, which is installed:
-  `cargo +nightly fuzz run fuzz_xpath -- -max_total_time=60`.
-  Budget for it; the default run is unbounded.
-- **Benchmarks are slow by default.** For a quick signal use
-  `--warm-up-time 1 --measurement-time 2 --sample-size 10`.
+Mechanics specific to running this crate from *this* machine/session — not
+duplicated from `AGENTS.md` or `agents/testing.md`, which cover what to run
+and why:
+
 - **The crate root is `schematron/`, not the repository root.** The repository
   holds the crate and the website as peers, so run `cargo` from here. Anything
   that reads the crate root at compile time — `env!("CARGO_MANIFEST_DIR")`, which

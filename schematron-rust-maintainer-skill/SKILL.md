@@ -58,10 +58,12 @@ ISO reference implementation (needs `xsltproc` and a skeleton; see
 
 ## Non-negotiables
 
-Full reasoning and tests for each are in `schematron/agents/invariants.md` —
-read it, don't rely on this compressed list:
+`schematron/AGENTS.md`'s own "Non-negotiables" section, verbatim in
+substance (full reasoning and tests for each are in
+`schematron/agents/invariants.md` — read it, don't rely on this compressed
+list, and don't let this list itself drift from `AGENTS.md`'s):
 
-- **No `unsafe`, ever.**
+- **No `unsafe`, ever.** The crate is `#![forbid(unsafe_code)]`.
 - **No C dependencies, no FFI, no XSLT transpilation.** That's the point of
   the crate.
 - **External entities are never resolved.** XXE must stay *structurally*
@@ -72,12 +74,20 @@ read it, don't rely on this compressed list:
 - **An evaluation error is never silently a false assertion.** Downgrading a
   broken schema to "the test was false" can turn a real defect into a clean
   bill of health — the single most dangerous failure mode for a validator.
-- **A finding is not an error**, and **a successful `report` is not a
-  failure** — keep `assert`/`report` and `Err`/`Report` semantics distinct.
-- **First matching rule wins**, within a pattern; patterns never compete.
 - **Malformed input is an error, never a panic.** Depth is bounded
   everywhere (XPath parser, XML parser, includes, `extends` chains); four
   fuzz targets enforce this.
+- **Every XPath expression is parsed once, at schema compile time.**
+
+## Other invariants worth knowing
+
+Not on `AGENTS.md`'s "Non-negotiables" list itself, but stated elsewhere in
+`AGENTS.md`/`agents/invariants.md` and just as easy to break by accident:
+
+- **A finding is not an error**, and **a successful `report` is not a
+  failure** — keep `assert`/`report` and `Err`/`Report` semantics distinct.
+- **First matching rule wins**, within a pattern — "the one domain rule to
+  internalise," per `AGENTS.md`; patterns never compete with each other.
 - **`castable as` reports, `cast as` raises** — same check, different
   failure behavior, deliberately.
 - **Don't "fix" XPath 1.0's surprising-but-correct semantics** — existential

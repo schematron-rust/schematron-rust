@@ -68,7 +68,7 @@ Core vocabulary:
 
 For the full eighteen-step walkthrough — namespaces, diagnostics, phases,
 abstract patterns, dates, `=` vs `eq`, cross-references and keys, using the
-library — see `spec/tutorial/index.md` in the crate (or
+library — see `schematron/spec/tutorial/index.md` in the crate (or
 <https://schematron-rust.github.io/> for the same material as a website).
 
 ## XPath support: know which binding you're in
@@ -83,7 +83,7 @@ language with a different type system, not 1.0 plus extra functions, and the
 crate is explicit about exactly where 2.0 still behaves like 1.0 (an
 untyped-comparison quirk, the implicit timezone default, and a few others).
 Anything genuinely unsupported is a **hard compile-time error naming the
-construct**, never a silent wrong answer. See `spec/xpath2/index.md` before
+construct**, never a silent wrong answer. See `schematron/spec/xpath2/index.md` before
 relying on anything beyond the 1.0 core, and read its divergences section —
 it's short and it matters.
 
@@ -114,7 +114,7 @@ if !report.is_valid() {
 
 A `Report` is data, not formatted text — render it as SVRL
 (`report.to_svrl()`), JSON (`report.to_json()`), or human-readable text
-(`report.to_text()`). See `spec/api/index.md`.
+(`report.to_text()`). See `schematron/spec/api/index.md`.
 
 Command line:
 
@@ -124,7 +124,7 @@ schematron validate --schema rules.sch --document data.xml
 ```
 
 Phase selection, output format, and flag filtering are all CLI options; see
-`spec/cli/index.md` for the full flag reference.
+`schematron/spec/cli/index.md` for the full flag reference.
 
 ## When a schema seems to do nothing
 
@@ -133,30 +133,30 @@ mistakes the model makes easy without needing a document at all: an
 `assert`/`report` mixed up, a context that can never match, a phase that
 activates nothing, a key that's declared but never looked up (or looked up
 but never declared — the latter is a compile error naming it, not a
-silently empty result). See `spec/linting/index.md`. The other common cause
+silently empty result). See `schematron/spec/linting/index.md`. The other common cause
 is the "first matching rule wins" rule above: a later rule you expected to
 fire never gets the chance because an earlier one in the same pattern
 already claimed the node.
 
 ## Where the authoritative detail lives
 
-This skill is a map, not the territory — the crate's `spec/` directory is
-**normative**; if anything here and `spec/` disagree, trust `spec/`.
+This skill is a map, not the territory — the crate's `schematron/spec/` directory is
+**normative**; if anything here and `schematron/spec/` disagree, trust `schematron/spec/`.
 
 | Want to | Read |
 |---|---|
-| Learn by example, step by step | `spec/tutorial/index.md` |
-| Every element and attribute | `spec/data-model/index.md` |
-| The validation algorithm, exactly | `spec/validation/index.md` |
-| The XPath 1.0 engine | `spec/xpath/index.md` |
-| The XPath 2.0 subset and its limits | `spec/xpath2/index.md` |
-| SVRL, read and written | `spec/svrl/index.md` |
-| Keys and cross-references | `spec/keys/index.md` |
-| Why a schema does nothing | `spec/linting/index.md` |
-| Library API | `spec/api/index.md` |
-| CLI flags and exit codes | `spec/cli/index.md` |
-| Errors vs. findings | `spec/errors/index.md` |
-| Limits and stated divergences | `spec/conformance/index.md` |
+| Learn by example, step by step | `schematron/spec/tutorial/index.md` |
+| Every element and attribute | `schematron/spec/data-model/index.md` |
+| The validation algorithm, exactly | `schematron/spec/validation/index.md` |
+| The XPath 1.0 engine | `schematron/spec/xpath/index.md` |
+| The XPath 2.0 subset and its limits | `schematron/spec/xpath2/index.md` |
+| SVRL, read and written | `schematron/spec/svrl/index.md` |
+| Keys and cross-references | `schematron/spec/keys/index.md` |
+| Why a schema does nothing | `schematron/spec/linting/index.md` |
+| Library API | `schematron/spec/api/index.md` |
+| CLI flags and exit codes | `schematron/spec/cli/index.md` |
+| Errors vs. findings | `schematron/spec/errors/index.md` |
+| Limits and stated divergences | `schematron/spec/conformance/index.md` |
 
 If the question is instead about *changing the crate's own source* — adding
 an XPath function, fixing a fuzz crash, the release process — use
