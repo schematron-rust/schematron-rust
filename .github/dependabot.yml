@@ -2,7 +2,8 @@
 #
 # One entry per manifest directory in the monorepo, not one entry for the
 # whole repository: the crate, its nightly-only fuzz crate (a separate
-# Cargo.toml, deliberately excluded from the crate's own workspace, but
+# Cargo.toml — there is no Cargo workspace in this repo for it to be a
+# member of, and it is not a path dependency of the crate either — but
 # still a real dependency tree), and the site each pin dependencies
 # independently and need their own update PRs.
 version: 2

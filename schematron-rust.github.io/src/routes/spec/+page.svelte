@@ -4,14 +4,14 @@
   import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
   import CodeBlock from '$lib/lily/CodeBlock.svelte';
   import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
-  import { SPEC_DOCS, specUrl, REPO, specLabel } from '$lib/site';
+  import { SPEC_DOCS, specUrl, REPO, specLabel, MSRV } from '$lib/site';
 </script>
 
 <svelte:head>
   <title>Specification — schematron</title>
   <meta
     name="description"
-    content="The normative specification for the schematron crate: eighteen documents covering the data model, the validation algorithm, both XPath engines, SVRL, linting, errors, and conformance."
+    content={`The normative specification for the schematron crate: ${SPEC_DOCS.length} documents covering the data model, the validation algorithm, both XPath engines, SVRL, linting, errors, and conformance.`}
   />
 </svelte:head>
 
@@ -63,7 +63,7 @@
     <pre><code>{`cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features
-cargo +1.94 test --all-features`}</code></pre>
+cargo +${MSRV} test --all-features`}</code></pre>
   </CodeBlock>
 
   <p>

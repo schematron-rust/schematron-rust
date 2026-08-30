@@ -161,8 +161,9 @@ is the policy working, not a problem. Apply them.
 
 ## Add a dependency
 
-Usually: don't. The crate depends on `quick-xml` and `thiserror`, plus
-`serde`/`clap` behind default features, and that is a feature of it.
+Usually: don't. The crate depends on `quick-xml`, `thiserror`, and `regex`,
+plus `serde`/`serde_json`/`clap` behind default features, and that is a
+feature of it.
 
 If you must: check the dependency's own MSRV fits ours, state the reason in
 the pull request, and confirm it does not pull in C.

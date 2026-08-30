@@ -26,9 +26,12 @@ is Claude-specific mechanics that do not belong there.
 
 ## Working notes
 
-- **`cargo test --test cli` takes ~40 s** because it spawns the binary per
-  test. `cargo test --lib` is the fast loop; run the full suite before
-  declaring done.
+- **`tests/cli.rs` spawns the built binary per test**, so it is measurably
+  slower than the rest of the suite. `cargo test --lib` is the fast loop for
+  iterating; run the full suite before declaring done. Time
+  `cargo test --test cli` yourself if the number matters — see
+  [`agents/conventions.md`](agents/conventions.md) on not hard-coding volatile
+  numbers in prose.
 - **Fuzzing needs nightly**, which is installed:
   `cargo +nightly fuzz run fuzz_xpath -- -max_total_time=60`.
   Budget for it; the default run is unbounded.
@@ -50,24 +53,12 @@ is Claude-specific mechanics that do not belong there.
 
 ## Things that look like bugs and are not
 
-- `a = b` and `a != b` can both be true. XPath 1.0 node-set comparison is
-  existential. Correct, deliberate, tested.
-- `'x' > 0` is false rather than an error. Relational operators convert to
-  number; the string becomes NaN.
-- An unprefixed name in a schema matches **no namespace**. XPath 1.0 has no
-  default namespace. This is the most common reason a schema appears to do
-  nothing.
-- A `report` firing does not make a document invalid. It is an observation.
-- `missing >= false()` is **true** for an empty node-set. A node-set compared
-  to a boolean is converted with `boolean()`, not walked existentially, so it
-  is `0 >= 0`. Meanwhile `missing = 'x'` and `missing != 'x'` are both false.
-  This was a real bug once; do not fold the boolean case back in with the
-  others.
-- `sum()` of an empty node-set is **positive** zero, so `1 div sum(none)` is
-  Infinity. It is folded from `0.0` rather than written `.sum()`, because
-  Rust's `Sum` for `f64` starts from `-0.0`.
-
-Full list with reasoning: [`agents/invariants.md`](agents/invariants.md).
+Do not "fix" a surprising XPath 1.0 semantic without reading
+[`agents/invariants.md`](agents/invariants.md) first — existential node-set
+comparison, NaN-yielding conversions, the empty-node-set-versus-boolean case,
+and `sum()`'s positive zero are all correct, deliberate, and tested. This list
+is deliberately not copied here; a second copy is exactly the kind of drift
+this file's opening paragraph warns about.
 
 ## Before claiming a change is done
 

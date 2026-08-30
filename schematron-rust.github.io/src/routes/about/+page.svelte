@@ -30,7 +30,7 @@
   <SummaryList label="Crate facts">
     <SummaryListItem term="Name"><code>schematron</code></SummaryListItem>
     <SummaryListItem term="Version">{VERSION}</SummaryListItem>
-    <SummaryListItem term="MSRV">{MSRV} — policy: current stable minus three</SummaryListItem>
+    <SummaryListItem term="MSRV">{MSRV} — policy: current stable minus two</SummaryListItem>
     <SummaryListItem term="Standard">ISO/IEC 19757-3 (Schematron)</SummaryListItem>
     <SummaryListItem term="Licence">{LICENSE}</SummaryListItem>
     <SummaryListItem term="Author">Joel Parker Henderson</SummaryListItem>
@@ -61,7 +61,7 @@
     <pre><code>{`cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features
-cargo +1.94 test --all-features`}</code></pre>
+cargo +${MSRV} test --all-features`}</code></pre>
   </CodeBlock>
 
   <p>

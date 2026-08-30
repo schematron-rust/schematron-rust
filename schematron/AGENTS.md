@@ -96,7 +96,8 @@ Match the surrounding code. Specifically:
 - The specification is the contract. Changing behaviour means changing
   `spec/` in the same edit, not later.
 - Do not add dependencies without a stated reason. The crate currently depends
-  on `quick-xml` and `thiserror`, plus `serde`/`clap` behind default features.
+  on `quick-xml`, `thiserror`, and `regex` (XPath 2.0's `matches()` and
+  `replace()`), plus `serde`/`serde_json`/`clap` behind default features.
 - Do not "fix" XPath 1.0's surprising semantics. Existential node-set
   comparison, NaN-yielding conversions, and the no-exponent number format are
   correct and deliberate.

@@ -40,7 +40,7 @@ git history; this file starts where the first output-affecting change did.
   they are correct, and this crate implements them as the standard describes —
   so they are kept out of `--lint`, which exists to report likely errors. Each
   of the seven checks is backed by a divergence in
-  [spec/conformance.md](spec/conformance.md), established by running this
+  [spec/conformance/](spec/conformance/index.md), established by running this
   crate and the ISO reference implementation against the same schema.
 
 ### Fixed
@@ -51,7 +51,7 @@ git history; this file starts where the first output-affecting change did.
   return $k` is well inside it, and together they ask for close to a billion
   items — from a 90-byte expression. Found by fuzzing. A budget is now shared
   across every nested construct in one expression, so the product is bounded;
-  both limits are in [spec/conformance.md](spec/conformance.md).
+  both limits are in [spec/conformance/](spec/conformance/index.md).
 
 ### Performance
 
@@ -86,7 +86,7 @@ Two changes alter what you see for a schema that worked before.
   and namespaced names as
   `*[local-name()='line' and namespace-uri()='urn:example'][3]`, which needs
   no prefix bound by the reader. This affects both the text output and SVRL's
-  `@location`. See [spec/validation.md](spec/validation.md).
+  `@location`. See [spec/validation/](spec/validation/index.md).
 
 - **A misspelled variable is an error when the schema loads**, rather than
   when the expression using it is first evaluated. `$naem` for `$name` used to
@@ -96,7 +96,7 @@ Two changes alter what you see for a schema that worked before.
 ### Added
 
 - `<sch:key>` and the `key()` function, turning a quadratic cross-reference
-  check into a linear one. A non-ISO extension — see [spec/keys.md](spec/keys.md).
+  check into a linear one. A non-ISO extension — see [spec/keys/](spec/keys/index.md).
 - `Report::from_svrl`, making SVRL bidirectional: reports can be read back,
   not only written.
 - `extends href`, and fragment identifiers on both it and `include`:
@@ -104,7 +104,7 @@ Two changes alter what you see for a schema that worked before.
   read. `include` splices the element, `extends` its children.
 - Six lints: unreferenced keys, unused variables, rules with no assertions,
   patterns with no rules, duplicate assertion tests, and phases that activate
-  nothing. See [spec/linting.md](spec/linting.md).
+  nothing. See [spec/linting/](spec/linting/index.md).
 
 ### Fixed
 
@@ -130,5 +130,5 @@ Two changes alter what you see for a schema that worked before.
 - Differential testing against the ISO reference implementation, both over the
   curated corpus and over generated schema and document pairs. It found the
   first two fixes above, and the divergences it turned up are recorded in
-  [spec/conformance.md](spec/conformance.md) — several of them cases where the
-  reference is the one in the wrong. See [spec/testing.md](spec/testing.md).
+  [spec/conformance/](spec/conformance/index.md) — several of them cases where the
+  reference is the one in the wrong. See [spec/testing/](spec/testing/index.md).

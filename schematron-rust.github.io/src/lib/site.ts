@@ -5,8 +5,8 @@
 // schematron-rust and must be kept in step with it. See AGENTS.md.
 
 export const CRATE = 'schematron';
-export const VERSION = '0.5.0';
-export const MSRV = '1.94';
+export const VERSION = '0.5.1';
+export const MSRV = '1.96';
 export const REPO = 'https://github.com/schematron-rust/schematron-rust';
 export const CRATES_IO = 'https://crates.io/crates/schematron';
 export const DOCS_RS = 'https://docs.rs/schematron';
@@ -32,7 +32,7 @@ export const SPEC_DOCS: SpecDoc[] = [
   { file: 'errors/index.md', title: 'Errors', covers: 'The error taxonomy, and error versus finding.' },
   { file: 'conformance/index.md', title: 'Conformance', covers: 'Limits and divergences, stated up front.' },
   { file: 'testing/index.md', title: 'Testing', covers: 'Tests, fuzzing, benchmarks, lints.' },
-  { file: 'rust-msrv-n-minus-3/index.md', title: 'MSRV policy', covers: 'Current stable minus three.' },
+  { file: 'rust-msrv-n-minus-2/index.md', title: 'MSRV policy', covers: 'Current stable minus two.' },
   { file: 'agents-directory-name-is-lowercase/index.md', title: 'Agents directory naming', covers: 'Why the agent documentation directory is lowercase.' },
   { file: 'roadmap/index.md', title: 'Roadmap', covers: 'Shipped, next, and not planned.' }
 ];

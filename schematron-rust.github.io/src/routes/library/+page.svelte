@@ -34,7 +34,7 @@
 
   <SummaryList label="Crate facts">
     <SummaryListItem term="Version">{VERSION}</SummaryListItem>
-    <SummaryListItem term="MSRV">{MSRV} — policy: current stable minus three</SummaryListItem>
+    <SummaryListItem term="MSRV">{MSRV} — policy: current stable minus two</SummaryListItem>
     <SummaryListItem term="Default features"><code>serde</code>, <code>cli</code></SummaryListItem>
     <SummaryListItem term="Unsafe code">None</SummaryListItem>
     <SummaryListItem term="Licence">MIT, Apache-2.0, GPL-2.0-only, or GPL-3.0-only, at your option</SummaryListItem>

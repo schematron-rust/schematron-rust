@@ -56,9 +56,12 @@ cargo test --test docs                  # the documentation audit
 cargo test --lib xpath                  # one module
 ```
 
-`tests/cli.rs` spawns the built binary, so it is the slow one (~40 s). It is
-worth its cost — exit codes are what a build pipeline depends on — but do not
-put logic tests there that belong in the library.
+`tests/cli.rs` spawns the built binary per test, so it is measurably slower
+than the rest of the suite — time `cargo test --test cli` yourself if the
+number matters, rather than trusting a number written here (see
+[`conventions.md`](conventions.md) on volatile numbers). It is worth its
+cost — exit codes are what a build pipeline depends on — but do not put logic
+tests there that belong in the library.
 
 ## Benchmarks
 

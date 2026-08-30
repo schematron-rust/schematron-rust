@@ -143,7 +143,7 @@ let report = schema.validate_with(&document, &options)?;`}</code></pre>
   <ul>
     <li>
       <strong>MSRV of {MSRV}</strong>, under a stated policy: current stable
-      minus three. Not a number that moves when a dependency feels like it.
+      minus two. Not a number that moves when a dependency feels like it.
     </li>
     <li>
       <strong>A normative specification.</strong> If the code and
