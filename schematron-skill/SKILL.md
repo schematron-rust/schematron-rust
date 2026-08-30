@@ -120,7 +120,7 @@ Command line:
 
 ```sh
 cargo install schematron
-schematron validate --schema rules.sch --document data.xml
+schematron --schema rules.sch data.xml
 ```
 
 Phase selection, output format, and flag filtering are all CLI options; see
@@ -128,7 +128,7 @@ Phase selection, output format, and flag filtering are all CLI options; see
 
 ## When a schema seems to do nothing
 
-Reach for `schematron lint` (or `Schema::lint()`) first — it catches the
+Reach for `schematron --schema rules.sch --lint` (or `Schema::lint()`) first — it catches the
 mistakes the model makes easy without needing a document at all: an
 `assert`/`report` mixed up, a context that can never match, a phase that
 activates nothing, a key that's declared but never looked up (or looked up
