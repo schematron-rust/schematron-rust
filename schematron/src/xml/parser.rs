@@ -122,8 +122,7 @@ impl<'a> Builder<'a> {
         for attribute in start.attributes().with_checks(false) {
             let attribute = attribute
                 .map_err(|e| self.error(position, format!("malformed attribute: {e}")))?;
-            let key = std::str::from_utf8(attribute.key.as_ref())
-                .map_err(|e| self.error(position, format!("attribute name is not UTF-8: {e}")))?;
+            let key = attribute.key.as_ref();
             let prefix = if key == "xmlns" {
                 ""
             } else if let Some(rest) = key.strip_prefix("xmlns:") {
@@ -173,9 +172,7 @@ impl<'a> Builder<'a> {
         for attribute in start.attributes().with_checks(false) {
             let attribute = attribute
                 .map_err(|e| self.error(position, format!("malformed attribute: {e}")))?;
-            let key = std::str::from_utf8(attribute.key.as_ref())
-                .map_err(|e| self.error(position, format!("attribute name is not UTF-8: {e}")))?
-                .to_string();
+            let key = attribute.key.as_ref().to_string();
             if key == "xmlns" || key.starts_with("xmlns:") {
                 continue;
             }
@@ -210,8 +207,7 @@ impl<'a> Builder<'a> {
     }
 }
 
-fn decode_value(bytes: &[u8]) -> std::result::Result<String, String> {
-    let raw = std::str::from_utf8(bytes).map_err(|e| format!("value is not UTF-8: {e}"))?;
+fn decode_value(raw: &str) -> std::result::Result<String, String> {
     unescape(raw)
 }
 
@@ -232,37 +228,43 @@ fn unescape(input: &str) -> std::result::Result<String, String> {
         let Some(end) = after.find(';') else {
             return Err("unterminated entity reference: no ';' after '&'".to_string());
         };
-        let name = &after[..end];
-        match name {
-            "lt" => out.push('<'),
-            "gt" => out.push('>'),
-            "amp" => out.push('&'),
-            "quot" => out.push('"'),
-            "apos" => out.push('\''),
-            _ => {
-                let code = if let Some(hex) = name.strip_prefix("#x").or_else(|| name.strip_prefix("#X")) {
-                    u32::from_str_radix(hex, 16).ok()
-                } else if let Some(dec) = name.strip_prefix('#') {
-                    dec.parse::<u32>().ok()
-                } else {
-                    None
-                };
-                match code.and_then(char::from_u32) {
-                    Some(c) => out.push(c),
-                    None => {
-                        return Err(format!(
-                            "unknown entity reference &{name};: only the predefined entities and \
-                             numeric character references are expanded, because DTD entity \
-                             declarations are not processed"
-                        ))
-                    }
-                }
-            }
-        }
+        out.push(resolve_entity(&after[..end])?);
         rest = &after[end + 1..];
     }
     out.push_str(rest);
     Ok(out)
+}
+
+/// Resolves one entity reference's name — the text between `&` and `;`,
+/// e.g. `"amp"` or `"#65"` — to the character it denotes. Shared by
+/// [`unescape`], for attribute values (still delivered as one raw,
+/// escaped string), and the `Event::GeneralRef` arm in [`build`], for
+/// text content (where quick-xml 0.38+ reports each reference as its own
+/// event rather than leaving it embedded in `Text`).
+fn resolve_entity(name: &str) -> std::result::Result<char, String> {
+    match name {
+        "lt" => Ok('<'),
+        "gt" => Ok('>'),
+        "amp" => Ok('&'),
+        "quot" => Ok('"'),
+        "apos" => Ok('\''),
+        _ => {
+            let code = if let Some(hex) = name.strip_prefix("#x").or_else(|| name.strip_prefix("#X")) {
+                u32::from_str_radix(hex, 16).ok()
+            } else if let Some(dec) = name.strip_prefix('#') {
+                dec.parse::<u32>().ok()
+            } else {
+                None
+            };
+            code.and_then(char::from_u32).ok_or_else(|| {
+                format!(
+                    "unknown entity reference &{name};: only the predefined entities and \
+                     numeric character references are expanded, because DTD entity \
+                     declarations are not processed"
+                )
+            })
+        }
+    }
 }
 
 fn line_column(source: &str, position: usize) -> (usize, usize) {
@@ -382,9 +384,7 @@ fn start_element(
     builder.ns_marks.push(builder.ns_stack.len());
     builder.declare_namespaces(start, position)?;
 
-    let raw = std::str::from_utf8(start.name().as_ref())
-        .map_err(|e| builder.error(position, format!("element name is not UTF-8: {e}")))?
-        .to_string();
+    let raw = start.name().as_ref().to_string();
 
     let element = builder.push_node(NodeKind::Element, parent);
     let name = builder.qname(&raw, false, position)?;
@@ -463,8 +463,7 @@ fn parse(source: &str) -> Result<Document> {
             }
 
             Event::Text(text) => {
-                let raw = std::str::from_utf8(text.as_ref())
-                    .map_err(|e| builder.error(position, format!("text is not UTF-8: {e}")))?;
+                let raw = text.as_ref();
                 let decoded = unescape(raw).map_err(|m| builder.error(position, m))?;
                 // Whitespace outside the document element is not a text node.
                 if parent == builder.doc.root {
@@ -480,9 +479,7 @@ fn parse(source: &str) -> Result<Document> {
             }
 
             Event::CData(cdata) => {
-                let raw = std::str::from_utf8(cdata.as_ref())
-                    .map_err(|e| builder.error(position, format!("CDATA is not UTF-8: {e}")))?
-                    .to_string();
+                let raw = cdata.as_ref().to_string();
                 if parent != builder.doc.root {
                     // CDATA is literal: no entity expansion, and it merges
                     // with adjacent character data into one text node.
@@ -491,19 +488,13 @@ fn parse(source: &str) -> Result<Document> {
             }
 
             Event::Comment(comment) => {
-                let raw = std::str::from_utf8(comment.as_ref())
-                    .map_err(|e| builder.error(position, format!("comment is not UTF-8: {e}")))?
-                    .to_string();
+                let raw = comment.as_ref().to_string();
                 let id = builder.push_node(NodeKind::Comment, parent);
                 builder.doc.nodes[id.0].value = raw;
             }
 
             Event::PI(pi) => {
-                let raw = std::str::from_utf8(pi.as_ref())
-                    .map_err(|e| {
-                        builder.error(position, format!("processing instruction is not UTF-8: {e}"))
-                    })?
-                    .to_string();
+                let raw = pi.as_ref().to_string();
                 let (target, content) = match raw.find(char::is_whitespace) {
                     Some(i) => (raw[..i].to_string(), raw[i..].trim_start().to_string()),
                     None => (raw.clone(), String::new()),
@@ -513,6 +504,25 @@ fn parse(source: &str) -> Result<Document> {
                 builder.doc.nodes[id.0].value = content;
             }
 
+            // quick-xml 0.38+ reports every entity/character reference in
+            // character data as its own event rather than leaving it
+            // embedded in Text, so this is where `&amp;`, `&#65;`, and any
+            // other reference in element content now actually get
+            // resolved — see resolve_entity's doc comment.
+            Event::GeneralRef(byteref) => {
+                let c = resolve_entity(&byteref).map_err(|m| builder.error(position, m))?;
+                // Mirrors Event::Text: character data, including a
+                // reference to it, cannot appear outside the document
+                // element.
+                if parent == builder.doc.root {
+                    return Err(builder.error(
+                        position,
+                        "character data outside the document element",
+                    ));
+                }
+                let mut buf = [0u8; 4];
+                builder.push_text(parent, c.encode_utf8(&mut buf));
+            }
         }
     }
 
