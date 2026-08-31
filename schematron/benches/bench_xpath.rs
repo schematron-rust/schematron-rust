@@ -7,7 +7,8 @@
 // `criterion_group!` generates undocumented functions.
 #![allow(missing_docs)]
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 use schematron::xml::Document;
 use schematron::xpath::{evaluate, parse, EvalContext, Namespaces, Variables};
 
