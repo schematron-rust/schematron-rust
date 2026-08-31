@@ -27,7 +27,7 @@ regex = { version = "1", default-features = false, features = ["std", "unicode-p
 
 [dev-dependencies]
 assertables = "10"
-criterion = "0.5"
+criterion = "0.8"
 
 [features]
 default = ["serde", "cli"]
