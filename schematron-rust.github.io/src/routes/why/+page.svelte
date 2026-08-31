@@ -1,10 +1,13 @@
 <script lang="ts">
   import { InsetText, InformationCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { MSRV, REPO } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>Why schematron — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="Why a pure Rust Schematron implementation: no C toolchain, no FFI, no unsafe, a structurally impossible XXE, and a schema compiled once and validated in parallel."

@@ -1,10 +1,13 @@
 <script lang="ts">
   import { Details, Alert, WarningCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { REPO, specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>Help — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="Diagnose a Schematron schema that does nothing, understand assert versus report, XPath 1.0 node-set comparison, and where to ask for help."

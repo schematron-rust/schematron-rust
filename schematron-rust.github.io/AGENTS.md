@@ -102,13 +102,24 @@ stop agreeing and the page flashes the wrong theme on load.
 - Every route is prerendered. `src/routes/+layout.ts` sets
   `prerender = true` and `trailingSlash = 'always'`; internal links must
   therefore end in `/`.
-- Adding a route means three edits: the `+page.svelte`, the `navLinks` array in
-  `src/routes/+layout.svelte`, and a row in `static/sitemap.xml`. Add it to the
-  `PAGES` array in `tests/site.spec.ts` too.
+- Adding a route means four edits: the `+page.svelte`, a `+page.ts` beside it
+  (below), the `navLinks` array in `src/routes/+layout.svelte`, and a row in
+  `static/sitemap.xml`. Add it to the `PAGES` array in `tests/site.spec.ts`
+  too.
 - Exactly one `<h1>` per page, inside `.page-header` (or `.hero` on the home
   page). Section headings use Lily's `SectionHeading`.
-- Every page needs a `<svelte:head>` with a `<title>` containing "schematron"
-  and a `<meta name="description">`. The tests check both.
+- **The page title is set once, in `+page.ts`.** Every route's `+page.ts`
+  exports a `load` returning `{ title: 'X — schematron' }` — see
+  `src/app.d.ts`'s `App.PageData`, which makes `title` a type error to
+  forget. `+page.svelte`'s `<svelte:head>` reads it back with
+  `<title>{data.title}</title>` (needs `let { data }: { data: PageData } =
+  $props();`, imported from `./$types`) rather than repeating the string, and
+  `+layout.svelte` reads `page.data.title` to pass to `SharePicker` — so a
+  shared page's mailto subject and native-share-sheet title name the actual
+  page, not a fixed site name. Don't hardcode a `<title>` string directly in
+  a `+page.svelte` again; that's the drift this convention exists to
+  prevent. `<meta name="description">` stays page-local in `+page.svelte`,
+  not part of this convention.
 - Code samples go in a Lily `CodeBlock` wrapping a `<pre><code>`. Put the sample
   in a Svelte expression holding a template literal, so Svelte does not read
   `{` as an expression and so `<` and `>` need no escaping:

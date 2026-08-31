@@ -1,6 +1,9 @@
 <script lang="ts">
   import { Table, Alert, Separator, CallToAction, SectionHeading, CodeBlock, TableHead, TableBody, TableRow, TableTH, TableTD } from 'lily-design-system-svelte-headless';
   import { specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 
   type Option = { flag: string; description: string };
 
@@ -35,7 +38,7 @@
 </script>
 
 <svelte:head>
-  <title>Command line — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="The schematron command line tool: every option, every exit code, text and SVRL and JSON output, and the flags that diagnose a schema that does nothing."

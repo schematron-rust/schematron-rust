@@ -1,6 +1,9 @@
 <script lang="ts">
   import { Card, Details, InsetText, InformationCallout, WarningCallout, Separator, CallToAction, SectionHeading } from 'lily-design-system-svelte-headless';
   import { REPO, VERSION, specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 
   const SHIPPED: string[] = [
     'Pure Rust XML parser and XPath data model, with no external entity resolution and therefore no XXE',
@@ -25,7 +28,7 @@
 </script>
 
 <svelte:head>
-  <title>Roadmap — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="What the schematron crate has shipped, what is next and why it is ordered that way, what was examined and abandoned, and what is not planned."

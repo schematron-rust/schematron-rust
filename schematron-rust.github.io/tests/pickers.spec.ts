@@ -66,11 +66,29 @@ test.describe('SharePicker', () => {
     await page.click('.share-picker-button');
     const email = page.locator('.share-picker-target');
     await expect(email).toHaveText('Email');
-    await expect(email).toHaveAttribute('href', /^mailto:\?subject=schematron&body=/);
+    await expect(email).toHaveAttribute(
+      'href',
+      /^mailto:\?subject=schematron%20%E2%80%94%20Schematron%20in%20pure%20Rust&body=/
+    );
 
     await page.click('.share-picker-copy');
     await expect(page.locator('.share-picker-status')).toHaveText('Link copied');
     const clipboard = await page.evaluate(() => navigator.clipboard.readText());
     expect(clipboard).toBe(await page.evaluate(() => location.href));
+  });
+
+  test("uses the visited page's own title, from page.data.title — not a fixed site name", async ({
+    page
+  }) => {
+    // See src/app.d.ts's App.PageData and each route's +page.ts: this is
+    // what makes the mailto: subject (and the native share sheet) name the
+    // actual page being shared, not always "schematron".
+    await page.goto('/reports/');
+    await expect(page).toHaveTitle('Reports — schematron');
+    await page.click('.share-picker-button');
+    await expect(page.locator('.share-picker-target')).toHaveAttribute(
+      'href',
+      /^mailto:\?subject=Reports/
+    );
   });
 });

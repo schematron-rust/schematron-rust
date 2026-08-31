@@ -1,6 +1,9 @@
 <script lang="ts">
   import { Table, Alert, InsetText, InformationCallout, WarningCallout, Separator, CallToAction, SectionHeading, CodeBlock, TableHead, TableBody, TableRow, TableTH, TableTD } from 'lily-design-system-svelte-headless';
   import { specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 
   type ElementRow = { element: string; emitted: string };
 
@@ -17,7 +20,7 @@
 </script>
 
 <svelte:head>
-  <title>Reports — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="One validation run, three renderings: SVRL for other Schematron tooling, JSON that keeps the tree structure, and text for a person. Plus reading SVRL back."

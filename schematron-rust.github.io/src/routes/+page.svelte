@@ -1,10 +1,13 @@
 <script lang="ts">
   import { Card, Alert, Details, Tag, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { VERSION, REPO, SPEC_DOCS } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>schematron — Schematron in pure Rust</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="Rule-based XML validation to ISO/IEC 19757-3, in pure Rust: its own XML parser, its own XPath 1.0 engine, and no libxml2, no XSLT processor, no C toolchain, no FFI."

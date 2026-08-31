@@ -1,10 +1,13 @@
 <script lang="ts">
   import { Alert, WarningCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { REPO, specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>Tutorial — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="Write your first Schematron schema: assert and report, first-matching-rule, namespaces, variables, diagnostics, phases, and the two ways a schema silently does nothing."

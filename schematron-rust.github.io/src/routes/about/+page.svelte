@@ -1,10 +1,13 @@
 <script lang="ts">
   import { SummaryList, SummaryListItem, InformationCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { VERSION, MSRV, REPO, CRATES_IO, DOCS_RS, LICENSE } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>About — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="About the schematron crate: what it is, who maintains it, how it is licensed, and how this site is built."

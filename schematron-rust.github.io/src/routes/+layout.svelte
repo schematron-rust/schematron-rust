@@ -4,7 +4,7 @@
   import { ThemePicker } from 'lily-design-system-svelte-theme-picker';
   import { TextSizePicker } from 'lily-design-system-svelte-text-size-picker';
   import { SharePicker } from 'lily-design-system-svelte-share-picker';
-  import { CRATE, REPO } from '$lib/site';
+  import { REPO } from '$lib/site';
 
   let { children } = $props();
 
@@ -68,7 +68,7 @@
       />
       <SharePicker
         label="Share this page"
-        title={CRATE}
+        title={page.data.title}
         targets={SHARE_TARGETS}
         copyLabel="Copy link"
         copiedLabel="Link copied"

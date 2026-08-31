@@ -1,10 +1,13 @@
 <script lang="ts">
   import { InsetText, Separator, SummaryList, SummaryListItem, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { VERSION, MSRV, DOCS_RS, specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>Library — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="Use the schematron crate from Rust: compile a schema once, validate many documents, render SVRL, JSON, or text, and query the report as data."
