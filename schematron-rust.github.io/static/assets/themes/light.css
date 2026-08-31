@@ -1,15 +1,24 @@
 /* schematron-rust site — light theme
  *
- * One of the theme stylesheets `ThemePicker` swaps via a managed <link>
- * (see src/app.html and src/routes/+layout.svelte). Every custom property
- * consumed anywhere in static/assets/style.css must be defined here AND in
- * dark.css — style.css itself carries no colour, so whichever theme file is
- * currently linked *is* the theme. This file is the values that shipped
- * before dark mode existed; dark.css is a parallel, independently
+ * Attribute-scoped, multi-stylesheet setup: both this file and dark.css are
+ * always linked (see src/app.html), and each scopes its custom properties
+ * to :root[data-theme="…"] rather than bare :root, so only the file whose
+ * slug matches <html>'s data-theme attribute contributes any properties —
+ * switching is instant, no stylesheet swap or network round-trip involved.
+ * This is ThemePicker's own documented "preloading for zero-flicker
+ * switching" recipe (lily-design-system-svelte-theme-picker's index.md).
+ * ThemePicker still additionally manages its own <link>, redundant with
+ * these two under this setup; that's an accepted, harmless cost of the
+ * recipe, not a bug — see AGENTS.md's "Theming" section.
+ *
+ * Every custom property consumed anywhere in static/assets/style.css must
+ * be defined in both this file and dark.css, under each one's own selector
+ * — style.css itself carries no colour. This file is the values that
+ * shipped before dark mode existed; dark.css is a parallel, independently
  * WCAG-contrast-checked palette, not a mechanical inversion of this one.
  */
 
-:root {
+:root[data-theme="light"] {
   --rust: #8b3a1f;
   --rust-hover: #6f2d17;
   --rust-tint: #fbf1ec;

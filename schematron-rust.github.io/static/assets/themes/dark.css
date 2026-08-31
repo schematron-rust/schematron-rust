@@ -1,12 +1,15 @@
 /* schematron-rust site — dark theme
  *
- * Paired with light.css; see that file's header comment for how ThemePicker
- * swaps between the two. Every value below was chosen and WCAG-contrast
- * checked for a dark ground, not derived by inverting light.css: an accent
- * dark enough to read on white (light.css's --rust, #8b3a1f) is close to
- * unreadable as text on a near-black page, so the accent family is
- * brightened here, and the two "text-on-tint" backgrounds (--*-bg) are dark,
- * desaturated washes rather than the pale near-white tints light mode uses.
+ * Paired with light.css; see that file's header comment for the
+ * attribute-scoped, multi-stylesheet setup this and light.css share — both
+ * always linked, each scoped to :root[data-theme="…"], switching instant
+ * and attribute-driven rather than a stylesheet swap. Every value below was
+ * chosen and WCAG-contrast checked for a dark ground, not derived by
+ * inverting light.css: an accent dark enough to read on white (light.css's
+ * --rust, #8b3a1f) is close to unreadable as text on a near-black page, so
+ * the accent family is brightened here, and the two "text-on-tint"
+ * backgrounds (--*-bg) are dark, desaturated washes rather than the pale
+ * near-white tints light mode uses.
  *
  * Contrast ratios (WCAG 2.2), computed against this file's own --page-bg
  * (#0c0a09) or --card-bg (#1c1917) as noted:
@@ -25,7 +28,7 @@
  * All clear WCAG AA (4.5:1 text / 3:1 large text); most clear AAA (7:1).
  */
 
-:root {
+:root[data-theme="dark"] {
   --rust: #e2743f;
   --rust-hover: #f0916a;
   --rust-tint: #3a2015;

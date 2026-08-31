@@ -2,8 +2,8 @@ import { test, expect } from '@playwright/test';
 
 // The three header pickers (ThemePicker, TextSizePicker, SharePicker) each
 // come from a separate npm package; see AGENTS.md's "Theming" section for
-// how ThemePicker's stylesheet swap and app.html's anti-FOUC bootstrap stay
-// in step.
+// how ThemePicker's attribute-based, multi-stylesheet setup and app.html's
+// anti-FOUC bootstrap stay in step.
 
 test.describe('ThemePicker', () => {
   test('defaults to light and offers Light/Dark', async ({ page }) => {
@@ -15,19 +15,28 @@ test.describe('ThemePicker', () => {
     await expect(options).toHaveText(['Light', 'Dark']);
   });
 
-  test('switching to dark swaps the stylesheet, sets data-theme, and persists', async ({
-    page
-  }) => {
+  test('both theme stylesheets are always linked, not swapped', async ({ page }) => {
+    await page.goto('/');
+    const hrefs = await page
+      .locator('link[rel="stylesheet"]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+    expect(hrefs.some((h) => h?.endsWith('/themes/light.css'))).toBe(true);
+    expect(hrefs.some((h) => h?.endsWith('/themes/dark.css'))).toBe(true);
+  });
+
+  test('switching to dark applies instantly (no network wait) and persists', async ({ page }) => {
     await page.goto('/');
     await page.click('.theme-picker-button');
     await page.click('.theme-picker-option:has-text("Dark")');
 
+    // Attribute-based: no waitForFunction on the stylesheet — reading
+    // immediately after the click proves it isn't waiting on a fetch.
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    const link = page.locator('link[data-lily-theme-picker="theme"]');
-    await expect(link).toHaveCount(1); // the app.html bootstrap link is reused, not duplicated
-    await expect(link).toHaveAttribute('href', /themes\/dark\.css$/);
-
-    // The swapped stylesheet actually takes effect, not just the attribute.
+    expect(
+      await page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--page-bg').trim()
+      )
+    ).toBe('#0c0a09');
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(12, 10, 9)');
 
     expect(await page.evaluate(() => localStorage.getItem('schematron-theme'))).toBe('dark');

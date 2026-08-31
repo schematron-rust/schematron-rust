@@ -76,21 +76,37 @@ and ship no CSS.
 ## Theming
 
 `static/assets/style.css` carries no colour of its own — every custom
-property it consumes (`--rust`, `--page-bg`, `--border`, …) is defined by
-whichever of `static/assets/themes/{light,dark}.css` is currently linked.
-`ThemePicker` (in the header) swaps that `<link>`'s `href` and sets
-`data-theme` on `<html>`; `src/app.html` carries a matching inline script
-that resolves and applies the theme *before* any stylesheet loads, using the
-same `storageKey` and the same `data-lily-theme-picker="theme"` selector as
-the component, so `ThemePicker` finds and reuses that link on mount instead
-of creating a second one. Changing the picker's `storageKey` or `name` prop
-in `+layout.svelte` means updating `app.html` to match, or the two silently
-stop agreeing and the page flashes the wrong theme on load.
+property it consumes (`--rust`, `--page-bg`, `--border`, …) comes from
+`static/assets/themes/{light,dark}.css`. This is `ThemePicker`'s documented
+**attribute-based, multi-stylesheet setup** ("Preloading for zero-flicker
+switching" in the package's own `index.md`), not its default single-`<link>`
+swap: `src/app.html` links *both* theme files unconditionally, and each one
+scopes its rules to `:root[data-theme="light"]` / `:root[data-theme="dark"]`
+rather than bare `:root`. Switching is then a `data-theme` attribute change
+on `<html>` — no stylesheet swap, no per-switch network request, no wait.
+`ThemePicker` still additionally manages its own `<link>` under the hood
+(swapping *its* href on every change) — that's redundant once both themes
+are preloaded, and an accepted cost of this recipe, not a bug; don't try to
+suppress it.
 
+`src/app.html` carries an inline script that resolves the theme (storage,
+then `prefers-color-scheme`) and sets `data-theme` on `<html>` *before* any
+stylesheet loads. This one still matters even with both themes preloaded:
+without the attribute set, **neither** theme's `[data-theme="…"]` selector
+matches anything, so no custom properties apply at all — a fully unstyled
+flash, not just the wrong theme. Keep its `storageKey` value
+(`'schematron-theme'`) matching `ThemePicker`'s `storageKey` prop in
+`+layout.svelte`, or the two silently stop agreeing.
+
+- **Adding a theme** (a third slug beyond light/dark) means: a new
+  `static/assets/themes/<slug>.css` scoped to `:root[data-theme="<slug>"]`
+  defining every property below, a new `<link>` for it in `app.html`, the
+  slug added to `app.html`'s bootstrap script's resolution and to
+  `ThemePicker`'s `themes` array in `+layout.svelte`.
 - Both theme files must define the exact same set of custom properties —
   including the structural ones that never change (`--radius`,
-  `--content-max`, `--font-sans`, …), since a theme file is the only
-  stylesheet guaranteed linked at all times.
+  `--content-max`, `--font-sans`, …), since only the active theme file's
+  block matches at any moment; there is no fallback stylesheet.
 - `--rust`/`--rust-hover` are text/border-role colours; `--button-fill`/
   `--button-fill-hover` are a separate pair for filled surfaces with white
   text on top (`.button-primary`, `.skip-link`). dark.css's `--rust` is
