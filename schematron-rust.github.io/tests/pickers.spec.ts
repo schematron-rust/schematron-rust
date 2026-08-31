@@ -56,7 +56,48 @@ test.describe('TextSizePicker', () => {
 });
 
 test.describe('SharePicker', () => {
-  test('offers Email and Copy link, and copying announces success', async ({
+  test('offers Email, LinkedIn, Mastodon, Bluesky, Reddit, and Copy link', async ({ page }) => {
+    await page.goto('/');
+    await page.click('.share-picker-button');
+
+    const targets = page.locator('.share-picker-target');
+    await expect(targets).toHaveCount(5);
+    await expect(targets).toHaveText(['Email', 'LinkedIn', 'Mastodon', 'Bluesky', 'Reddit']);
+    await expect(page.locator('.share-picker-copy')).toHaveText('Copy link');
+  });
+
+  test('every network builder targets the real endpoint with an encoded URL', async ({
+    page
+  }) => {
+    // subject/body/text for the home page's title, "schematron —
+    // Schematron in pure Rust", URL-encoded (%20%E2%80%94%20 is " — ").
+    await page.goto('/');
+    await page.click('.share-picker-button');
+
+    const hrefOf = (label: string) =>
+      page.locator('.share-picker-target', { hasText: label }).getAttribute('href');
+
+    expect(await hrefOf('Email')).toMatch(
+      /^mailto:\?subject=schematron%20%E2%80%94%20Schematron%20in%20pure%20Rust&body=http/
+    );
+    // LinkedIn's share-offsite endpoint ignores a title/summary parameter
+    // (it reads Open Graph tags instead), so only `url` is meaningful here.
+    expect(await hrefOf('LinkedIn')).toBe(
+      'https://www.linkedin.com/sharing/share-offsite/?url=' +
+        encodeURIComponent(await page.evaluate(() => location.href))
+    );
+    // No single Mastodon instance to target — mastodonshare.com asks the
+    // visitor for theirs and remembers it; see the SHARE_TARGETS comment.
+    expect(await hrefOf('Mastodon')).toMatch(/^https:\/\/mastodonshare\.com\/\?text=schematron/);
+    expect(await hrefOf('Mastodon')).toContain(
+      'url=' + encodeURIComponent(await page.evaluate(() => location.href))
+    );
+    // Bluesky's compose intent has one `text` field, not separate url/title.
+    expect(await hrefOf('Bluesky')).toMatch(/^https:\/\/bsky\.app\/intent\/compose\?text=/);
+    expect(await hrefOf('Reddit')).toMatch(/^https:\/\/www\.reddit\.com\/submit\?url=.*&title=/);
+  });
+
+  test('copying announces success and puts the URL on the clipboard', async ({
     page,
     context
   }) => {
@@ -64,13 +105,6 @@ test.describe('SharePicker', () => {
     await page.goto('/');
 
     await page.click('.share-picker-button');
-    const email = page.locator('.share-picker-target');
-    await expect(email).toHaveText('Email');
-    await expect(email).toHaveAttribute(
-      'href',
-      /^mailto:\?subject=schematron%20%E2%80%94%20Schematron%20in%20pure%20Rust&body=/
-    );
-
     await page.click('.share-picker-copy');
     await expect(page.locator('.share-picker-status')).toHaveText('Link copied');
     const clipboard = await page.evaluate(() => navigator.clipboard.readText());
@@ -86,9 +120,8 @@ test.describe('SharePicker', () => {
     await page.goto('/reports/');
     await expect(page).toHaveTitle('Reports — schematron');
     await page.click('.share-picker-button');
-    await expect(page.locator('.share-picker-target')).toHaveAttribute(
-      'href',
-      /^mailto:\?subject=Reports/
-    );
+    await expect(
+      page.locator('.share-picker-target', { hasText: 'Email' })
+    ).toHaveAttribute('href', /^mailto:\?subject=Reports/);
   });
 });

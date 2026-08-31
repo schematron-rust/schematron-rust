@@ -8,12 +8,50 @@
 
   let { children } = $props();
 
+  // Each href builder targets that network's real share/compose endpoint —
+  // no tracking pixel, no first-party analytics call. Two networks ignore
+  // parameters this list would otherwise pass:
+  // - LinkedIn's share-offsite endpoint only ever accepts `url`; a `title`
+  //   or `summary` parameter is silently ignored; what LinkedIn shows
+  //   instead comes from the target page's own Open Graph tags (which this
+  //   site does not yet set).
+  // - Bluesky's compose intent has one `text` field, not separate
+  //   title/url fields, so the URL is folded into it.
+  // Mastodon has no single share endpoint — it is federated, so there is
+  // no one instance to redirect to. mastodonshare.com exists specifically
+  // to bridge that: it asks the visitor for their home instance once,
+  // remembers it in a cookie, and redirects there from then on. It is a
+  // third-party service, not run by Mastodon or this project.
   const SHARE_TARGETS = [
     {
       id: 'email',
       label: 'Email',
       href: (url: string, title: string) =>
         `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(url)}`
+    },
+    {
+      id: 'linkedin',
+      label: 'LinkedIn',
+      href: (url: string) =>
+        `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`
+    },
+    {
+      id: 'mastodon',
+      label: 'Mastodon',
+      href: (url: string, title: string) =>
+        `https://mastodonshare.com/?text=${encodeURIComponent(title)}&url=${encodeURIComponent(url)}`
+    },
+    {
+      id: 'bluesky',
+      label: 'Bluesky',
+      href: (url: string, title: string) =>
+        `https://bsky.app/intent/compose?text=${encodeURIComponent(`${title}\n${url}`)}`
+    },
+    {
+      id: 'reddit',
+      label: 'Reddit',
+      href: (url: string, title: string) =>
+        `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`
     }
   ];
 
