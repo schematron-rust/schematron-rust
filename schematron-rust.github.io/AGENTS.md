@@ -10,6 +10,11 @@ implementation. See [index.md](index.md) for the human-oriented overview.
 - **Deploys to**: <https://schematron-rust.github.io/>
 - **License**: MIT or Apache-2.0 or GPL-2.0-only or GPL-3.0-only
 - **Contact**: Joel Parker Henderson (joel@joelparkerhenderson.com)
+- **Node**: 26+ (`package.json`'s `engines`, `.tool-versions`, and
+  `.github/workflows/deploy.yml`'s `node-version` all say so — keep the
+  three in step). `@types/node` is pinned to match (`^26.2.0`); an older
+  Node satisfies neither the type declarations nor `pnpm`, which uses a
+  regex syntax unsupported before Node 20.
 
 ## What this is
 
