@@ -28,18 +28,19 @@
 #                       changes under the site directory, or to overwrite
 #                       history that didn't come from a split of this
 #                       monorepo (without FORCE=1).
-#   make github-pages  the plain `git subtree push` one-liner, with none of
-#                       the above. It re-derives the split on every run
-#                       instead of reusing one, which is slow on a history
-#                       this repo's size and only gets slower as it grows.
-#                       Kept for parity with generic git-subtree docs that
-#                       describe exactly this command; `make publish` is the
-#                       one to reach for otherwise.
+#   make github-pages  delegates to bin/make-github-pages, the plain
+#                       `git subtree push` one-liner, with none of the
+#                       above. It re-derives the split on every run instead
+#                       of reusing one, which is slow on a history this
+#                       repo's size and only gets slower as it grows. Kept
+#                       for parity with generic git-subtree docs that
+#                       describe exactly this command; `make publish` is
+#                       the one to reach for otherwise.
 
 FORCE_FLAG   := $(if $(FORCE),--force,)
-PREFIX       := schematron-rust.github.io
+NAME         := schematron-rust
+PREFIX       := $(NAME).github.io
 REMOTE       := pages
-PAGES_REMOTE := github-pages
 URL          := git@github.com:schematron-rust/schematron-rust.github.io.git
 SPLIT        := _split_site
 
@@ -96,8 +97,4 @@ publish:
 		fi
 
 github-pages:
-	@if ! git remote get-url '$(PAGES_REMOTE)' >/dev/null 2>&1; then \
-		echo "Adding remote '$(PAGES_REMOTE)' -> $(URL)"; \
-		git remote add '$(PAGES_REMOTE)' '$(URL)'; \
-	fi
-	git subtree push --prefix=$(PREFIX) $(PAGES_REMOTE) main
+	bin/make-github-pages '$(NAME)' '$(URL)'
