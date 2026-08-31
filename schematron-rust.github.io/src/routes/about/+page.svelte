@@ -90,9 +90,11 @@ cargo +${MSRV} test --all-features`}</code></pre>
       <a href="https://lilydesignsystem.com/">Lily Design System</a> — headless
       Svelte components that render semantic HTML and correct ARIA, carrying one
       stable class hook each and shipping no CSS at all. Every visual decision
-      on this site therefore lives in a single stylesheet,
-      <code>static/assets/style.css</code>, which targets those hooks. Replace
-      that one file and the markup is unchanged.
+      on this site therefore lives in <code>static/assets/style.css</code>,
+      which targets those hooks, plus one colour value per theme in
+      <code>static/assets/themes/</code> — light and dark, swapped live by
+      Lily's <code>ThemePicker</code>. Replace those files and the markup is
+      unchanged.
     </p>
   </InformationCallout>
 

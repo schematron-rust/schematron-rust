@@ -1,0 +1,54 @@
+/* schematron-rust site — light theme
+ *
+ * One of the theme stylesheets `ThemePicker` swaps via a managed <link>
+ * (see src/app.html and src/routes/+layout.svelte). Every custom property
+ * consumed anywhere in static/assets/style.css must be defined here AND in
+ * dark.css — style.css itself carries no colour, so whichever theme file is
+ * currently linked *is* the theme. This file is the values that shipped
+ * before dark mode existed; dark.css is a parallel, independently
+ * WCAG-contrast-checked palette, not a mechanical inversion of this one.
+ */
+
+:root {
+  --rust: #8b3a1f;
+  --rust-hover: #6f2d17;
+  --rust-tint: #fbf1ec;
+  --ember: #c2410c;
+  --xml-blue: #1e6091;
+  --danger: #b91c1c;
+  --warning: #b45309;
+  --success: #15803d;
+
+  /* Filled surfaces with white text on top (button-primary) need their own
+   * pair, decoupled from --rust/--rust-hover: those are also used as plain
+   * text/border colour, and dark.css's brightened text-role rust would fail
+   * white-on-it contrast if reused as a fill. Same values as --rust/
+   * --rust-hover here, since light mode has no such conflict. */
+  --button-fill: #8b3a1f;
+  --button-fill-hover: #6f2d17;
+
+  --page-bg: #fbfaf8;
+  --card-bg: #ffffff;
+  --text: #1c1917;
+  --text-muted: #57534e;
+  --text-subtle: #78716c;
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
+
+  --success-bg: #f0fdf4;
+  --warning-bg: #fffbeb;
+  --danger-bg: #fef2f2;
+  --info-bg: #eff6fb;
+  --row-hover-bg: #fafaf9;
+
+  --shadow: 0 1px 3px 0 rgba(28, 25, 23, 0.08), 0 1px 2px 0 rgba(28, 25, 23, 0.04);
+  --shadow-lg: 0 10px 25px -5px rgba(28, 25, 23, 0.10), 0 8px 10px -6px rgba(28, 25, 23, 0.04);
+
+  --radius: 0.5rem;
+  --radius-lg: 0.75rem;
+  --content-max: 72rem;
+  --prose-max: 44rem;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}

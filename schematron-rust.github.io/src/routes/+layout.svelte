@@ -1,9 +1,21 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { SkipLink } from 'lily-design-system-svelte-headless';
-  import { REPO } from '$lib/site';
+  import { ThemePicker } from 'lily-design-system-svelte-theme-picker';
+  import { TextSizePicker } from 'lily-design-system-svelte-text-size-picker';
+  import { SharePicker } from 'lily-design-system-svelte-share-picker';
+  import { CRATE, REPO } from '$lib/site';
 
   let { children } = $props();
+
+  const SHARE_TARGETS = [
+    {
+      id: 'email',
+      label: 'Email',
+      href: (url: string, title: string) =>
+        `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(url)}`
+    }
+  ];
 
   type NavLink = { href: string; label: string };
   const navLinks: NavLink[] = [
@@ -41,6 +53,28 @@
       {/each}
       <a href={REPO}>GitHub</a>
     </nav>
+    <div class="site-controls">
+      <ThemePicker
+        label="Theme"
+        themesUrl="/assets/themes/"
+        themes={['light', 'dark']}
+        storageKey="schematron-theme"
+        detectFromSystem
+      />
+      <TextSizePicker
+        label="Text size"
+        sizes={['small', 'medium', 'large', 'x-large']}
+        storageKey="schematron-text-size"
+      />
+      <SharePicker
+        label="Share this page"
+        title={CRATE}
+        targets={SHARE_TARGETS}
+        copyLabel="Copy link"
+        copiedLabel="Link copied"
+        copyFailedLabel="Could not copy link"
+      />
+    </div>
   </div>
 </header>
 

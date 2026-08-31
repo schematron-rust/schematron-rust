@@ -4,6 +4,30 @@
     <meta charset="utf-8" />
     <link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/assets/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      // Resolve and apply the theme before any stylesheet loads, so there
+      // is no flash of the wrong theme. This duplicates exactly what
+      // ThemePicker's own applyTheme() does (same storageKey, same
+      // data-lily-theme-picker selector) so that when the component mounts
+      // client-side, getManagedLink() finds and reuses this <link> instead
+      // of creating a second one. Wrapped in try/catch: a private window or
+      // disabled storage must still render a themed page, just always
+      // light.
+      (function () {
+        var theme = 'light';
+        try {
+          theme =
+            localStorage.getItem('schematron-theme') ||
+            (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        } catch (e) {}
+        document.documentElement.setAttribute('data-theme', theme);
+        document.write(
+          '<link rel="stylesheet" href="%sveltekit.assets%/assets/themes/' +
+            theme +
+            '.css" data-lily-theme-picker="theme">'
+        );
+      })();
+    </script>
     <link rel="stylesheet" href="%sveltekit.assets%/assets/style.css" />
     %sveltekit.head%
   </head>

@@ -1,0 +1,68 @@
+/* schematron-rust site — dark theme
+ *
+ * Paired with light.css; see that file's header comment for how ThemePicker
+ * swaps between the two. Every value below was chosen and WCAG-contrast
+ * checked for a dark ground, not derived by inverting light.css: an accent
+ * dark enough to read on white (light.css's --rust, #8b3a1f) is close to
+ * unreadable as text on a near-black page, so the accent family is
+ * brightened here, and the two "text-on-tint" backgrounds (--*-bg) are dark,
+ * desaturated washes rather than the pale near-white tints light mode uses.
+ *
+ * Contrast ratios (WCAG 2.2), computed against this file's own --page-bg
+ * (#0c0a09) or --card-bg (#1c1917) as noted:
+ *   --text on --page-bg              18.11:1
+ *   --text-muted on --page-bg         7.83:1
+ *   --text-subtle on --page-bg        5.36:1
+ *   --rust on --page-bg               6.40:1   (links, tag/heading text)
+ *   --rust on --card-bg               5.67:1
+ *   --rust-hover on --page-bg         8.43:1
+ *   white on --button-fill            4.65:1   (button-primary text)
+ *   white on --button-fill-hover      6.13:1
+ *   --ember on --page-bg              7.70:1   (hero gradient-text stop)
+ *   --success on --success-bg         8.73:1
+ *   --warning on --warning-bg         9.49:1
+ *   --danger on --danger-bg           6.21:1
+ * All clear WCAG AA (4.5:1 text / 3:1 large text); most clear AAA (7:1).
+ */
+
+:root {
+  --rust: #e2743f;
+  --rust-hover: #f0916a;
+  --rust-tint: #3a2015;
+  --ember: #f0863c;
+  --xml-blue: #5aa3d8;
+  --danger: #f87171;
+  --warning: #fbbf24;
+  --success: #4ade80;
+
+  /* See light.css's comment: button-primary needs a fill dark/saturated
+   * enough for white text at ≥4.5:1, which the brighter text-role --rust
+   * above is not. Darkens on hover, matching light mode's convention. */
+  --button-fill: #c2521f;
+  --button-fill-hover: #a8410f;
+
+  --page-bg: #0c0a09;
+  --card-bg: #1c1917;
+  --text: #f5f5f4;
+  --text-muted: #a8a29e;
+  --text-subtle: #8a8480;
+  --border: #33302e;
+  --border-strong: #44403c;
+
+  --success-bg: #0f2b1a;
+  --warning-bg: #2e2005;
+  --danger-bg: #33100f;
+  --info-bg: #10202c;
+  --row-hover-bg: #252220;
+
+  --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+
+  --radius: 0.5rem;
+  --radius-lg: 0.75rem;
+  --content-max: 72rem;
+  --prose-max: 44rem;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}

@@ -38,16 +38,22 @@ in `src/lib/site.ts` so the link shape stays in one place.
 
 ## Design system
 
-Components come from `lily-design-system-svelte-headless` (the Lily Design
-System). Lily components are **headless**: they render semantic HTML with
-correct ARIA and one stable kebab-case class hook each, and ship no CSS.
+Components come from four Lily Design System packages: the general catalog,
+`lily-design-system-svelte-headless`, plus three standalone widgets each
+published separately — `lily-design-system-svelte-theme-picker`,
+`-text-size-picker`, and `-share-picker` (all live in the header, see
+`src/routes/+layout.svelte`). Lily components are **headless**: they render
+semantic HTML with correct ARIA and one stable kebab-case class hook each,
+and ship no CSS.
 
 - Import components as named exports from the package root, e.g.
-  `import { Card } from 'lily-design-system-svelte-headless';` — the package's
-  `exports` map only exposes `.`, so a deep path like
+  `import { Card } from 'lily-design-system-svelte-headless';` — every Lily
+  package's `exports` map only exposes `.`, so a deep path like
   `.../components/Card/Card.svelte` does not resolve. One `import { A, B, ... }`
   line per file is the house style; keep it together rather than one import
-  per component.
+  per component. The three picker packages are separate npm packages, so they
+  need their own import line each — they cannot be folded into the headless
+  catalog's import.
 - **All** styling lives in `static/assets/style.css`. There are no `<style>`
   blocks in components, and there should not be.
 - Adding a Lily component to a page means adding a rule for its class hook to
@@ -57,6 +63,39 @@ correct ARIA and one stable kebab-case class hook each, and ship no CSS.
   stylesheet is a Lily hook.
 - Prefer a Lily component over hand-written markup when one fits — that is what
   keeps the accessibility contract honest.
+
+## Theming
+
+`static/assets/style.css` carries no colour of its own — every custom
+property it consumes (`--rust`, `--page-bg`, `--border`, …) is defined by
+whichever of `static/assets/themes/{light,dark}.css` is currently linked.
+`ThemePicker` (in the header) swaps that `<link>`'s `href` and sets
+`data-theme` on `<html>`; `src/app.html` carries a matching inline script
+that resolves and applies the theme *before* any stylesheet loads, using the
+same `storageKey` and the same `data-lily-theme-picker="theme"` selector as
+the component, so `ThemePicker` finds and reuses that link on mount instead
+of creating a second one. Changing the picker's `storageKey` or `name` prop
+in `+layout.svelte` means updating `app.html` to match, or the two silently
+stop agreeing and the page flashes the wrong theme on load.
+
+- Both theme files must define the exact same set of custom properties —
+  including the structural ones that never change (`--radius`,
+  `--content-max`, `--font-sans`, …), since a theme file is the only
+  stylesheet guaranteed linked at all times.
+- `--rust`/`--rust-hover` are text/border-role colours; `--button-fill`/
+  `--button-fill-hover` are a separate pair for filled surfaces with white
+  text on top (`.button-primary`, `.skip-link`). dark.css's `--rust` is
+  brightened for legibility as text on a dark page and would fail contrast
+  as a fill behind white text, which is why the two pairs don't share values
+  there. Don't collapse them back into one without rechecking contrast.
+- New colour used anywhere in `style.css` must be a custom property defined
+  in both theme files, never a literal hex value — with one deliberate
+  exception: `pre` stays a fixed dark "terminal" block in both themes (see
+  the comment on that rule).
+- Text size (`small`/`medium`/`large`/`x-large`, via `TextSizePicker`) works
+  by scaling `html[data-text-size="…"] { font-size: … }`, which rescales
+  everything in the site's `rem`-based CSS. No anti-FOUC handling needed:
+  the default (`medium`) renders identically to no attribute at all.
 
 ## Working rules
 
