@@ -20,6 +20,7 @@ A change to how the project accepts money belongs here.
 | [Agent skills](agent-skills/index.md) | Implemented — `schematron-skill`, `schematron-rust-maintainer-skill` |
 | [llms.json and llms.txt](llms-json-and-llms-txt/index.md) | Implemented — at the repository root and the website root |
 | [Node current version](node-current-version/index.md) | Implemented — 26, in `schematron-rust.github.io/` |
+| [Monorepo GitHub Pages](monorepo-github-pages/index.md) | Implemented — `make publish` (root `Makefile`), sibling repo `schematron-rust/schematron-rust.github.io` |
 
 Each document lives in its own directory as `index.md`, and every directory
 under `spec/` must be linked from this file — the same convention
