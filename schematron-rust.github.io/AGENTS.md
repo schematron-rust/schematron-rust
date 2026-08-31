@@ -22,6 +22,27 @@ A SvelteKit project (`@sveltejs/adapter-static`) that prerenders every route to
 static HTML, deployed by GitHub Actions to GitHub Pages. It ships no Rust and
 implements nothing: the crate is the product, and this site explains it.
 
+## This directory has a read-only twin
+
+This exact directory is also published as its own top-level repository,
+`schematron-rust/schematron-rust.github.io` — GitHub Pages serves an
+organisation site only from a repository of that exact name, so it has to
+exist. **That repository is derived output, never a second source.** See
+[`spec/monorepo-github-pages/`](../spec/monorepo-github-pages/index.md).
+
+- **Edit here**, in the monorepo, at `schematron-rust/schematron-rust.github.io/`.
+- **Never edit the sibling repo directly** — commits made there are not
+  merged back and are silently discarded the next time this directory is
+  published, with no warning. If you find yourself in a checkout whose
+  parent directory is *not* the `schematron-rust` monorepo, stop and check
+  which repository you are actually in before changing anything.
+- **Publishing** means running `make publish` from the monorepo root (see
+  the root `Makefile`) — `git subtree split` replays this directory's
+  committed history onto a branch and pushes it to the sibling repo, whose
+  own `.github/workflows/deploy.yml` then builds and deploys it. This is a
+  manual step; nothing publishes the sibling automatically on every commit
+  here.
+
 ## The single most important rule
 
 **The crate's `spec/` directory is normative; this site is not.**
@@ -177,8 +198,18 @@ warning.
 
 ## Deployment
 
-`.github/workflows/deploy.yml` builds on every push to `main` and publishes
-`build/` to GitHub Pages. There is no other deploy path, and no manual step.
+Two steps, not one — see "This directory has a read-only twin" above for
+the full picture:
+
+1. **Publish** (manual): `make publish` from the monorepo root pushes this
+   directory's committed history to the sibling `schematron-rust.github.io`
+   repository.
+2. **Deploy** (automatic): that repository's own
+   `.github/workflows/deploy.yml` builds on every push to *its* `main` and
+   publishes `build/` to GitHub Pages.
+
+A commit landing in the monorepo does not, by itself, deploy anything —
+step 1 has to run first.
 
 Because this is an organisation Pages site (`schematron-rust.github.io`), the
 base path is `/`. Do not add a `paths.base` to `svelte.config.js` — every
