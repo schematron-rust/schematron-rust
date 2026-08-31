@@ -1,0 +1,33 @@
+#!/bin/sh
+# bin/make-github-pages — publish <name>.github.io/ to the github-pages
+# remote via a plain `git subtree push`. Called by `make github-pages` in
+# the root Makefile, which supplies both arguments; not meant to be run with
+# different ones against this repository.
+#
+# This is the generic, undefended one-liner — reused as-is from generic
+# git-subtree documentation, not written for this repo specifically. It has
+# none of `make publish`'s checks (current branch, uncommitted changes,
+# foreign history) and re-derives the subtree split from scratch on every
+# run rather than reusing one. Reach for `make publish` day to day; this
+# exists for parity with that documentation. See the Makefile's header
+# comment for the full comparison.
+#
+# Usage: bin/make-github-pages <name> <url>
+#   <name>  the site's name, without ".github.io" — the published directory
+#           is "<name>.github.io/", matching this repo's own convention of
+#           naming the crate and the site after the same project name.
+#   <url>   the Pages repository's URL, used only to create the
+#           "github-pages" remote if it does not already exist.
+
+set -eu
+
+name="${1:?usage: bin/make-github-pages <name> <url>}"
+url="${2:?usage: bin/make-github-pages <name> <url>}"
+prefix="${name}.github.io"
+
+if ! git remote get-url github-pages >/dev/null 2>&1; then
+  echo "Adding remote 'github-pages' -> $url"
+  git remote add github-pages "$url"
+fi
+
+git subtree push --prefix="$prefix" github-pages main
