@@ -10,12 +10,38 @@ implementation. See [index.md](index.md) for the human-oriented overview.
 - **Deploys to**: <https://schematron-rust.github.io/>
 - **License**: MIT or Apache-2.0 or GPL-2.0-only or GPL-3.0-only
 - **Contact**: Joel Parker Henderson (joel@joelparkerhenderson.com)
+- **Node**: 26+ (`package.json`'s `engines`, `.tool-versions`, and
+  `.github/workflows/deploy.yml`'s `node-version` all say so — keep the
+  three in step). `@types/node` is pinned to match (`^26.2.0`); an older
+  Node satisfies neither the type declarations nor `pnpm`, which uses a
+  regex syntax unsupported before Node 20.
 
 ## What this is
 
 A SvelteKit project (`@sveltejs/adapter-static`) that prerenders every route to
 static HTML, deployed by GitHub Actions to GitHub Pages. It ships no Rust and
 implements nothing: the crate is the product, and this site explains it.
+
+## This directory has a read-only twin
+
+This exact directory is also published as its own top-level repository,
+`schematron-rust/schematron-rust.github.io` — GitHub Pages serves an
+organisation site only from a repository of that exact name, so it has to
+exist. **That repository is derived output, never a second source.** See
+[`spec/monorepo-github-pages/`](../spec/monorepo-github-pages/index.md).
+
+- **Edit here**, in the monorepo, at `schematron-rust/schematron-rust.github.io/`.
+- **Never edit the sibling repo directly** — commits made there are not
+  merged back and are silently discarded the next time this directory is
+  published, with no warning. If you find yourself in a checkout whose
+  parent directory is *not* the `schematron-rust` monorepo, stop and check
+  which repository you are actually in before changing anything.
+- **Publishing** means running `make publish` from the monorepo root (see
+  the root `Makefile`) — `git subtree split` replays this directory's
+  committed history onto a branch and pushes it to the sibling repo, whose
+  own `.github/workflows/deploy.yml` then builds and deploys it. This is a
+  manual step; nothing publishes the sibling automatically on every commit
+  here.
 
 ## The single most important rule
 
@@ -38,12 +64,22 @@ in `src/lib/site.ts` so the link shape stays in one place.
 
 ## Design system
 
-Components come from `lily-design-system-svelte-headless` (the Lily Design
-System). Lily components are **headless**: they render semantic HTML with
-correct ARIA and one stable kebab-case class hook each, and ship no CSS.
+Components come from four Lily Design System packages: the general catalog,
+`lily-design-system-svelte-headless`, plus three standalone widgets each
+published separately — `lily-design-system-svelte-theme-picker`,
+`-text-size-picker`, and `-share-picker` (all live in the header, see
+`src/routes/+layout.svelte`). Lily components are **headless**: they render
+semantic HTML with correct ARIA and one stable kebab-case class hook each,
+and ship no CSS.
 
-- Import a component by its full path, e.g.
-  `import Card from 'lily-design-system-svelte-headless/components/Card/Card.svelte';`
+- Import components as named exports from the package root, e.g.
+  `import { Card } from 'lily-design-system-svelte-headless';` — every Lily
+  package's `exports` map only exposes `.`, so a deep path like
+  `.../components/Card/Card.svelte` does not resolve. One `import { A, B, ... }`
+  line per file is the house style; keep it together rather than one import
+  per component. The three picker packages are separate npm packages, so they
+  need their own import line each — they cannot be folded into the headless
+  catalog's import.
 - **All** styling lives in `static/assets/style.css`. There are no `<style>`
   blocks in components, and there should not be.
 - Adding a Lily component to a page means adding a rule for its class hook to
@@ -53,19 +89,88 @@ correct ARIA and one stable kebab-case class hook each, and ship no CSS.
   stylesheet is a Lily hook.
 - Prefer a Lily component over hand-written markup when one fits — that is what
   keeps the accessibility contract honest.
+- `SharePicker`'s `targets` array (`+layout.svelte`) is real share/compose
+  endpoints, not a generic template — each network's URL contract differs
+  (LinkedIn's `share-offsite` ignores a title parameter entirely and reads
+  Open Graph tags instead, which this site does not yet set; Bluesky's
+  compose intent has one `text` field, not separate url/title; Mastodon is
+  federated and has no single endpoint, hence the third-party
+  `mastodonshare.com` redirector). Adding a network means reading that
+  network's actual share-intent contract, not copying the shape of an
+  existing entry.
+
+## Theming
+
+`static/assets/style.css` carries no colour of its own — every custom
+property it consumes (`--rust`, `--page-bg`, `--border`, …) comes from
+`static/assets/themes/{light,dark}.css`. This is `ThemePicker`'s documented
+**attribute-based, multi-stylesheet setup** ("Preloading for zero-flicker
+switching" in the package's own `index.md`), not its default single-`<link>`
+swap: `src/app.html` links *both* theme files unconditionally, and each one
+scopes its rules to `:root[data-theme="light"]` / `:root[data-theme="dark"]`
+rather than bare `:root`. Switching is then a `data-theme` attribute change
+on `<html>` — no stylesheet swap, no per-switch network request, no wait.
+`ThemePicker` still additionally manages its own `<link>` under the hood
+(swapping *its* href on every change) — that's redundant once both themes
+are preloaded, and an accepted cost of this recipe, not a bug; don't try to
+suppress it.
+
+`src/app.html` carries an inline script that resolves the theme (storage,
+then `prefers-color-scheme`) and sets `data-theme` on `<html>` *before* any
+stylesheet loads. This one still matters even with both themes preloaded:
+without the attribute set, **neither** theme's `[data-theme="…"]` selector
+matches anything, so no custom properties apply at all — a fully unstyled
+flash, not just the wrong theme. Keep its `storageKey` value
+(`'schematron-theme'`) matching `ThemePicker`'s `storageKey` prop in
+`+layout.svelte`, or the two silently stop agreeing.
+
+- **Adding a theme** (a third slug beyond light/dark) means: a new
+  `static/assets/themes/<slug>.css` scoped to `:root[data-theme="<slug>"]`
+  defining every property below, a new `<link>` for it in `app.html`, the
+  slug added to `app.html`'s bootstrap script's resolution and to
+  `ThemePicker`'s `themes` array in `+layout.svelte`.
+- Both theme files must define the exact same set of custom properties —
+  including the structural ones that never change (`--radius`,
+  `--content-max`, `--font-sans`, …), since only the active theme file's
+  block matches at any moment; there is no fallback stylesheet.
+- `--rust`/`--rust-hover` are text/border-role colours; `--button-fill`/
+  `--button-fill-hover` are a separate pair for filled surfaces with white
+  text on top (`.button-primary`, `.skip-link`). dark.css's `--rust` is
+  brightened for legibility as text on a dark page and would fail contrast
+  as a fill behind white text, which is why the two pairs don't share values
+  there. Don't collapse them back into one without rechecking contrast.
+- New colour used anywhere in `style.css` must be a custom property defined
+  in both theme files, never a literal hex value — with one deliberate
+  exception: `pre` stays a fixed dark "terminal" block in both themes (see
+  the comment on that rule).
+- Text size (`small`/`medium`/`large`/`x-large`, via `TextSizePicker`) works
+  by scaling `html[data-text-size="…"] { font-size: … }`, which rescales
+  everything in the site's `rem`-based CSS. No anti-FOUC handling needed:
+  the default (`medium`) renders identically to no attribute at all.
 
 ## Working rules
 
 - Every route is prerendered. `src/routes/+layout.ts` sets
   `prerender = true` and `trailingSlash = 'always'`; internal links must
   therefore end in `/`.
-- Adding a route means three edits: the `+page.svelte`, the `navLinks` array in
-  `src/routes/+layout.svelte`, and a row in `static/sitemap.xml`. Add it to the
-  `PAGES` array in `tests/site.spec.ts` too.
+- Adding a route means four edits: the `+page.svelte`, a `+page.ts` beside it
+  (below), the `navLinks` array in `src/routes/+layout.svelte`, and a row in
+  `static/sitemap.xml`. Add it to the `PAGES` array in `tests/site.spec.ts`
+  too.
 - Exactly one `<h1>` per page, inside `.page-header` (or `.hero` on the home
   page). Section headings use Lily's `SectionHeading`.
-- Every page needs a `<svelte:head>` with a `<title>` containing "schematron"
-  and a `<meta name="description">`. The tests check both.
+- **The page title is set once, in `+page.ts`.** Every route's `+page.ts`
+  exports a `load` returning `{ title: 'X — schematron' }` — see
+  `src/app.d.ts`'s `App.PageData`, which makes `title` a type error to
+  forget. `+page.svelte`'s `<svelte:head>` reads it back with
+  `<title>{data.title}</title>` (needs `let { data }: { data: PageData } =
+  $props();`, imported from `./$types`) rather than repeating the string, and
+  `+layout.svelte` reads `page.data.title` to pass to `SharePicker` — so a
+  shared page's mailto subject and native-share-sheet title name the actual
+  page, not a fixed site name. Don't hardcode a `<title>` string directly in
+  a `+page.svelte` again; that's the drift this convention exists to
+  prevent. `<meta name="description">` stays page-local in `+page.svelte`,
+  not part of this convention.
 - Code samples go in a Lily `CodeBlock` wrapping a `<pre><code>`. Put the sample
   in a Svelte expression holding a template literal, so Svelte does not read
   `{` as an expression and so `<` and `>` need no escaping:
@@ -93,8 +198,18 @@ warning.
 
 ## Deployment
 
-`.github/workflows/deploy.yml` builds on every push to `main` and publishes
-`build/` to GitHub Pages. There is no other deploy path, and no manual step.
+Two steps, not one — see "This directory has a read-only twin" above for
+the full picture:
+
+1. **Publish** (manual): `make publish` from the monorepo root pushes this
+   directory's committed history to the sibling `schematron-rust.github.io`
+   repository.
+2. **Deploy** (automatic): that repository's own
+   `.github/workflows/deploy.yml` builds on every push to *its* `main` and
+   publishes `build/` to GitHub Pages.
+
+A commit landing in the monorepo does not, by itself, deploy anything —
+step 1 has to run first.
 
 Because this is an organisation Pages site (`schematron-rust.github.io`), the
 base path is `/`. Do not add a `paths.base` to `svelte.config.js` — every

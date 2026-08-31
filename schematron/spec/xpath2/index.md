@@ -9,7 +9,7 @@ crate implements, and, more importantly, **where it still behaves like XPath
 Read the divergences section before relying on this. It is short and it
 matters.
 
-## Status: phases 1 and 2a
+## Status: phases 1 through 4
 
 Schematron schemas in the wild declare `xslt2` far more often than they use
 the parts of XPath 2.0 that are genuinely incompatible with 1.0. The
@@ -40,8 +40,11 @@ configurable implicit timezone.
 **Phase 3** adds the **type operators**: `instance of`, `cast as`,
 `castable as` and `treat as`, with the sequence types they take.
 
-**Phase 4** — the numeric type hierarchy, and the remaining type strictness —
-is roadmap item 1 in [roadmap/](../roadmap/index.md).
+**Phase 4** adds the **numeric type hierarchy**: `instance of` and its
+companions now recognize `xs:integer`, `xs:decimal`, and `xs:float` as well
+as `xs:double`, tracked for numeric literals and explicit casts. See
+"Numbers, and what `instance of` reports" below for exactly what is, and
+deliberately is not, tracked.
 
 ### The sequence type, and why XPath 1.0 is unaffected
 
@@ -212,10 +215,10 @@ validation run that dies on one.
 | `item()` | Anything |
 | `node()`, `element()`, `attribute()`, `text()`, `comment()`, `processing-instruction()`, `document-node()` | A node of that kind |
 | `element(name)`, `attribute(name)` | A node of that kind with that name |
-| `xs:string`, `xs:boolean`, `xs:double` | An atomic value |
+| `xs:string`, `xs:boolean` | An atomic value |
 | `xs:date`, `xs:dateTime`, `xs:time` | A date or time |
 | `xs:dayTimeDuration`, `xs:yearMonthDuration` | A duration |
-| `xs:integer`, `xs:decimal` | See the note on numbers below |
+| `xs:integer`, `xs:decimal`, `xs:float`, `xs:double` | See the note on numbers below |
 | `xs:anyAtomicType` | Any atomic value; no node |
 | `empty-sequence()` | Only the empty sequence |
 
@@ -270,20 +273,54 @@ An empty operand is `false` for `castable as`, and the empty sequence for
 ### Numbers, and what `instance of` reports
 
 The crate holds every number as an IEEE 754 double, as XPath 1.0 requires and
-as the whole engine is built on. It does **not** track whether a number
-arrived as an integer, a decimal, or a double.
+as the whole engine's arithmetic is built on — that never changes. What
+*does* change, since phase 4, is that a number also carries a static
+`xs:integer`/`xs:decimal`/`xs:float`/`xs:double` tag, tracked wherever XPath
+2.0 defines it unambiguously and lexically: a numeric literal as written, and
+the result of an explicit `cast as`/`castable as`.
 
-So `instance of` reports `xs:double` for every number:
+A literal's type is lexical, not by value: `1` is `xs:integer` because it has
+no decimal point; `1.0` is `xs:decimal` even though it equals the integer
+`1`. `xs:integer` derives from `xs:decimal` by restriction in XML Schema, so
+an integer also matches `instance of xs:decimal`; `xs:float` and `xs:double`
+are separate primitive types, related to neither `xs:decimal` nor each
+other, so each matches only itself:
 
-| Expression | Result | XPath 2.0 |
-|---|---|---|
-| `1 instance of xs:double` | true | true |
-| `1 instance of xs:integer` | **false** | true |
-| `'1' castable as xs:integer` | true | true |
+| Expression | Result |
+|---|---|
+| `1 instance of xs:integer` | true |
+| `1 instance of xs:decimal` | true — integer derives from decimal |
+| `1 instance of xs:double` | false |
+| `1.0 instance of xs:integer` | false — a decimal literal, lexically |
+| `1.5 instance of xs:decimal` | true |
+| `'1.5' cast as xs:float instance of xs:float` | true |
+| `'1' castable as xs:integer` | true |
 
-Casting and `castable as` are unaffected, because they read the lexical form
-rather than a tracked type — and lexical is the right reading for the untyped
-values a schema actually inspects. The numeric type hierarchy is phase 4.
+That `1 instance of xs:double` row corrects a documentation mistake this
+section carried before phase 4: it used to claim real XPath 2.0 also answers
+`true` there, on the reasoning that every number here was `xs:double` and
+that happened to be a harmless-looking default. It isn't — `1` is an
+`IntegerLiteral`, typed `xs:integer`, which does not derive from `xs:double`
+— so real XPath 2.0 says `false`, and the crate now agrees.
+
+**What stays deliberately untracked.** Arithmetic (`+ - * div mod`), every
+function in the library, and `for`'s `to` ranges always produce `xs:double`,
+never the operand's own type — this crate does not implement XPath 2.0's
+full numeric type promotion (where, say, `1 + 1` would stay `xs:integer`).
+Threading a type lattice through every arithmetic operation and every
+numeric function is the risk [roadmap/](../roadmap/index.md) weighs phase 4
+against; tracking only literals and casts closes the concrete gap above
+without taking it on:
+
+| Expression | Result |
+|---|---|
+| `(1 + 1) instance of xs:integer` | false — arithmetic always widens to double |
+| `(1 + 1) instance of xs:double` | true |
+| `count((1, 2)) instance of xs:double` | true |
+
+Casting and `castable as` themselves are unaffected by any of this, because
+they still read the lexical form rather than a tracked type — lexical is the
+right reading for the untyped values a schema actually inspects.
 
 ## Node comparisons
 
@@ -435,9 +472,8 @@ own tests for date rules are written, and how a caller should write theirs.
 Every one of these is a **hard error naming the construct**, at schema-compile
 time. None of them silently does something else.
 
-| Construct | Why it needs phase 4 |
+| Construct | Why not |
 |---|---|
-| The numeric hierarchy — `xs:integer`, `xs:decimal`, `xs:float` as *tracked* types | Every number here is a double; see above |
 | Schema-aware types — `element(name, type)`, `schema-element()` | Needs a schema processor, which is out of scope |
 | The general `xs:duration` | Only partially ordered; see above |
 | `adjust-date-to-timezone()` and its companions | Needs a timezone-bearing cast |

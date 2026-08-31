@@ -1,15 +1,13 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import SummaryList from 'lily-design-system-svelte-headless/components/SummaryList/SummaryList.svelte';
-  import SummaryListItem from 'lily-design-system-svelte-headless/components/SummaryListItem/SummaryListItem.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import { SummaryList, SummaryListItem, InformationCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { VERSION, MSRV, REPO, CRATES_IO, DOCS_RS, LICENSE } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>About — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="About the schematron crate: what it is, who maintains it, how it is licensed, and how this site is built."
@@ -30,7 +28,7 @@
   <SummaryList label="Crate facts">
     <SummaryListItem term="Name"><code>schematron</code></SummaryListItem>
     <SummaryListItem term="Version">{VERSION}</SummaryListItem>
-    <SummaryListItem term="MSRV">{MSRV} — policy: current stable minus three</SummaryListItem>
+    <SummaryListItem term="MSRV">{MSRV} — policy: current stable minus two</SummaryListItem>
     <SummaryListItem term="Standard">ISO/IEC 19757-3 (Schematron)</SummaryListItem>
     <SummaryListItem term="Licence">{LICENSE}</SummaryListItem>
     <SummaryListItem term="Author">Joel Parker Henderson</SummaryListItem>
@@ -61,7 +59,7 @@
     <pre><code>{`cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features
-cargo +1.94 test --all-features`}</code></pre>
+cargo +${MSRV} test --all-features`}</code></pre>
   </CodeBlock>
 
   <p>
@@ -95,9 +93,11 @@ cargo +1.94 test --all-features`}</code></pre>
       <a href="https://lilydesignsystem.com/">Lily Design System</a> — headless
       Svelte components that render semantic HTML and correct ARIA, carrying one
       stable class hook each and shipping no CSS at all. Every visual decision
-      on this site therefore lives in a single stylesheet,
-      <code>static/assets/style.css</code>, which targets those hooks. Replace
-      that one file and the markup is unchanged.
+      on this site therefore lives in <code>static/assets/style.css</code>,
+      which targets those hooks, plus one colour value per theme in
+      <code>static/assets/themes/</code> — light and dark, swapped live by
+      Lily's <code>ThemePicker</code>. Replace those files and the markup is
+      unchanged.
     </p>
   </InformationCallout>
 
@@ -109,7 +109,7 @@ pnpm dev`}</code></pre>
   </CodeBlock>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={REPO}>The crate on GitHub</a>
-    <a class="button button-secondary" href="/spec/">The specification</a>
+    <CallToAction class="button button-primary" href={REPO}>The crate on GitHub</CallToAction>
+    <CallToAction class="button button-secondary" href="/spec/">The specification</CallToAction>
   </p>
 </section>

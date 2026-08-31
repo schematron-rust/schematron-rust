@@ -1,17 +1,16 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import Card from 'lily-design-system-svelte-headless/components/Card/Card.svelte';
-  import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
-  import { SPEC_DOCS, specUrl, REPO, specLabel } from '$lib/site';
+  import { Card, InformationCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
+  import { SPEC_DOCS, specUrl, REPO, specLabel, MSRV } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>Specification — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
-    content="The normative specification for the schematron crate: eighteen documents covering the data model, the validation algorithm, both XPath engines, SVRL, linting, errors, and conformance."
+    content={`The normative specification for the schematron crate: ${SPEC_DOCS.length} documents covering the data model, the validation algorithm, both XPath engines, SVRL, linting, errors, and conformance.`}
   />
 </svelte:head>
 
@@ -63,7 +62,7 @@
     <pre><code>{`cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features
-cargo +1.94 test --all-features`}</code></pre>
+cargo +${MSRV} test --all-features`}</code></pre>
   </CodeBlock>
 
   <p>
@@ -74,8 +73,8 @@ cargo +1.94 test --all-features`}</code></pre>
   </p>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={REPO}>Browse the repository</a>
-    <a class="button button-secondary" href="/conformance/">Conformance summary</a>
-    <a class="button button-secondary" href="/roadmap/">Roadmap</a>
+    <CallToAction class="button button-primary" href={REPO}>Browse the repository</CallToAction>
+    <CallToAction class="button button-secondary" href="/conformance/">Conformance summary</CallToAction>
+    <CallToAction class="button button-secondary" href="/roadmap/">Roadmap</CallToAction>
   </p>
 </section>

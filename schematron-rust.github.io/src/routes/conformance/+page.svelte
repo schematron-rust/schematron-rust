@@ -1,17 +1,9 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import Table from 'lily-design-system-svelte-headless/components/Table/Table.svelte';
-  import TableHead from '$lib/lily/TableHead.svelte';
-  import TableBody from '$lib/lily/TableBody.svelte';
-  import TableRow from '$lib/lily/TableRow.svelte';
-  import TableTH from '$lib/lily/TableTH.svelte';
-  import TableTD from '$lib/lily/TableTD.svelte';
-  import Tag from 'lily-design-system-svelte-headless/components/Tag/Tag.svelte';
-  import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
-  import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import { Table, Tag, Alert, InformationCallout, Separator, CallToAction, SectionHeading, CodeBlock, TableHead, TableBody, TableRow, TableTH, TableTD } from 'lily-design-system-svelte-headless';
   import { specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 
   type Row = { area: string; status: string; note?: string };
 
@@ -39,7 +31,7 @@
 </script>
 
 <svelte:head>
-  <title>Conformance — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="What the schematron crate implements, what it does not, and every measured divergence from the ISO Schematron reference implementation."
@@ -169,8 +161,8 @@ SCHEMATRON_SKELETON=/tmp/skeleton cargo test --test differential -- --ignored`}<
   </p>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={specUrl('conformance/index.md')}>The authoritative conformance document</a>
-    <a class="button button-secondary" href="/roadmap/">What is next, and what is not planned</a>
-    <a class="button button-secondary" href="/spec/">The whole specification</a>
+    <CallToAction class="button button-primary" href={specUrl('conformance/index.md')}>The authoritative conformance document</CallToAction>
+    <CallToAction class="button button-secondary" href="/roadmap/">What is next, and what is not planned</CallToAction>
+    <CallToAction class="button button-secondary" href="/spec/">The whole specification</CallToAction>
   </p>
 </section>

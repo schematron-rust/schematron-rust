@@ -1,18 +1,9 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import Table from 'lily-design-system-svelte-headless/components/Table/Table.svelte';
-  import TableHead from '$lib/lily/TableHead.svelte';
-  import TableBody from '$lib/lily/TableBody.svelte';
-  import TableRow from '$lib/lily/TableRow.svelte';
-  import TableTH from '$lib/lily/TableTH.svelte';
-  import TableTD from '$lib/lily/TableTD.svelte';
-  import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
-  import InsetText from 'lily-design-system-svelte-headless/components/InsetText/InsetText.svelte';
-  import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
-  import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import { Table, Alert, InsetText, InformationCallout, WarningCallout, Separator, CallToAction, SectionHeading, CodeBlock, TableHead, TableBody, TableRow, TableTH, TableTD } from 'lily-design-system-svelte-headless';
   import { specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 
   type ElementRow = { element: string; emitted: string };
 
@@ -29,7 +20,7 @@
 </script>
 
 <svelte:head>
-  <title>Reports — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="One validation run, three renderings: SVRL for other Schematron tooling, JSON that keeps the tree structure, and text for a person. Plus reading SVRL back."
@@ -120,22 +111,32 @@ schematron -s rules.sch -f json data.xml`}</code></pre>
   <svrl:active-pattern id="lines" name="Line rules"/>
   <svrl:fired-rule context="line"/>
   <svrl:failed-assert location="/invoice[1]/line[1]" test="number(@qty) &gt; 0" flag="error">
-    <svrl:text>Quantity must be positive, but is -2.</svrl:text>
+    <svrl:text>
+        Quantity must be positive, but is -2.
+      </svrl:text>
     <svrl:diagnostic-reference diagnostic="qty-help">
-      <svrl:text>Quantity is the number of units ordered. It must be a positive number.</svrl:text>
+      <svrl:text>
+      Quantity is the number of units ordered. It must be a positive number.
+    </svrl:text>
     </svrl:diagnostic-reference>
   </svrl:failed-assert>
   <svrl:fired-rule context="line[@type='discount']"/>
   <svrl:failed-assert location="/invoice[1]/line[2]" test="number(@amount) &lt; 0" flag="error">
-    <svrl:text>A discount line must have a negative amount, but line has 5.00.</svrl:text>
+    <svrl:text>
+        A discount line must have a negative amount, but line has 5.00.
+      </svrl:text>
     <svrl:diagnostic-reference diagnostic="amount-help">
-      <svrl:text>Amount is the line total in the invoice currency. Discounts are negative.</svrl:text>
+      <svrl:text>
+      Amount is the line total in the invoice currency. Discounts are negative.
+    </svrl:text>
     </svrl:diagnostic-reference>
   </svrl:failed-assert>
   <svrl:active-pattern id="totals" name="Totals"/>
   <svrl:fired-rule context="invoice"/>
   <svrl:failed-assert location="/invoice[1]" test="number(total) &gt;= $expected - 0.01 and number(total) &lt;= $expected + 0.01" flag="warning">
-    <svrl:text>Total is 99.00 but the lines plus tax come to 18.</svrl:text>
+    <svrl:text>
+        Total is 99.00 but the lines plus tax come to 18.
+      </svrl:text>
   </svrl:failed-assert>
 </svrl:schematron-output>`}</code></pre>
     </CodeBlock>
@@ -326,7 +327,7 @@ assert_eq!(report.count_failures(), 2);`}</code></pre>
   </InformationCallout>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={specUrl('svrl/index.md')}>spec/svrl/</a>
-    <a class="button button-secondary" href="/example/">The run behind these outputs</a>
+    <CallToAction class="button button-primary" href={specUrl('svrl/index.md')}>spec/svrl/</CallToAction>
+    <CallToAction class="button button-secondary" href="/example/">The run behind these outputs</CallToAction>
   </p>
 </section>

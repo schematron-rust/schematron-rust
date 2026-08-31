@@ -10,7 +10,7 @@
 use super::context::EvalContext;
 use super::eval::EvalError;
 use super::temporal::{from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind};
-use super::value::{parse_number, Item, Value};
+use super::value::{parse_number, Item, NumericType, Value};
 use super::version::XPathVersion;
 use crate::xml::{Document, NodeId, NodeKind};
 
@@ -106,6 +106,12 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
 ///
 /// Naming them turns "unknown function" into a message that says what is
 /// actually wrong, and what it would take to support them.
+///
+/// The sequence type itself has been implemented since phase 2a — sequence
+/// construction, ranges, `for`/`some`/`every`, `tokenize()`,
+/// `distinct-values()`, `index-of()` — so these are not blocked on a missing
+/// type; they are specific sequence-manipulating functions nobody has added
+/// yet.
 const V2_FUNCTIONS_NEEDING_SEQUENCES: &[&str] = &[
     "subsequence",
     "insert-before",
@@ -115,8 +121,13 @@ const V2_FUNCTIONS_NEEDING_SEQUENCES: &[&str] = &[
     "for-each",
 ];
 
-/// XPath 2.0 functions this crate does not implement because they need the
-/// date and time types.
+/// XPath 2.0 date/time-related functions this crate does not implement yet.
+///
+/// Not blocked on the date and time types, which shipped in phase 2b:
+/// `duration()` needs the general `xs:duration` type, which
+/// `spec/xpath2/` documents as a deliberate omission (only the two ordered
+/// subtypes are implemented); the `adjust-*-to-timezone()` functions need a
+/// timezone-bearing cast, which nothing in the crate currently produces.
 const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &[
     "duration",
     "adjust-date-to-timezone",
@@ -183,13 +194,13 @@ pub fn check_function(name: &str, arity: usize, version: XPathVersion) -> Result
     }
     if V2_FUNCTIONS_NEEDING_SEQUENCES.contains(&name) {
         return Err(format!(
-            "{name}() returns or consumes an XPath 2.0 sequence, which this crate \
+            "{name}() is a sequence-manipulating XPath 2.0 function this crate \
              does not implement yet; see spec/xpath2/"
         ));
     }
     if V2_FUNCTIONS_NEEDING_DATES.contains(&name) {
         return Err(format!(
-            "{name}() needs the XPath 2.0 date and time types, which this crate \
+            "{name}() is an XPath 2.0 date and time function this crate \
              does not implement yet; see spec/xpath2/"
         ));
     }
@@ -263,9 +274,11 @@ pub(crate) fn call(
     check_function(name, args.len(), context.version).map_err(EvalError::new)?;
     let document = context.document;
     match name {
-        "last" => Ok(Value::Number(as_f64(context.size))),
-        "position" => Ok(Value::Number(as_f64(context.position))),
-        "count" => Ok(Value::Number(as_f64(items_of(name, args, 0, context.version)?.len()))),
+        "last" => Ok(double(as_f64(context.size))),
+        "position" => Ok(double(as_f64(context.position))),
+        "count" => Ok(double(as_f64(
+            items_of(name, args, 0, context.version)?.len(),
+        ))),
         "id" => Ok(Value::NodeSet(id_function(args, context))),
 
         "local-name" => Ok(Value::String(
@@ -320,7 +333,7 @@ pub(crate) fn call(
             ))
         }
         "substring" => Ok(Value::String(substring(args, document))),
-        "string-length" => Ok(Value::Number(as_f64(
+        "string-length" => Ok(double(as_f64(
             string_argument(args, context).chars().count(),
         ))),
         "normalize-space" => Ok(Value::String(normalize_space(&string_argument(
@@ -342,7 +355,7 @@ pub(crate) fn call(
             context.node,
         ))),
 
-        "number" => Ok(Value::Number(match args.first() {
+        "number" => Ok(double(match args.first() {
             Some(value) => value.to_number(document),
             None => parse_number(&document.string_value(context.node)),
         })),
@@ -355,13 +368,13 @@ pub(crate) fn call(
         // is -Infinity instead of Infinity.
         "sum" => {
             let items = items_of(name, args, 0, context.version)?;
-            Ok(Value::Number(
+            Ok(double(
                 items.iter().map(|item| item.to_number(document)).fold(0.0, |a, b| a + b),
             ))
         }
-        "floor" => Ok(Value::Number(args[0].to_number(document).floor())),
-        "ceiling" => Ok(Value::Number(args[0].to_number(document).ceil())),
-        "round" => Ok(Value::Number(round_half_up(args[0].to_number(document)))),
+        "floor" => Ok(double(args[0].to_number(document).floor())),
+        "ceiling" => Ok(double(args[0].to_number(document).ceil())),
+        "round" => Ok(double(round_half_up(args[0].to_number(document)))),
 
         "current" => Ok(Value::NodeSet(vec![context.current])),
 
@@ -400,22 +413,22 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             let (haystack, needle) = two_strings(args, document);
             Ok(Value::Boolean(haystack.ends_with(&needle)))
         }
-        "abs" => Ok(Value::Number(args[0].to_number(document).abs())),
-        "min" => Ok(Value::Number(extreme(args, document, f64::min))),
-        "max" => Ok(Value::Number(extreme(args, document, f64::max))),
+        "abs" => Ok(double(args[0].to_number(document).abs())),
+        "min" => Ok(double(extreme(args, document, f64::min))),
+        "max" => Ok(double(extreme(args, document, f64::max))),
         "avg" => {
             let numbers = numbers_of(args, document);
             if numbers.is_empty() {
                 // XPath 2.0's avg() of an empty sequence is the empty
                 // sequence; without sequences, NaN is the honest analogue and
                 // behaves the same way in every comparison.
-                return Ok(Value::Number(f64::NAN));
+                return Ok(double(f64::NAN));
             }
             // Folded from `0.0` for the same reason as `sum()` above.
             let total: f64 = numbers.iter().fold(0.0, |a, b| a + b);
             #[allow(clippy::cast_precision_loss)]
             let count = numbers.len() as f64;
-            Ok(Value::Number(total / count))
+            Ok(double(total / count))
         }
         "exists" => Ok(Value::Boolean(!items_of(name, args, 0, context.version)?.is_empty())),
         "empty" => Ok(Value::Boolean(items_of(name, args, 0, context.version)?.is_empty())),
@@ -513,7 +526,7 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
                 .enumerate()
                 .filter(|(_, item)| item.to_xpath_string(document) == wanted)
                 // XPath positions are one-based.
-                .map(|(index, _)| Item::Number(as_f64(index + 1)))
+                .map(|(index, _)| Item::Number(as_f64(index + 1), NumericType::Double))
                 .collect();
             Ok(Value::Sequence(positions))
         }
@@ -529,6 +542,12 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
 #[allow(clippy::cast_precision_loss)]
 fn as_f64(value: usize) -> f64 {
     value as f64
+}
+
+/// Wraps a computed number as `xs:double` — every function result is one,
+/// never a more specific tracked type. See [`NumericType`].
+fn double(value: f64) -> Value {
+    Value::Number(value, NumericType::Double)
 }
 
 /// The items of an argument that may be a node-set or an XPath 2.0 sequence.
@@ -548,7 +567,9 @@ fn items_of(
         Some(Value::Sequence(items)) => Ok(items.clone()),
         Some(other) if version.is_v2() => Ok(match other {
             Value::String(text) => vec![Item::String(text.clone())],
-            Value::Number(number) => vec![Item::Number(*number)],
+            // Preserves the tag: an untagged scalar argument keeps whatever
+            // numeric type it already carried.
+            Value::Number(number, ty) => vec![Item::Number(*number, *ty)],
             Value::Boolean(boolean) => vec![Item::Boolean(*boolean)],
             Value::NodeSet(_) | Value::Sequence(_) => unreachable!("matched above"),
         }),
@@ -696,7 +717,7 @@ fn duration_component(
             }
         }
     };
-    Ok(Value::Number(value * sign))
+    Ok(double(value * sign))
 }
 
 /// `timezone-from-date()` and its companions.
@@ -772,7 +793,7 @@ fn component_of(
             )))
         }
     };
-    Ok(Value::Number(value))
+    Ok(double(value))
 }
 
 /// Converts a year to `f64`; years are far below the precision limit.

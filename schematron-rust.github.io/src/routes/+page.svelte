@@ -1,16 +1,13 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import Card from 'lily-design-system-svelte-headless/components/Card/Card.svelte';
-  import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
-  import Details from 'lily-design-system-svelte-headless/components/Details/Details.svelte';
-  import Tag from 'lily-design-system-svelte-headless/components/Tag/Tag.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import { Card, Alert, Details, Tag, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { VERSION, REPO, SPEC_DOCS } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>schematron — Schematron in pure Rust</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="Rule-based XML validation to ISO/IEC 19757-3, in pure Rust: its own XML parser, its own XPath 1.0 engine, and no libxml2, no XSLT processor, no C toolchain, no FFI."
@@ -26,9 +23,9 @@
     validator that interprets a schema directly instead of transpiling it.
   </p>
   <div class="button-row">
-    <a class="button button-primary" href="/tutorial/">Start the tutorial</a>
-    <a class="button button-secondary" href="/library/">Use the library</a>
-    <a class="button button-secondary" href="/cli/">Use the CLI</a>
+    <CallToAction class="button button-primary" href="/tutorial/">Start the tutorial</CallToAction>
+    <CallToAction class="button button-secondary" href="/library/">Use the library</CallToAction>
+    <CallToAction class="button button-secondary" href="/cli/">Use the CLI</CallToAction>
   </div>
   <div class="tag-row" style="justify-content: center;">
     <Tag label="No unsafe code">no <code>unsafe</code></Tag>
@@ -262,9 +259,9 @@ cat data.xml | schematron -s rules.sch -`}</code></pre>
   </div>
 
   <div class="button-row">
-    <a class="button button-secondary" href="/example/">Follow a real run, end to end &rarr;</a>
-    <a class="button button-secondary" href="/reports/">See SVRL, JSON, and text output &rarr;</a>
-    <a class="button button-secondary" href="/roadmap/">Read the roadmap &rarr;</a>
+    <CallToAction class="button button-secondary" href="/example/">Follow a real run, end to end &rarr;</CallToAction>
+    <CallToAction class="button button-secondary" href="/reports/">See SVRL, JSON, and text output &rarr;</CallToAction>
+    <CallToAction class="button button-secondary" href="/roadmap/">Read the roadmap &rarr;</CallToAction>
   </div>
 </section>
 
@@ -315,6 +312,6 @@ cat data.xml | schematron -s rules.sch -`}</code></pre>
   </Details>
 
   <p style="text-align: center; margin-top: 2rem;">
-    <a class="button button-secondary" href={REPO}>Read the source on GitHub &rarr;</a>
+    <CallToAction class="button button-secondary" href={REPO}>Read the source on GitHub &rarr;</CallToAction>
   </p>
 </section>

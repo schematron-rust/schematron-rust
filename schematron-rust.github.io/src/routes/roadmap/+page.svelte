@@ -1,12 +1,9 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import Card from 'lily-design-system-svelte-headless/components/Card/Card.svelte';
-  import Details from 'lily-design-system-svelte-headless/components/Details/Details.svelte';
-  import InsetText from 'lily-design-system-svelte-headless/components/InsetText/InsetText.svelte';
-  import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
-  import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import { Card, Details, InsetText, InformationCallout, WarningCallout, Separator, CallToAction, SectionHeading } from 'lily-design-system-svelte-headless';
   import { REPO, VERSION, specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 
   const SHIPPED: string[] = [
     'Pure Rust XML parser and XPath data model, with no external entity resolution and therefore no XXE',
@@ -24,13 +21,14 @@
     'Opt-in parallel pattern evaluation, with a report identical to the sequential one',
     'XPath 2.0 phases 1 through 3: bindings, regular expressions, sequences, dates, durations, comparisons, and the type operators',
     'XPath 2.0 kind tests as path node tests — element(), attribute(id), document-node()',
+    'XPath 2.0 phase 4: the numeric type hierarchy — instance of recognizes xs:integer, xs:decimal and xs:float as well as xs:double, tracked for literals and explicit casts',
     'Differential and generated testing against the ISO reference implementation',
     'Fuzz targets, criterion benchmarks, clippy pedantic, corpus test suite, runnable examples, and the specification'
   ];
 </script>
 
 <svelte:head>
-  <title>Roadmap — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="What the schematron crate has shipped, what is next and why it is ordered that way, what was examined and abandoned, and what is not planned."
@@ -79,7 +77,7 @@
   />
 
   <p>
-    Three items remain, and two of them are arguments for <em>not</em> doing the
+    Two items remain, and both are arguments for <em>not</em> doing the
     work yet. That is deliberate: a roadmap that only lists ambitions is a wish
     list.
   </p>
@@ -120,24 +118,6 @@
       whose whole value is being right — bought for a target that WebAssembly,
       the plausible use case, already reaches with <code>std</code>. Not worth
       it on today's evidence.
-    </p>
-  </Details>
-
-  <Details summary="3. XPath 2.0 phase 4: the numeric hierarchy — deliberately last">
-    <p>
-      Tracking whether a number arrived as <code>xs:integer</code>,
-      <code>xs:decimal</code>, <code>xs:float</code> or <code>xs:double</code>,
-      rather than holding every number as a double — which is what would make
-      <code>1 instance of xs:integer</code> true.
-    </p>
-    <p>
-      It is the only remaining gap <a href={specUrl('xpath2/index.md')}>spec/xpath2/</a>
-      records, and it is also the one worth least: a schema inspects untyped
-      document data, where <code>castable as xs:integer</code> already gives the
-      right answer, and the distinction between integer and double rarely
-      decides anything. Against that, threading a numeric type lattice
-      underneath every value would put the exactness of the XPath 1.0 arithmetic
-      at risk — the crate's most-exercised code path, and an invariant.
     </p>
   </Details>
 </section>
@@ -201,7 +181,7 @@
   </InsetText>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={REPO + '/issues'}>Make the case for something</a>
-    <a class="button button-secondary" href={specUrl('roadmap/index.md')}>spec/roadmap/</a>
+    <CallToAction class="button button-primary" href={REPO + '/issues'}>Make the case for something</CallToAction>
+    <CallToAction class="button button-secondary" href={specUrl('roadmap/index.md')}>spec/roadmap/</CallToAction>
   </p>
 </section>

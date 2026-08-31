@@ -1,7 +1,7 @@
 # schematron
 
 **Schematron in pure Rust.** Rule-based XML validation to ISO/IEC 19757-3,
-with no `libxml2`, no XSLT processor, no C toolchain, and no FFI.
+with no `libxml2`, no XSLT processor, no C toolchain, no FFI, and no `unsafe`.
 
 [![crates.io](https://img.shields.io/crates/v/schematron.svg)](https://crates.io/crates/schematron)
 [![docs.rs](https://docs.rs/schematron/badge.svg)](https://docs.rs/schematron)
@@ -94,7 +94,7 @@ A report is **data**, not formatted text, so one run renders three ways:
 
 ```rust
 let svrl = report.to_svrl();   // SVRL, for other Schematron tooling
-let json = report.to_json()?;  // JSON, keeping the tree structure
+let json = report.to_json().unwrap();  // JSON, keeping the tree structure
 let text = report.to_text();   // for a person
 ```
 

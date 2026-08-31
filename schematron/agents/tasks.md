@@ -28,10 +28,12 @@ available only under an `xslt2` or `xpath2` query binding, because
 `tests/docs.rs::the_xpath_two_function_list_in_the_spec_matches_the_engine`
 fails if you forget.
 
-If the function needs something phase 1 does not have — the sequence type, or
-dates — do **not** approximate it. Add it to `V2_FUNCTIONS_NEEDING_SEQUENCES`
-or `V2_FUNCTIONS_NEEDING_DATES` so the error says what it would take, and see
-roadmap item 1.
+If the function you're adding is a sequence-manipulating or date/time
+function nobody has implemented yet — not blocked on the sequence or date
+and time *types*, which both shipped (phases 2a and 2b) — do **not**
+approximate it. Add it to `V2_FUNCTIONS_NEEDING_SEQUENCES` or
+`V2_FUNCTIONS_NEEDING_DATES` so the error names the gap instead of saying
+"unknown function".
 
 ## Add a CLI flag
 
@@ -161,8 +163,9 @@ is the policy working, not a problem. Apply them.
 
 ## Add a dependency
 
-Usually: don't. The crate depends on `quick-xml` and `thiserror`, plus
-`serde`/`clap` behind default features, and that is a feature of it.
+Usually: don't. The crate depends on `quick-xml`, `thiserror`, and `regex`,
+plus `serde`/`serde_json`/`clap` behind default features, and that is a
+feature of it.
 
 If you must: check the dependency's own MSRV fits ours, state the reason in
 the pull request, and confirm it does not pull in C.

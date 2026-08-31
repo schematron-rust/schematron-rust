@@ -1,0 +1,79 @@
+# schematron-rust
+
+> Pure Rust ISO/IEC 19757-3 Schematron: rule-based XML validation, with no
+> libxml2, no XSLT processor, no C toolchain, no FFI, and no `unsafe`. This
+> repository is a monorepo holding the `schematron` crate and its companion
+> website.
+
+Schematron describes the *conditions* a document must satisfy — co-occurrence
+rules, cross-references between distant parts of a document, value
+relationships, cardinality that depends on content rather than position —
+written as XPath expressions, layered on top of a grammar (DTD, XML Schema,
+RELAX NG) rather than used instead of one. This crate contains its own XML
+parser, its own XPath engine (a complete XPath 1.0 implementation plus a
+documented XPath 2.0 subset), and its own validator; it interprets a schema
+directly rather than transpiling it to XSLT.
+
+`schematron/spec/` is normative for the crate's behavior: if code and spec
+disagree, that is a defect in one of them. `spec/` at the repository root is
+normative for the repository instead — governance, funding, publishing
+policy — not XPath semantics.
+
+## Start here
+
+- [Repository map](schematron/index.md): routes to the right document rather than repeating what it says
+- [Crate README](schematron/README.md): what Schematron is, install, library and CLI usage, feature list
+- [Website](https://schematron-rust.github.io/): the same material as a browsable site, with a worked example and a conformance table
+- [crates.io](https://crates.io/crates/schematron): the published package
+- [docs.rs](https://docs.rs/schematron): generated API documentation
+
+## Specification (normative for the crate)
+
+- [spec/index.md](schematron/spec/index.md): overview, design principles, reading order
+- [spec/tutorial/](schematron/spec/tutorial/index.md): eighteen steps from one rule to a real schema
+- [spec/data-model/](schematron/spec/data-model/index.md): every Schematron element and its Rust type
+- [spec/validation/](schematron/spec/validation/index.md): the validation algorithm, exactly
+- [spec/xpath/](schematron/spec/xpath/index.md): the XPath 1.0 engine — axes, functions, conversions
+- [spec/xpath2/](schematron/spec/xpath2/index.md): the XPath 2.0 subset, and where it still behaves like 1.0
+- [spec/xml/](schematron/spec/xml/index.md): the XML parser and its data model
+- [spec/parsing/](schematron/spec/parsing/index.md): the five schema compilation passes
+- [spec/svrl/](schematron/spec/svrl/index.md): the SVRL report format, read and written
+- [spec/keys/](schematron/spec/keys/index.md): keys, and why a cross-reference check needs one
+- [spec/linting/](schematron/spec/linting/index.md): catching schemas that silently do nothing
+- [spec/api/](schematron/spec/api/index.md): the library surface
+- [spec/cli/](schematron/spec/cli/index.md): every CLI option and exit code
+- [spec/errors/](schematron/spec/errors/index.md): the error taxonomy — error versus finding
+- [spec/conformance/](schematron/spec/conformance/index.md): limits and divergences, stated up front
+- [spec/testing/](schematron/spec/testing/index.md): tests, fuzzing, benchmarks, lints
+- [spec/roadmap/](schematron/spec/roadmap/index.md): shipped, next, and not planned
+- [spec/agents-directory-name-is-lowercase/](schematron/spec/agents-directory-name-is-lowercase/index.md): why the agent documentation directory is lowercase
+
+## Website
+
+- [Home](https://schematron-rust.github.io/)
+- [Why Schematron](https://schematron-rust.github.io/why/)
+- [Tutorial](https://schematron-rust.github.io/tutorial/)
+- [Worked example](https://schematron-rust.github.io/example/)
+- [Library](https://schematron-rust.github.io/library/)
+- [CLI](https://schematron-rust.github.io/cli/)
+- [Report formats](https://schematron-rust.github.io/reports/)
+- [Conformance](https://schematron-rust.github.io/conformance/)
+- [Roadmap](https://schematron-rust.github.io/roadmap/)
+- [Specification index](https://schematron-rust.github.io/spec/)
+- [Help](https://schematron-rust.github.io/help/)
+- [About](https://schematron-rust.github.io/about/)
+
+## Repository
+
+- [CHANGELOG](schematron/CHANGELOG.md): crate release notes
+- [CONTRIBUTING](CONTRIBUTING.md): how to propose a change, and the gate every change must pass
+- [NEWS](NEWS.md): repository-level news, separate from crate releases
+- License: MIT OR Apache-2.0 OR GPL-2.0-only OR GPL-3.0-only, at the user's option
+
+## Optional
+
+- [spec/rust-msrv-n-minus-2/](schematron/spec/rust-msrv-n-minus-2/index.md): MSRV policy — current stable minus two
+- [Repository spec/](spec/index.md): governance — funding, publishing, agent skills
+- [spec/agent-skills/](spec/agent-skills/index.md): Claude Code skills for using or maintaining this project
+- [AGENTS.md](schematron/AGENTS.md): instructions for AI coding agents working on the crate
+- [GitHub issues](https://github.com/schematron-rust/schematron-rust/issues): bug reports and feature requests

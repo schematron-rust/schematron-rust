@@ -1,15 +1,13 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import InsetText from 'lily-design-system-svelte-headless/components/InsetText/InsetText.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
-  import SummaryList from 'lily-design-system-svelte-headless/components/SummaryList/SummaryList.svelte';
-  import SummaryListItem from 'lily-design-system-svelte-headless/components/SummaryListItem/SummaryListItem.svelte';
+  import { InsetText, Separator, SummaryList, SummaryListItem, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { VERSION, MSRV, DOCS_RS, specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>Library — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="Use the schematron crate from Rust: compile a schema once, validate many documents, render SVRL, JSON, or text, and query the report as data."
@@ -34,7 +32,7 @@
 
   <SummaryList label="Crate facts">
     <SummaryListItem term="Version">{VERSION}</SummaryListItem>
-    <SummaryListItem term="MSRV">{MSRV} — policy: current stable minus three</SummaryListItem>
+    <SummaryListItem term="MSRV">{MSRV} — policy: current stable minus two</SummaryListItem>
     <SummaryListItem term="Default features"><code>serde</code>, <code>cli</code></SummaryListItem>
     <SummaryListItem term="Unsafe code">None</SummaryListItem>
     <SummaryListItem term="Licence">MIT, Apache-2.0, GPL-2.0-only, or GPL-3.0-only, at your option</SummaryListItem>
@@ -173,7 +171,7 @@ cargo run --example xpath_engine         # the XPath engine on its own`}</code><
   </CodeBlock>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={DOCS_RS}>API documentation on docs.rs</a>
-    <a class="button button-secondary" href="/cli/">The command line tool</a>
+    <CallToAction class="button button-primary" href={DOCS_RS}>API documentation on docs.rs</CallToAction>
+    <CallToAction class="button button-secondary" href="/cli/">The command line tool</CallToAction>
   </p>
 </section>

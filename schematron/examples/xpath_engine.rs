@@ -9,7 +9,7 @@
 //! ```
 
 use schematron::xml::Document;
-use schematron::xpath::{evaluate, parse, EvalContext, Namespaces, Value, Variables};
+use schematron::xpath::{evaluate, parse, EvalContext, Namespaces, NumericType, Value, Variables};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let document = Document::from_str(
@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node = document.document_element().expect("a document element");
 
     let mut variables = Variables::new();
-    variables.bind("minimum", Value::Number(1.0));
+    variables.bind("minimum", Value::Number(1.0, NumericType::Double));
     let namespaces = Namespaces::new();
 
     let evaluate_one = |expression: &str| -> Result<Value, Box<dyn std::error::Error>> {

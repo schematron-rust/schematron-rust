@@ -10,42 +10,26 @@
  *   .section-heading .section-heading-eyebrow .section-heading-heading
  *   .section-heading-subtitle .inset-text .warning-callout
  *   .information-callout .table .table-head .table-body .table-row
- *   .table-th .table-td .summary-list .summary-list-item
+ *   .table-th .table-td .summary-list .summary-list-item .theme-picker
+ *   .text-size-picker .share-picker
  *
  * Site-local hooks (this site's own layout, not Lily) are prefixed `site-`.
+ *
+ * This file carries no colour of its own: every custom property it
+ * consumes (--rust, --page-bg, --border, …) is defined by whichever theme
+ * stylesheet is currently linked — themes/light.css or themes/dark.css,
+ * swapped by ThemePicker (see src/app.html and src/routes/+layout.svelte).
+ * Structural values that do not vary by theme (radii, breakpoints, fonts)
+ * are still theme-file custom properties, not literals here, because a
+ * theme file is the only stylesheet guaranteed to be linked at all times.
  */
 
-:root {
-  --rust: #8b3a1f;
-  --rust-hover: #6f2d17;
-  --rust-tint: #fbf1ec;
-  --ember: #c2410c;
-  --xml-blue: #1e6091;
-  --danger: #b91c1c;
-  --warning: #b45309;
-  --success: #15803d;
-
-  --page-bg: #fbfaf8;
-  --card-bg: #ffffff;
-  --text: #1c1917;
-  --text-muted: #57534e;
-  --text-subtle: #78716c;
-  --border: #e7e5e4;
-  --border-strong: #d6d3d1;
-
-  --shadow: 0 1px 3px 0 rgba(28, 25, 23, 0.08), 0 1px 2px 0 rgba(28, 25, 23, 0.04);
-  --shadow-lg: 0 10px 25px -5px rgba(28, 25, 23, 0.10), 0 8px 10px -6px rgba(28, 25, 23, 0.04);
-
-  --radius: 0.5rem;
-  --radius-lg: 0.75rem;
-  --content-max: 72rem;
-  --prose-max: 44rem;
-
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-}
-
 *, *::before, *::after { box-sizing: border-box; }
+
+html[data-text-size="small"]   { font-size: 87.5%; }  /* 14px at a 16px default */
+html[data-text-size="medium"]  { font-size: 100%; }    /* 16px — same as no attribute */
+html[data-text-size="large"]   { font-size: 112.5%; }  /* 18px */
+html[data-text-size="x-large"] { font-size: 125%; }    /* 20px */
 
 html { scroll-behavior: smooth; }
 
@@ -95,8 +79,13 @@ code {
   border-radius: 4px;
 }
 pre {
+  /* Deliberately fixed, not themed: a code block reads as a terminal in
+   * both themes, not as a themed surface. In dark mode this sits close in
+   * luminance to --card-bg, so the border is what keeps it legible as its
+   * own box rather than the palette. */
   background: #1c1917;
   color: #e7e5e4;
+  border: 1px solid var(--border);
   padding: 1rem 1.25rem;
   border-radius: var(--radius);
   overflow-x: auto;
@@ -127,7 +116,7 @@ kbd {
   position: absolute;
   top: -100px;
   left: 1rem;
-  background: var(--rust);
+  background: var(--button-fill);
   color: #fff;
   padding: 0.5rem 1rem;
   border-radius: 4px;
@@ -154,13 +143,13 @@ kbd {
   line-height: 1.2;
 }
 .button-primary {
-  background: var(--rust);
+  background: var(--button-fill);
   color: #fff;
-  border-color: var(--rust);
+  border-color: var(--button-fill);
 }
 .button-primary:hover {
-  background: var(--rust-hover);
-  border-color: var(--rust-hover);
+  background: var(--button-fill-hover);
+  border-color: var(--button-fill-hover);
   color: #fff;
 }
 .button-secondary {
@@ -250,22 +239,22 @@ kbd {
   margin: 0 0 1.5rem;
 }
 /* Status variants, used by the conformance table. */
-.tag-full    { background: #f0fdf4; color: var(--success); }
-.tag-subset  { background: #fffbeb; color: var(--warning); }
-.tag-refused { background: #fef2f2; color: var(--danger); }
+.tag-full    { background: var(--success-bg); color: var(--success); }
+.tag-subset  { background: var(--warning-bg); color: var(--warning); }
+.tag-refused { background: var(--danger-bg);  color: var(--danger); }
 
 /* Lily: Alert — severity arrives as data-type */
 .alert {
   border-radius: var(--radius);
   border-left: 4px solid var(--xml-blue);
-  background: #eff6fb;
+  background: var(--info-bg);
   padding: 1rem 1.25rem;
   margin: 1.5rem 0;
 }
 .alert p:last-child { margin-bottom: 0; }
-.alert[data-type="success"] { border-left-color: var(--success); background: #f0fdf4; }
-.alert[data-type="warning"] { border-left-color: var(--warning); background: #fffbeb; }
-.alert[data-type="error"]   { border-left-color: var(--danger);  background: #fef2f2; }
+.alert[data-type="success"] { border-left-color: var(--success); background: var(--success-bg); }
+.alert[data-type="warning"] { border-left-color: var(--warning); background: var(--warning-bg); }
+.alert[data-type="error"]   { border-left-color: var(--danger);  background: var(--danger-bg); }
 
 /* Lily: InsetText */
 .inset-text {
@@ -289,7 +278,7 @@ kbd {
   border-left: 4px solid var(--rust);
 }
 .warning-callout {
-  background: #fffbeb;
+  background: var(--warning-bg);
   border-left: 4px solid var(--warning);
 }
 .information-callout p:last-child,
@@ -365,7 +354,7 @@ kbd {
 }
 .table-body .table-row:last-child .table-td,
 .table-body .table-row:last-child .table-th { border-bottom: none; }
-.table-body .table-row:hover { background: #fafaf9; }
+.table-body .table-row:hover { background: var(--row-hover-bg); }
 .table-scroll { overflow-x: auto; }
 
 /* Lily: SummaryList */
@@ -449,6 +438,131 @@ kbd {
   color: var(--rust);
   font-weight: 600;
   background: var(--rust-tint);
+}
+
+.site-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Lily: ThemePicker, TextSizePicker, SharePicker — an icon button opening
+ * an absolutely-positioned listbox/menu. The three share one visual
+ * treatment; only the class-name prefix differs per component. */
+.theme-picker,
+.text-size-picker,
+.share-picker {
+  position: relative;
+}
+.theme-picker-button,
+.text-size-picker-button,
+.share-picker-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 150ms, color 150ms, border-color 150ms;
+}
+.theme-picker-button:hover,
+.text-size-picker-button:hover,
+.share-picker-button:hover {
+  background: var(--border);
+  color: var(--text);
+}
+.theme-picker-button:focus-visible,
+.text-size-picker-button:focus-visible,
+.share-picker-button:focus-visible {
+  outline: 3px solid var(--rust);
+  outline-offset: 2px;
+}
+.theme-picker-icon,
+.text-size-picker-icon,
+.share-picker-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.theme-picker-list,
+.text-size-picker-list {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 60;
+  min-width: 10rem;
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.theme-picker-option,
+.text-size-picker-option {
+  padding: 0.5rem 0.6rem;
+  border-radius: calc(var(--radius) - 0.15rem);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.theme-picker-option:hover,
+.text-size-picker-option:hover,
+.theme-picker-option[data-active],
+.text-size-picker-option[data-active] {
+  background: var(--rust-tint);
+  color: var(--rust-hover);
+}
+.theme-picker-option[aria-selected="true"],
+.text-size-picker-option[aria-selected="true"] {
+  font-weight: 600;
+}
+.share-picker-list {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 60;
+  min-width: 11rem;
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.share-picker-list-item + .share-picker-list-item { margin-top: 0.1rem; }
+.share-picker-target,
+.share-picker-copy {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: calc(var(--radius) - 0.15rem);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.share-picker-target:hover,
+.share-picker-copy:hover {
+  background: var(--rust-tint);
+  color: var(--rust-hover);
+}
+.share-picker-status {
+  /* Announced via aria-live; not meant to take up layout space. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 
 .site-main {

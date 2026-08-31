@@ -15,7 +15,7 @@ use crate::xml::{Document, NodeId};
 /// ```
 /// use schematron::xpath::Value;
 ///
-/// assert_eq!(Value::Number(3.0).to_xpath_string_scalar(), "3");
+/// assert_eq!(Value::Number(3.0, Default::default()).to_xpath_string_scalar(), "3");
 /// assert!(Value::String("x".into()).to_boolean_scalar());
 /// assert!(!Value::String(String::new()).to_boolean_scalar());
 /// ```
@@ -28,8 +28,9 @@ pub enum Value {
     NodeSet(Vec<NodeId>),
     /// A boolean.
     Boolean(bool),
-    /// A number, an IEEE 754 double as XPath 1.0 requires.
-    Number(f64),
+    /// A number, an IEEE 754 double as XPath 1.0 requires, tagged with the
+    /// XPath 2.0 numeric type it statically carries. See [`NumericType`].
+    Number(f64, NumericType),
     /// A string.
     String(String),
     /// An XPath 2.0 sequence: an ordered list of nodes and atomic values.
@@ -41,6 +42,41 @@ pub enum Value {
     ///
     /// Sequences do not nest: building one from others flattens them.
     Sequence(Vec<Item>),
+}
+
+/// Which XPath 2.0 numeric type a [`Value::Number`]/[`Item::Number`]
+/// statically carries.
+///
+/// This tags a number's declared type; it never changes how the `f64` next
+/// to it is computed. Arithmetic (`+ - * div mod`), every function in the
+/// XPath function library, and `for`'s `to` ranges always produce
+/// [`NumericType::Double`] — exactly the single-double behaviour the crate
+/// had before this type existed. Only two things carry a more specific tag:
+/// a numeric literal as written (`1` is [`NumericType::Integer`], `1.5` is
+/// [`NumericType::Decimal`] — XPath 2.0 assigns these types lexically, not
+/// by value, so `1.0` is a decimal even though it equals the integer `1`),
+/// and the result of an explicit `cast as`/`castable as`.
+///
+/// `xs:integer` derives from `xs:decimal` by restriction in XML Schema, so
+/// `instance of xs:decimal` also matches [`NumericType::Integer`].
+/// `xs:float` and `xs:double` are separate primitive types with no
+/// derivation between them or `xs:decimal`, so they match nothing but
+/// themselves. See `spec/xpath2/` for the full account, including the
+/// deliberate limit that only literals and casts are tracked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum NumericType {
+    /// `xs:integer` (and its further restrictions `xs:long`, `xs:int`,
+    /// `xs:short`, `xs:byte`, which this crate does not distinguish from it).
+    Integer,
+    /// `xs:decimal`.
+    Decimal,
+    /// `xs:float`.
+    Float,
+    /// `xs:double` — the type every number had before this enum existed,
+    /// and what every computed number still gets.
+    #[default]
+    Double,
 }
 
 /// One member of an XPath 2.0 [`Value::Sequence`].
@@ -56,8 +92,9 @@ pub enum Item {
     Node(NodeId),
     /// A string.
     String(String),
-    /// A number.
-    Number(f64),
+    /// A number, tagged with the numeric type it statically carries. See
+    /// [`NumericType`].
+    Number(f64, NumericType),
     /// A boolean.
     Boolean(bool),
     /// An `xs:date`, `xs:dateTime`, or `xs:time`.
@@ -73,7 +110,7 @@ impl Item {
         match self {
             Item::Node(node) => document.string_value(*node),
             Item::String(text) => text.clone(),
-            Item::Number(number) => format_number(*number),
+            Item::Number(number, _) => format_number(*number),
             Item::Boolean(boolean) => if *boolean { "true" } else { "false" }.to_string(),
             Item::Temporal(temporal) => temporal.to_lexical(),
             Item::Duration(duration) => duration.to_lexical(),
@@ -86,7 +123,7 @@ impl Item {
         match self {
             Item::Node(node) => parse_number(&document.string_value(*node)),
             Item::String(text) => parse_number(text),
-            Item::Number(number) => *number,
+            Item::Number(number, _) => *number,
             Item::Boolean(boolean) => f64::from(u8::from(*boolean)),
             // Neither a date nor a duration has a numeric value in XPath 2.0;
             // NaN keeps every numeric comparison against one false rather
@@ -101,7 +138,7 @@ impl Item {
         match self {
             Item::Node(_) => "node",
             Item::String(_) => "string",
-            Item::Number(_) => "number",
+            Item::Number(_, _) => "number",
             Item::Boolean(_) => "boolean",
             Item::Temporal(temporal) => temporal.kind().as_str(),
             Item::Duration(duration) => duration.kind().as_str(),
@@ -140,7 +177,9 @@ pub fn flatten_into_sequence(values: Vec<Value>) -> Vec<Item> {
             Value::Sequence(inner) => items.extend(inner),
             Value::NodeSet(nodes) => items.extend(nodes.into_iter().map(Item::Node)),
             Value::Boolean(boolean) => items.push(Item::Boolean(boolean)),
-            Value::Number(number) => items.push(Item::Number(number)),
+            // Preserves the tag rather than resetting it — an integer
+            // literal folded into a sequence is still an integer.
+            Value::Number(number, ty) => items.push(Item::Number(number, ty)),
             Value::String(text) => items.push(Item::String(text)),
         }
     }
@@ -154,7 +193,7 @@ impl Value {
         match self {
             Value::NodeSet(_) => "node-set",
             Value::Boolean(_) => "boolean",
-            Value::Number(_) => "number",
+            Value::Number(_, _) => "number",
             Value::String(_) => "string",
             Value::Sequence(_) => "sequence",
         }
@@ -169,7 +208,7 @@ impl Value {
         match self {
             Value::NodeSet(nodes) => !nodes.is_empty(),
             Value::Boolean(b) => *b,
-            Value::Number(n) => *n != 0.0 && !n.is_nan(),
+            Value::Number(n, _) => *n != 0.0 && !n.is_nan(),
             Value::String(s) => !s.is_empty(),
             // A sequence uses XPath 2.0's effective boolean value, whose
             // "anything else is a type error" case cannot be expressed here;
@@ -178,7 +217,7 @@ impl Value {
                 [] => false,
                 [Item::Boolean(boolean)] => *boolean,
                 [Item::String(text)] => !text.is_empty(),
-                [Item::Number(number)] => *number != 0.0 && !number.is_nan(),
+                [Item::Number(number, _)] => *number != 0.0 && !number.is_nan(),
                 // A sequence starting with a node is true, and so is a lone
                 // date. So is any other multi-item sequence here, but that
                 // case is a type error rather than a value — see
@@ -233,7 +272,7 @@ impl Value {
                 .first()
                 .map_or_else(String::new, |&n| document.string_value(n)),
             Value::Boolean(b) => if *b { "true" } else { "false" }.to_string(),
-            Value::Number(n) => format_number(*n),
+            Value::Number(n, _) => format_number(*n),
             Value::String(s) => s.clone(),
             // The string value of a sequence is its first item's, matching
             // how a node-set behaves; XPath 2.0 makes a multi-item sequence a
@@ -253,7 +292,7 @@ impl Value {
         match self {
             Value::NodeSet(_) | Value::Sequence(_) => String::new(),
             Value::Boolean(b) => if *b { "true" } else { "false" }.to_string(),
-            Value::Number(n) => format_number(*n),
+            Value::Number(n, _) => format_number(*n),
             Value::String(s) => s.clone(),
         }
     }
@@ -266,7 +305,7 @@ impl Value {
     #[must_use]
     pub fn to_number(&self, document: &Document) -> f64 {
         match self {
-            Value::Number(n) => *n,
+            Value::Number(n, _) => *n,
             Value::Boolean(b) => f64::from(u8::from(*b)),
             Value::String(s) => parse_number(s),
             Value::NodeSet(_) | Value::Sequence(_) => {
@@ -470,9 +509,9 @@ mod tests {
 
     #[test]
     fn boolean_conversion() {
-        assert!(Value::Number(1.0).to_boolean());
-        assert!(!Value::Number(0.0).to_boolean());
-        assert!(!Value::Number(f64::NAN).to_boolean());
+        assert!(Value::Number(1.0, NumericType::Double).to_boolean());
+        assert!(!Value::Number(0.0, NumericType::Double).to_boolean());
+        assert!(!Value::Number(f64::NAN, NumericType::Double).to_boolean());
         assert!(!Value::NodeSet(vec![]).to_boolean());
         assert!(Value::String("0".into()).to_boolean());
     }

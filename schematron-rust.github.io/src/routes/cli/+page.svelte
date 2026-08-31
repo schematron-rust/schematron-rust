@@ -1,15 +1,9 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import Table from 'lily-design-system-svelte-headless/components/Table/Table.svelte';
-  import TableHead from '$lib/lily/TableHead.svelte';
-  import TableBody from '$lib/lily/TableBody.svelte';
-  import TableRow from '$lib/lily/TableRow.svelte';
-  import TableTH from '$lib/lily/TableTH.svelte';
-  import TableTD from '$lib/lily/TableTD.svelte';
-  import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import { Table, Alert, Separator, CallToAction, SectionHeading, CodeBlock, TableHead, TableBody, TableRow, TableTH, TableTD } from 'lily-design-system-svelte-headless';
   import { specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 
   type Option = { flag: string; description: string };
 
@@ -44,7 +38,7 @@
 </script>
 
 <svelte:head>
-  <title>Command line — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="The schematron command line tool: every option, every exit code, text and SVRL and JSON output, and the flags that diagnose a schema that does nothing."
@@ -196,7 +190,7 @@ schematron -s rules.sch --verbose --phase '#ALL' data.xml`}</code></pre>
   </CodeBlock>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href="/help/">Diagnosing a schema that does nothing</a>
-    <a class="button button-secondary" href={specUrl('cli/index.md')}>spec/cli/</a>
+    <CallToAction class="button button-primary" href="/help/">Diagnosing a schema that does nothing</CallToAction>
+    <CallToAction class="button button-secondary" href={specUrl('cli/index.md')}>spec/cli/</CallToAction>
   </p>
 </section>

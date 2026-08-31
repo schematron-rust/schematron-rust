@@ -1,14 +1,13 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import InsetText from 'lily-design-system-svelte-headless/components/InsetText/InsetText.svelte';
-  import InformationCallout from 'lily-design-system-svelte-headless/components/InformationCallout/InformationCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import { InsetText, InformationCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { MSRV, REPO } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>Why schematron — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="Why a pure Rust Schematron implementation: no C toolchain, no FFI, no unsafe, a structurally impossible XXE, and a schema compiled once and validated in parallel."
@@ -143,7 +142,7 @@ let report = schema.validate_with(&document, &options)?;`}</code></pre>
   <ul>
     <li>
       <strong>MSRV of {MSRV}</strong>, under a stated policy: current stable
-      minus three. Not a number that moves when a dependency feels like it.
+      minus two. Not a number that moves when a dependency feels like it.
     </li>
     <li>
       <strong>A normative specification.</strong> If the code and
@@ -163,7 +162,7 @@ let report = schema.validate_with(&document, &options)?;`}</code></pre>
   </ul>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href="/conformance/">See exactly what is implemented</a>
-    <a class="button button-secondary" href={REPO}>Read the source</a>
+    <CallToAction class="button button-primary" href="/conformance/">See exactly what is implemented</CallToAction>
+    <CallToAction class="button button-secondary" href={REPO}>Read the source</CallToAction>
   </p>
 </section>

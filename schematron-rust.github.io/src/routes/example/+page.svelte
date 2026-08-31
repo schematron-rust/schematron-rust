@@ -1,15 +1,13 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
-  import InsetText from 'lily-design-system-svelte-headless/components/InsetText/InsetText.svelte';
-  import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import { Alert, InsetText, WarningCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { REPO, specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>Worked example — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="One schema, two documents, and the real output: phases, first-matching-rule, diagnostics, flags, and what --explain and --verbose actually print."
@@ -350,7 +348,7 @@ $ echo $?
   </p>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href="/reports/">The same run as SVRL and JSON</a>
-    <a class="button button-secondary" href={specUrl('tutorial/index.md')}>The full tutorial</a>
+    <CallToAction class="button button-primary" href="/reports/">The same run as SVRL and JSON</CallToAction>
+    <CallToAction class="button button-secondary" href={specUrl('tutorial/index.md')}>The full tutorial</CallToAction>
   </p>
 </section>

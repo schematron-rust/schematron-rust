@@ -3,6 +3,45 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.6.0
+
+### Changed
+
+- **`Value::Number` and `Item::Number` gained a second field**, a
+  `NumericType` tag (`Integer`, `Decimal`, `Float`, or `Double`). Both enums
+  were already `#[non_exhaustive]`; this changes the shape of an existing
+  variant, so any code constructing or matching `Value::Number(n)` /
+  `Item::Number(n)` directly needs the tag added — `NumericType::Double`
+  reproduces the old behaviour everywhere except numeric literals and casts.
+
+### Added
+
+- **XPath 2.0 phase 4: the numeric type hierarchy.** `instance of` and its
+  companions now recognize `xs:integer`, `xs:decimal` and `xs:float` as well
+  as `xs:double`. The type is tracked lexically for numeric literals (`1` is
+  an integer, `1.0` a decimal, even though they are numerically equal) and
+  for the result of an explicit `cast as`/`castable as`; `xs:integer`
+  matches `instance of xs:decimal` too, since it derives from `xs:decimal`
+  by restriction in XML Schema. Arithmetic, every function in the library,
+  and `for`'s `to` ranges are deliberately left untracked and still produce
+  `xs:double`, so `(1 + 1) instance of xs:integer` is `false` — this crate
+  does not implement full XPath 2.0 numeric type promotion. See
+  [spec/xpath2/](spec/xpath2/index.md).
+- This also **corrects a documentation mistake**: `spec/xpath2/` previously
+  recorded `1 instance of xs:double` as agreeing with real XPath 2.0. It
+  does not — `1` is an `xs:integer`, which does not derive from `xs:double`
+  — and both the documentation and the crate's behavior now say `false`.
+
+## 0.5.1
+
+### Changed
+
+- **MSRV raised to 1.96** (current stable minus two, up from minus three).
+  Routine maintenance per
+  [spec/rust-msrv-n-minus-2/](spec/rust-msrv-n-minus-2/index.md); not a
+  breaking change. Verified with `cargo +1.96 test --all-features` on the
+  boundary toolchain itself.
+
 ## 0.5.0
 
 ### Changed
@@ -30,7 +69,7 @@ git history; this file starts where the first output-affecting change did.
   they are correct, and this crate implements them as the standard describes —
   so they are kept out of `--lint`, which exists to report likely errors. Each
   of the seven checks is backed by a divergence in
-  [spec/conformance.md](spec/conformance.md), established by running this
+  [spec/conformance/](spec/conformance/index.md), established by running this
   crate and the ISO reference implementation against the same schema.
 
 ### Fixed
@@ -41,7 +80,7 @@ git history; this file starts where the first output-affecting change did.
   return $k` is well inside it, and together they ask for close to a billion
   items — from a 90-byte expression. Found by fuzzing. A budget is now shared
   across every nested construct in one expression, so the product is bounded;
-  both limits are in [spec/conformance.md](spec/conformance.md).
+  both limits are in [spec/conformance/](spec/conformance/index.md).
 
 ### Performance
 
@@ -76,7 +115,7 @@ Two changes alter what you see for a schema that worked before.
   and namespaced names as
   `*[local-name()='line' and namespace-uri()='urn:example'][3]`, which needs
   no prefix bound by the reader. This affects both the text output and SVRL's
-  `@location`. See [spec/validation.md](spec/validation.md).
+  `@location`. See [spec/validation/](spec/validation/index.md).
 
 - **A misspelled variable is an error when the schema loads**, rather than
   when the expression using it is first evaluated. `$naem` for `$name` used to
@@ -86,7 +125,7 @@ Two changes alter what you see for a schema that worked before.
 ### Added
 
 - `<sch:key>` and the `key()` function, turning a quadratic cross-reference
-  check into a linear one. A non-ISO extension — see [spec/keys.md](spec/keys.md).
+  check into a linear one. A non-ISO extension — see [spec/keys/](spec/keys/index.md).
 - `Report::from_svrl`, making SVRL bidirectional: reports can be read back,
   not only written.
 - `extends href`, and fragment identifiers on both it and `include`:
@@ -94,7 +133,7 @@ Two changes alter what you see for a schema that worked before.
   read. `include` splices the element, `extends` its children.
 - Six lints: unreferenced keys, unused variables, rules with no assertions,
   patterns with no rules, duplicate assertion tests, and phases that activate
-  nothing. See [spec/linting.md](spec/linting.md).
+  nothing. See [spec/linting/](spec/linting/index.md).
 
 ### Fixed
 
@@ -120,5 +159,5 @@ Two changes alter what you see for a schema that worked before.
 - Differential testing against the ISO reference implementation, both over the
   curated corpus and over generated schema and document pairs. It found the
   first two fixes above, and the divergences it turned up are recorded in
-  [spec/conformance.md](spec/conformance.md) — several of them cases where the
-  reference is the one in the wrong. See [spec/testing.md](spec/testing.md).
+  [spec/conformance/](spec/conformance/index.md) — several of them cases where the
+  reference is the one in the wrong. See [spec/testing/](spec/testing/index.md).

@@ -71,9 +71,10 @@ and `Schema::check_expression` rejects it under a 1.0 binding, which keeps the
 version out of the parser's signature. Functions are gated the same way, by
 two signature tables.
 
-Everything XPath 2.0 has that phase 1 lacks is listed in a table of names, so
-the error can say *why* a function is missing rather than merely that it is.
-That is the difference between an honest subset and a dangerous one.
+Every XPath 2.0 function this crate does not implement is listed by name in
+one of three tables — grouped by why it's missing — so the error can say
+*why* a function is missing rather than merely that it is. That is the
+difference between an honest subset and a dangerous one.
 
 Recursion is depth-limited. Values are the four XPath 1.0 types and the
 conversions between them are exact, including the number-to-string format,

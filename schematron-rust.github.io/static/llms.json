@@ -1,0 +1,85 @@
+{
+  "name": "schematron-rust",
+  "summary": "Pure Rust ISO/IEC 19757-3 Schematron: rule-based XML validation, with no libxml2, no XSLT processor, no C toolchain, no FFI, and no unsafe.",
+  "description": "Schematron describes the conditions a document must satisfy — co-occurrence rules, cross-references between distant parts of a document, value relationships, cardinality that depends on content rather than position — written as XPath expressions, layered on top of a grammar (DTD, XML Schema, RELAX NG) rather than used instead of one. This crate contains its own XML parser, its own XPath engine (a complete XPath 1.0 implementation plus a documented XPath 2.0 subset), and its own validator; it interprets a schema directly rather than transpiling it to XSLT. This repository is a monorepo holding the `schematron` crate and its companion website. `schematron/spec/` is normative for the crate's behavior; `spec/` at the repository root is normative for the repository instead — governance, funding, publishing policy — not XPath semantics.",
+  "homepage": "https://schematron-rust.github.io",
+  "repository": "https://github.com/schematron-rust/schematron-rust",
+  "license": "MIT OR Apache-2.0 OR GPL-2.0-only OR GPL-3.0-only",
+  "package": {
+    "name": "schematron",
+    "crates_io": "https://crates.io/crates/schematron",
+    "docs_rs": "https://docs.rs/schematron",
+    "install_library": "cargo add schematron",
+    "install_cli": "cargo install schematron"
+  },
+  "canonical_source": "https://github.com/schematron-rust/schematron-rust/blob/main/llms.json",
+  "sections": [
+    {
+      "title": "Start here",
+      "links": [
+        { "title": "Repository map", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/index.md", "description": "Routes to the right document rather than repeating what it says." },
+        { "title": "Crate README", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/README.md", "description": "What Schematron is, install, library and CLI usage, feature list." },
+        { "title": "Website", "url": "https://schematron-rust.github.io/", "description": "The same material as a browsable site, with a worked example and a conformance table." }
+      ]
+    },
+    {
+      "title": "Specification",
+      "description": "Normative for the crate's behavior. If code and spec disagree, that is a defect in one of them.",
+      "links": [
+        { "title": "spec/index.md", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/index.md", "description": "Overview, design principles, reading order." },
+        { "title": "spec/tutorial/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/tutorial/index.md", "description": "Eighteen steps from one rule to a real schema." },
+        { "title": "spec/data-model/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/data-model/index.md", "description": "Every Schematron element and its Rust type." },
+        { "title": "spec/validation/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/validation/index.md", "description": "The validation algorithm, exactly." },
+        { "title": "spec/xpath/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xpath/index.md", "description": "The XPath 1.0 engine — axes, functions, conversions." },
+        { "title": "spec/xpath2/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xpath2/index.md", "description": "The XPath 2.0 subset, and where it still behaves like 1.0." },
+        { "title": "spec/xml/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xml/index.md", "description": "The XML parser and its data model." },
+        { "title": "spec/parsing/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/parsing/index.md", "description": "The five schema compilation passes." },
+        { "title": "spec/svrl/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/svrl/index.md", "description": "The SVRL report format, read and written." },
+        { "title": "spec/keys/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/keys/index.md", "description": "Keys, and why a cross-reference check needs one." },
+        { "title": "spec/linting/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/linting/index.md", "description": "Catching schemas that silently do nothing." },
+        { "title": "spec/api/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/api/index.md", "description": "The library surface." },
+        { "title": "spec/cli/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/cli/index.md", "description": "Every CLI option and exit code." },
+        { "title": "spec/errors/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/errors/index.md", "description": "The error taxonomy — error versus finding." },
+        { "title": "spec/conformance/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/conformance/index.md", "description": "Limits and divergences, stated up front." },
+        { "title": "spec/testing/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/testing/index.md", "description": "Tests, fuzzing, benchmarks, lints." },
+        { "title": "spec/roadmap/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/roadmap/index.md", "description": "Shipped, next, and not planned." },
+        { "title": "spec/agents-directory-name-is-lowercase/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/agents-directory-name-is-lowercase/index.md", "description": "Why the agent documentation directory is lowercase." }
+      ]
+    },
+    {
+      "title": "Website",
+      "links": [
+        { "title": "Home", "url": "https://schematron-rust.github.io/" },
+        { "title": "Why Schematron", "url": "https://schematron-rust.github.io/why/" },
+        { "title": "Tutorial", "url": "https://schematron-rust.github.io/tutorial/" },
+        { "title": "Worked example", "url": "https://schematron-rust.github.io/example/" },
+        { "title": "Library", "url": "https://schematron-rust.github.io/library/" },
+        { "title": "CLI", "url": "https://schematron-rust.github.io/cli/" },
+        { "title": "Report formats", "url": "https://schematron-rust.github.io/reports/" },
+        { "title": "Conformance", "url": "https://schematron-rust.github.io/conformance/" },
+        { "title": "Roadmap", "url": "https://schematron-rust.github.io/roadmap/" },
+        { "title": "Specification index", "url": "https://schematron-rust.github.io/spec/" },
+        { "title": "Help", "url": "https://schematron-rust.github.io/help/" },
+        { "title": "About", "url": "https://schematron-rust.github.io/about/" }
+      ]
+    },
+    {
+      "title": "Repository",
+      "links": [
+        { "title": "CHANGELOG", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/CHANGELOG.md", "description": "Crate release notes." },
+        { "title": "CONTRIBUTING", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/CONTRIBUTING.md", "description": "How to propose a change, and the gate every change must pass." },
+        { "title": "NEWS", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/NEWS.md", "description": "Repository-level news, separate from crate releases." }
+      ]
+    },
+    {
+      "title": "Optional",
+      "links": [
+        { "title": "spec/rust-msrv-n-minus-2/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/rust-msrv-n-minus-2/index.md", "description": "MSRV policy — current stable minus two." },
+        { "title": "Repository spec/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/spec/index.md", "description": "Governance — funding, publishing, agent skills." },
+        { "title": "spec/agent-skills/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/spec/agent-skills/index.md", "description": "Claude Code skills for using or maintaining this project." },
+        { "title": "AGENTS.md", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/AGENTS.md", "description": "Instructions for AI coding agents working on the crate." },
+        { "title": "GitHub issues", "url": "https://github.com/schematron-rust/schematron-rust/issues", "description": "Bug reports and feature requests." }
+      ]
+    }
+  ]
+}

@@ -1,15 +1,13 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import Details from 'lily-design-system-svelte-headless/components/Details/Details.svelte';
-  import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
-  import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import { Details, Alert, WarningCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { REPO, specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>Help — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="Diagnose a Schematron schema that does nothing, understand assert versus report, XPath 1.0 node-set comparison, and where to ask for help."
@@ -170,7 +168,7 @@
   </p>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={REPO + '/issues'}>Open an issue</a>
-    <a class="button button-secondary" href="/spec/">Read the specification</a>
+    <CallToAction class="button button-primary" href={REPO + '/issues'}>Open an issue</CallToAction>
+    <CallToAction class="button button-secondary" href="/spec/">Read the specification</CallToAction>
   </p>
 </section>

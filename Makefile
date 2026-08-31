@@ -19,19 +19,38 @@
 # `help` is the default target on purpose: a bare `make` must not push.
 # Pass FORCE=1 to overwrite a Pages repo whose history did not come from a
 # split of this monorepo.
+#
+# Two targets publish the same directory to the same repo, on purpose:
+#
+#   make publish       recommended for everyday use. `git subtree split`
+#                       first, so a rejected push costs nothing to retry, and
+#                       it refuses to run off `main` or with uncommitted
+#                       changes under the site directory, or to overwrite
+#                       history that didn't come from a split of this
+#                       monorepo (without FORCE=1).
+#   make github-pages  delegates to bin/make-github-pages, the plain
+#                       `git subtree push` one-liner, with none of the
+#                       above. It re-derives the split on every run instead
+#                       of reusing one, which is slow on a history this
+#                       repo's size and only gets slower as it grows. Kept
+#                       for parity with generic git-subtree docs that
+#                       describe exactly this command; `make publish` is
+#                       the one to reach for otherwise.
 
-FORCE_FLAG := $(if $(FORCE),--force,)
-PREFIX     := schematron-rust.github.io
-REMOTE     := pages
-URL        := git@github.com:schematron-rust/schematron-rust.github.io.git
-SPLIT      := _split_site
+FORCE_FLAG   := $(if $(FORCE),--force,)
+NAME         := schematron-rust
+PREFIX       := $(NAME).github.io
+REMOTE       := pages
+URL          := git@github.com:schematron-rust/schematron-rust.github.io.git
+SPLIT        := _split_site
 
-.PHONY: help publish
+.PHONY: help publish github-pages
 
 help:
-	@echo "make publish   publish $(PREFIX)/ to the Pages repo"
+	@echo "make publish       publish $(PREFIX)/ to the Pages repo (recommended)"
+	@echo "make github-pages  publish $(PREFIX)/ via a plain 'git subtree push'"
 	@echo ""
-	@echo "Add FORCE=1 to overwrite the Pages repo's history."
+	@echo "Add FORCE=1 to overwrite the Pages repo's history (make publish only)."
 
 publish:
 	@set -eu; \
@@ -76,3 +95,6 @@ publish:
 		  echo "" >&2; \
 		  exit 1; \
 		fi
+
+github-pages:
+	bin/make-github-pages '$(NAME)' '$(URL)'

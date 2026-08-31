@@ -1,14 +1,13 @@
 <script lang="ts">
-  import SectionHeading from '$lib/lily/SectionHeading.svelte';
-  import CodeBlock from '$lib/lily/CodeBlock.svelte';
-  import Alert from 'lily-design-system-svelte-headless/components/Alert/Alert.svelte';
-  import WarningCallout from 'lily-design-system-svelte-headless/components/WarningCallout/WarningCallout.svelte';
-  import Separator from 'lily-design-system-svelte-headless/components/Separator/Separator.svelte';
+  import { Alert, WarningCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
   import { REPO, specUrl } from '$lib/site';
+  import type { PageData } from './$types';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
-  <title>Tutorial — schematron</title>
+  <title>{data.title}</title>
   <meta
     name="description"
     content="Write your first Schematron schema: assert and report, first-matching-rule, namespaces, variables, diagnostics, phases, and the two ways a schema silently does nothing."
@@ -291,8 +290,8 @@ cargo run -- -s examples/invoice.sch -p strict -v examples/invoice-bad.xml`}</co
   </CodeBlock>
 
   <p style="margin-top: 2rem;">
-    <a class="button button-primary" href={specUrl('tutorial/index.md')}>The full eighteen-step tutorial</a>
-    <a class="button button-secondary" href="/library/">Use the library</a>
+    <CallToAction class="button button-primary" href={specUrl('tutorial/index.md')}>The full eighteen-step tutorial</CallToAction>
+    <CallToAction class="button button-secondary" href="/library/">Use the library</CallToAction>
   </p>
   <p><a class="back-link" href={REPO}>&larr; Everything else is in the repo</a></p>
 </section>

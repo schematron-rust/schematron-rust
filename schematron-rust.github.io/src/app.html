@@ -4,6 +4,30 @@
     <meta charset="utf-8" />
     <link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/assets/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      // Set data-theme on <html> before any stylesheet loads. Both theme
+      // files below are always linked and each scopes its rules to
+      // :root[data-theme="…"] (see static/assets/themes/*.css), so without
+      // this attribute set before first paint, neither theme's custom
+      // properties apply at all — a totally unstyled flash, not just the
+      // wrong theme. Wrapped in try/catch: a private window or disabled
+      // storage must still render a themed page, just always light.
+      (function () {
+        var theme = 'light';
+        try {
+          theme =
+            localStorage.getItem('schematron-theme') ||
+            (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        } catch (e) {}
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
+    <!-- Both linked always, per ThemePicker's own "preloading for
+         zero-flicker switching" recipe: switching themes is then an
+         attribute change, not a stylesheet swap, so there is no flash and
+         no per-switch network request. See AGENTS.md's "Theming" section. -->
+    <link rel="stylesheet" href="%sveltekit.assets%/assets/themes/light.css" />
+    <link rel="stylesheet" href="%sveltekit.assets%/assets/themes/dark.css" />
     <link rel="stylesheet" href="%sveltekit.assets%/assets/style.css" />
     %sveltekit.head%
   </head>

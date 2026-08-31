@@ -15,25 +15,18 @@ is Claude-specific mechanics that do not belong there.
   no XSLT, no FFI, no `unsafe`.
 - **Where the truth lives** — [`spec/`](spec/) is normative. Code and spec
   disagreeing is a defect in one of them.
-- **The gate** — these four must pass before any change is done:
-
-  ```sh
-  cargo test --all-features
-  cargo clippy --all-targets --all-features -- -D warnings
-  cargo doc --no-deps --all-features
-  cargo +1.96 test --all-features
-  ```
+- **The gate** — the four commands in [`AGENTS.md`](AGENTS.md#the-commands-that-gate-a-change)
+  must pass before any change is done. `cargo test --lib` is the fast loop
+  while iterating (see [`agents/testing.md`](agents/testing.md) for the full
+  layer-by-layer breakdown, including fuzzing and benchmarks); run the full
+  gate before declaring done, not just the fast loop.
 
 ## Working notes
 
-- **`cargo test --test cli` takes ~40 s** because it spawns the binary per
-  test. `cargo test --lib` is the fast loop; run the full suite before
-  declaring done.
-- **Fuzzing needs nightly**, which is installed:
-  `cargo +nightly fuzz run fuzz_xpath -- -max_total_time=60`.
-  Budget for it; the default run is unbounded.
-- **Benchmarks are slow by default.** For a quick signal use
-  `--warm-up-time 1 --measurement-time 2 --sample-size 10`.
+Mechanics specific to running this crate from *this* machine/session — not
+duplicated from `AGENTS.md` or `agents/testing.md`, which cover what to run
+and why:
+
 - **The crate root is `schematron/`, not the repository root.** The repository
   holds the crate and the website as peers, so run `cargo` from here. Anything
   that reads the crate root at compile time — `env!("CARGO_MANIFEST_DIR")`, which
@@ -50,24 +43,12 @@ is Claude-specific mechanics that do not belong there.
 
 ## Things that look like bugs and are not
 
-- `a = b` and `a != b` can both be true. XPath 1.0 node-set comparison is
-  existential. Correct, deliberate, tested.
-- `'x' > 0` is false rather than an error. Relational operators convert to
-  number; the string becomes NaN.
-- An unprefixed name in a schema matches **no namespace**. XPath 1.0 has no
-  default namespace. This is the most common reason a schema appears to do
-  nothing.
-- A `report` firing does not make a document invalid. It is an observation.
-- `missing >= false()` is **true** for an empty node-set. A node-set compared
-  to a boolean is converted with `boolean()`, not walked existentially, so it
-  is `0 >= 0`. Meanwhile `missing = 'x'` and `missing != 'x'` are both false.
-  This was a real bug once; do not fold the boolean case back in with the
-  others.
-- `sum()` of an empty node-set is **positive** zero, so `1 div sum(none)` is
-  Infinity. It is folded from `0.0` rather than written `.sum()`, because
-  Rust's `Sum` for `f64` starts from `-0.0`.
-
-Full list with reasoning: [`agents/invariants.md`](agents/invariants.md).
+Do not "fix" a surprising XPath 1.0 semantic without reading
+[`agents/invariants.md`](agents/invariants.md) first — existential node-set
+comparison, NaN-yielding conversions, the empty-node-set-versus-boolean case,
+and `sum()`'s positive zero are all correct, deliberate, and tested. This list
+is deliberately not copied here; a second copy is exactly the kind of drift
+this file's opening paragraph warns about.
 
 ## Before claiming a change is done
 

@@ -1,9 +1,59 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import SkipLink from 'lily-design-system-svelte-headless/components/SkipLink/SkipLink.svelte';
+  import { SkipLink } from 'lily-design-system-svelte-headless';
+  import { ThemePicker } from 'lily-design-system-svelte-theme-picker';
+  import { TextSizePicker } from 'lily-design-system-svelte-text-size-picker';
+  import { SharePicker } from 'lily-design-system-svelte-share-picker';
   import { REPO } from '$lib/site';
 
   let { children } = $props();
+
+  // Each href builder targets that network's real share/compose endpoint —
+  // no tracking pixel, no first-party analytics call. Two networks ignore
+  // parameters this list would otherwise pass:
+  // - LinkedIn's share-offsite endpoint only ever accepts `url`; a `title`
+  //   or `summary` parameter is silently ignored; what LinkedIn shows
+  //   instead comes from the target page's own Open Graph tags (which this
+  //   site does not yet set).
+  // - Bluesky's compose intent has one `text` field, not separate
+  //   title/url fields, so the URL is folded into it.
+  // Mastodon has no single share endpoint — it is federated, so there is
+  // no one instance to redirect to. mastodonshare.com exists specifically
+  // to bridge that: it asks the visitor for their home instance once,
+  // remembers it in a cookie, and redirects there from then on. It is a
+  // third-party service, not run by Mastodon or this project.
+  const SHARE_TARGETS = [
+    {
+      id: 'email',
+      label: 'Email',
+      href: (url: string, title: string) =>
+        `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(url)}`
+    },
+    {
+      id: 'linkedin',
+      label: 'LinkedIn',
+      href: (url: string) =>
+        `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`
+    },
+    {
+      id: 'mastodon',
+      label: 'Mastodon',
+      href: (url: string, title: string) =>
+        `https://mastodonshare.com/?text=${encodeURIComponent(title)}&url=${encodeURIComponent(url)}`
+    },
+    {
+      id: 'bluesky',
+      label: 'Bluesky',
+      href: (url: string, title: string) =>
+        `https://bsky.app/intent/compose?text=${encodeURIComponent(`${title}\n${url}`)}`
+    },
+    {
+      id: 'reddit',
+      label: 'Reddit',
+      href: (url: string, title: string) =>
+        `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`
+    }
+  ];
 
   type NavLink = { href: string; label: string };
   const navLinks: NavLink[] = [
@@ -41,6 +91,28 @@
       {/each}
       <a href={REPO}>GitHub</a>
     </nav>
+    <div class="site-controls">
+      <ThemePicker
+        label="Theme"
+        themesUrl="/assets/themes/"
+        themes={['light', 'dark']}
+        storageKey="schematron-theme"
+        detectFromSystem
+      />
+      <TextSizePicker
+        label="Text size"
+        sizes={['small', 'medium', 'large', 'x-large']}
+        storageKey="schematron-text-size"
+      />
+      <SharePicker
+        label="Share this page"
+        title={page.data.title}
+        targets={SHARE_TARGETS}
+        copyLabel="Copy link"
+        copiedLabel="Link copied"
+        copyFailedLabel="Could not copy link"
+      />
+    </div>
   </div>
 </header>
 
