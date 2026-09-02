@@ -9,7 +9,7 @@ crate implements, and, more importantly, **where it still behaves like XPath
 Read the divergences section before relying on this. It is short and it
 matters.
 
-## Status: phases 1 through 7
+## Status: phases 1 through 8
 
 Schematron schemas in the wild declare `xslt2` far more often than they use
 the parts of XPath 2.0 that are genuinely incompatible with 1.0. The
@@ -67,6 +67,14 @@ kind, same expanded name where the kind has one, the same attribute set
 compared as a set, and the same children in the same order. This crate does
 not atomize for `deep-equal`: a node never compares equal to an atomic
 value, even one with an identical string value.
+
+**Phase 8** adds **`resolve-uri()`**: RFC 3986 URI-reference resolution, a
+small self-contained implementation rather than a dependency (verified
+against the RFC's own worked examples in `src/xpath/uri.rs`'s tests). The
+one-argument form falls back to the document's own base URI — this crate
+has no other notion of a query's static base URI — and is an error, naming
+what's missing, when the document doesn't have one. `resolve-uri(())` is
+`()`, matching every other function that takes `xs:string?`.
 
 ### The sequence type, and why XPath 1.0 is unaffected
 
@@ -159,6 +167,8 @@ cannot accidentally acquire 2.0 behaviour.
 | `exactly-one(sequence)` | Passes through a sequence of exactly 1 item; raises otherwise |
 | `data(sequence)` | Atomizes: a node becomes its string value, everything else passes through |
 | `deep-equal(sequence, sequence)` | Structural equality: same length, and each pair of items deep-equal — never an error, unlike `eq`; `NaN` deep-equals `NaN`; a node never deep-equals an atomic value |
+| `resolve-uri(relative)` | Resolves against the document's base URI; an error if it has none |
+| `resolve-uri(relative, base)` | Resolves against an explicit base, per RFC 3986 §5.2 |
 | `count`, `exists`, `empty`, `min`, `max`, `avg`, `sum` | Accept a sequence as well as a node-set |
 | `current-date()`, `current-dateTime()`, `current-time()` | Stable for a whole validation run; see below |
 | `year-from-date`, `month-from-date`, `day-from-date` | Components of a date |
@@ -511,6 +521,7 @@ time. None of them silently does something else.
 | The general `xs:duration` | Only partially ordered; see above |
 | `adjust-date-to-timezone()` and its companions | Needs a timezone-bearing cast |
 | `for-each()` | Not actually XPath 2.0: it takes a function item, an XPath 3.0 feature this crate has no representation for. Unlike its five neighbours in the table above, this one isn't a matter of writing the function. |
+| `trace()` | Its destination is implementation-defined; returning the value unchanged with no actual trace output would satisfy the signature while doing nothing useful. A real one needs a debug-output channel this otherwise-pure evaluator doesn't have — an architecture decision, not a one-function addition |
 | `xslt3`, `xpath3`, `xpath31` bindings | Still refused; use `allow_unknown_query_binding` |
 
 ## Divergences: where 2.0 still behaves like 1.0

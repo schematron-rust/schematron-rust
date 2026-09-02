@@ -61,6 +61,7 @@ mod functions;
 mod lexer;
 mod parser;
 mod temporal;
+mod uri;
 mod value;
 mod version;
 

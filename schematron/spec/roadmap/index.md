@@ -109,6 +109,16 @@
   expanded name, an order-independent attribute set, and same-order
   children. Not atomizing — a node never deep-equals an atomic value, even
   one with an identical string value — is a deliberate choice, not a gap.
+- XPath 2.0 phase 8: `resolve-uri()`. RFC 3986 URI-reference resolution,
+  implemented by hand (`src/xpath/uri.rs`) rather than adding a dependency,
+  and verified against the RFC's own worked examples — both the "normal"
+  and "abnormal" sets in §5.4. The one-argument form falls back to the
+  document's own base URI, the closest thing this crate has to a query's
+  static base URI; it errors, naming what's missing, when the document has
+  none. `trace()` — audited alongside it — stays unimplemented: its
+  destination is implementation-defined, and this engine has no
+  debug-output channel to point it at without a real architecture
+  decision, which a single function shouldn't make unilaterally.
 
 ## Next
 

@@ -10,6 +10,7 @@
 use super::context::EvalContext;
 use super::eval::EvalError;
 use super::temporal::{from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind};
+use super::uri;
 use super::value::{parse_number, Item, NumericType, Value};
 use super::version::XPathVersion;
 use crate::xml::{Document, NodeId, NodeKind, QName};
@@ -80,6 +81,7 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("exactly-one", 1, Some(1)),
     ("data", 1, Some(1)),
     ("deep-equal", 2, Some(2)),
+    ("resolve-uri", 1, Some(2)),
     ("current-date", 0, Some(0)),
     ("current-dateTime", 0, Some(0)),
     ("current-time", 0, Some(0)),
@@ -137,7 +139,15 @@ const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &[
 /// only the sequence type, which phase 2a already shipped, and are
 /// implemented; `for-each` needs a type this crate has no representation
 /// for.
-const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] = &["trace", "resolve-uri", "for-each"];
+///
+/// `trace()` is left here deliberately, not because it is hard: its
+/// destination is implementation-defined, and returning the value unchanged
+/// with no actual trace output would technically satisfy the signature
+/// while being useless for the one thing the function is for. Writing to a
+/// real channel — `stderr`, a caller-supplied sink — would be this engine's
+/// first debug side effect during otherwise-pure evaluation, which is an
+/// architecture decision, not a one-function addition; see `spec/roadmap/`.
+const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] = &["trace", "for-each"];
 
 /// Checks that a function exists and accepts this many arguments.
 ///
@@ -637,8 +647,43 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
         // types or counts are simply not equal rather than a type error.
         "deep-equal" => deep_equal_call(name, args, context),
 
+        "resolve-uri" => resolve_uri_call(name, args, context),
+
         _ => Err(EvalError::new(format!("unknown function {name}()"))),
     }
+}
+
+/// `resolve-uri($relative)` and `resolve-uri($relative, $base)`.
+///
+/// The empty sequence in, empty sequence out: `$relative` is `xs:string?`,
+/// and there is nothing to resolve against a base when there is nothing to
+/// resolve. The one-argument form falls back to the document's own base
+/// URI — this crate has no other notion of "the static base URI of the
+/// query" to fall back to — and errors, naming what's missing, when the
+/// document doesn't have one rather than resolving against nothing.
+fn resolve_uri_call(
+    name: &str,
+    args: &[Value],
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let document = context.document;
+    if items_of(name, args, 0, context.version)?.is_empty() {
+        return Ok(Value::Sequence(Vec::new()));
+    }
+    let relative = args[0].to_xpath_string(document);
+    let base = match args.get(1) {
+        Some(base) => base.to_xpath_string(document),
+        None => document
+            .base_uri()
+            .ok_or_else(|| {
+                EvalError::new(
+                    "resolve-uri() with one argument needs the document's base URI, \
+                     which is not set here; supply resolve-uri($relative, $base) instead",
+                )
+            })?
+            .to_string(),
+    };
+    Ok(Value::String(uri::resolve(&relative, &base)))
 }
 
 /// `deep-equal($sequence, $sequence)`, split out to keep `call_v2_rest`
@@ -1502,13 +1547,30 @@ mod tests {
     }
 
     #[test]
+    fn resolve_uri_is_available() {
+        assert!(check_function("resolve-uri", 1, XPathVersion::V2).is_ok());
+        assert!(check_function("resolve-uri", 2, XPathVersion::V2).is_ok());
+        assert!(check_function("resolve-uri", 3, XPathVersion::V2).is_err());
+        assert!(check_function("resolve-uri", 1, XPathVersion::V1).is_err());
+    }
+
+    #[test]
+    fn trace_still_names_itself_as_not_implemented() {
+        // Audited alongside resolve-uri(): unlike that one, trace() stays
+        // unimplemented because its destination is implementation-defined
+        // and this engine has no debug-output channel to point it at yet.
+        let message = check_function("trace", 2, XPathVersion::V2).unwrap_err();
+        assert!(message.contains("does not implement"), "{message}");
+    }
+
+    #[test]
     fn the_two_point_zero_library_has_the_documented_names() {
         let names = function_names_v2();
         // Growing this number is expected; the point of the check is that the
         // list and the documentation move together, which
         // `tests/docs.rs::the_xpath_two_function_list_in_the_spec_matches_the_engine`
         // enforces.
-        assert_eq!(names.len(), 55, "{names:?}");
+        assert_eq!(names.len(), 56, "{names:?}");
         for expected in [
             "matches",
             "replace",
@@ -1520,6 +1582,7 @@ mod tests {
             "index-of",
             "reverse",
             "deep-equal",
+            "resolve-uri",
             "zero-or-one",
             "one-or-more",
             "exactly-one",
