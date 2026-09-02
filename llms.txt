@@ -68,6 +68,7 @@ policy — not XPath semantics.
 - [CHANGELOG](schematron/CHANGELOG.md): crate release notes
 - [CONTRIBUTING](CONTRIBUTING.md): how to propose a change, and the gate every change must pass
 - [NEWS](NEWS.md): repository-level news, separate from crate releases
+- [AI_STATEMENT.md](AI_STATEMENT.md): how AI tools are used to build this, and who is accountable
 - License: MIT OR Apache-2.0 OR GPL-2.0-only OR GPL-3.0-only, at the user's option
 
 ## Optional

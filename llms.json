@@ -67,7 +67,8 @@
       "links": [
         { "title": "CHANGELOG", "url": "schematron/CHANGELOG.md", "description": "Crate release notes." },
         { "title": "CONTRIBUTING", "url": "CONTRIBUTING.md", "description": "How to propose a change, and the gate every change must pass." },
-        { "title": "NEWS", "url": "NEWS.md", "description": "Repository-level news, separate from crate releases." }
+        { "title": "NEWS", "url": "NEWS.md", "description": "Repository-level news, separate from crate releases." },
+        { "title": "AI_STATEMENT.md", "url": "AI_STATEMENT.md", "description": "How AI tools are used to build this, and who is accountable." }
       ]
     },
     {
