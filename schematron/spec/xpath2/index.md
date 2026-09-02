@@ -9,7 +9,7 @@ crate implements, and, more importantly, **where it still behaves like XPath
 Read the divergences section before relying on this. It is short and it
 matters.
 
-## Status: phases 1 through 6
+## Status: phases 1 through 7
 
 Schematron schemas in the wild declare `xslt2` far more often than they use
 the parts of XPath 2.0 that are genuinely incompatible with 1.0. The
@@ -59,6 +59,14 @@ one reported "unknown function" rather than saying what was actually wrong.
 `data()` atomizes a node to its typed value; since this crate does no
 schema-aware processing, that value is always untyped atomic, which — like
 every other untyped value in this engine — is represented as a plain string.
+
+**Phase 7** adds **`deep-equal()`**: structural equality over sequences,
+comparing atomic items by value (`NaN` deep-equals `NaN`, unlike `eq`; a
+mismatched type is simply unequal, unlike `eq`) and nodes recursively — same
+kind, same expanded name where the kind has one, the same attribute set
+compared as a set, and the same children in the same order. This crate does
+not atomize for `deep-equal`: a node never compares equal to an atomic
+value, even one with an identical string value.
 
 ### The sequence type, and why XPath 1.0 is unaffected
 
@@ -150,6 +158,7 @@ cannot accidentally acquire 2.0 behaviour.
 | `one-or-more(sequence)` | Passes through a sequence of 1 or more items; raises on the empty sequence |
 | `exactly-one(sequence)` | Passes through a sequence of exactly 1 item; raises otherwise |
 | `data(sequence)` | Atomizes: a node becomes its string value, everything else passes through |
+| `deep-equal(sequence, sequence)` | Structural equality: same length, and each pair of items deep-equal — never an error, unlike `eq`; `NaN` deep-equals `NaN`; a node never deep-equals an atomic value |
 | `count`, `exists`, `empty`, `min`, `max`, `avg`, `sum` | Accept a sequence as well as a node-set |
 | `current-date()`, `current-dateTime()`, `current-time()` | Stable for a whole validation run; see below |
 | `year-from-date`, `month-from-date`, `day-from-date` | Components of a date |

@@ -148,7 +148,8 @@ fn constructs_still_needing_phase_two_b_say_so() {
     // implemented, phase 5) but needs function items, an XPath 3.0 feature.
     for (test, expected) in [
         ("count(for-each(b, 1))", "does not implement"),
-        ("deep-equal(b, c)", "does not implement"),
+        ("trace(b, 'x')", "does not implement"),
+        ("resolve-uri('a', 'b')", "does not implement"),
     ] {
         let message = compile_error("xslt2", test);
         assert_contains!(message, expected);
@@ -430,6 +431,44 @@ fn data_atomizes_nodes_and_passes_atomic_values_through() {
     assert!(check("data(@x) eq 'open'", r#"<a x="open"/>"#));
     assert!(check("data(1) = 1", "<a/>"));
     assert!(check("string-join(data((@x, 'y')), ',') = 'open,y'", r#"<a x="open"/>"#));
+}
+
+#[test]
+fn deep_equal_compares_atomic_sequences_by_value_and_length() {
+    assert!(check("deep-equal((1, 2, 'x'), (1, 2, 'x'))", "<a/>"));
+    assert!(!check("deep-equal((1, 2), (1, 2, 3))", "<a/>"));
+    assert!(!check("deep-equal((1, 2), (1, 9))", "<a/>"));
+    // Unlike `eq`, mismatched types are simply unequal, not an error.
+    assert!(!check("deep-equal(1, 'a')", "<a/>"));
+    // Unlike `eq`, NaN deep-equals NaN.
+    assert!(check("deep-equal(avg(()), avg(()))", "<a/>"));
+}
+
+#[test]
+fn deep_equal_compares_elements_structurally() {
+    // Each comparison is between two `<b>` elements — deep-equal requires
+    // the same expanded *name* too, so the two sides of a comparison must
+    // share a tag; wrapper elements (`p`, `q`, ...) distinguish the pairs.
+    let doc = r#"<a>
+        <p><b x="1"><i>t</i></b></p>
+        <q><b x="1"><i>t</i></b></q>
+        <r><b x="2"><i>t</i></b></r>
+        <s><b x="1" y="2"><i>t</i></b></s>
+        <t><b y="2" x="1"><i>t</i></b></t>
+        <u><b><i>t</i><j>u</j></b></u>
+        <v><b><j>u</j><i>t</i></b></v>
+    </a>"#;
+    // Same name, same attribute, same single child: equal.
+    assert!(check("deep-equal(p/b, q/b)", doc));
+    // Different attribute value: not equal.
+    assert!(!check("deep-equal(p/b, r/b)", doc));
+    // Attribute order is not significant.
+    assert!(check("deep-equal(s/b, t/b)", doc));
+    // Child order is significant.
+    assert!(!check("deep-equal(u/b, v/b)", doc));
+    // A node never deep-equals an atomic value, even with the same string
+    // value — this crate does not atomize for `deep-equal`.
+    assert!(!check("deep-equal(p/b/i, 't')", doc));
 }
 
 #[test]

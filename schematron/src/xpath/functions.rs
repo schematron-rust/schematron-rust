@@ -12,7 +12,7 @@ use super::eval::EvalError;
 use super::temporal::{from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind};
 use super::value::{parse_number, Item, NumericType, Value};
 use super::version::XPathVersion;
-use crate::xml::{Document, NodeId, NodeKind};
+use crate::xml::{Document, NodeId, NodeKind, QName};
 
 /// The name and permitted argument count of every supported function.
 ///
@@ -79,6 +79,7 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("one-or-more", 1, Some(1)),
     ("exactly-one", 1, Some(1)),
     ("data", 1, Some(1)),
+    ("deep-equal", 2, Some(2)),
     ("current-date", 0, Some(0)),
     ("current-dateTime", 0, Some(0)),
     ("current-time", 0, Some(0)),
@@ -136,7 +137,7 @@ const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &[
 /// only the sequence type, which phase 2a already shipped, and are
 /// implemented; `for-each` needs a type this crate has no representation
 /// for.
-const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] = &["deep-equal", "trace", "resolve-uri", "for-each"];
+const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] = &["trace", "resolve-uri", "for-each"];
 
 /// Checks that a function exists and accepts this many arguments.
 ///
@@ -631,7 +632,111 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
             ))
         }
 
+        // Structural equality: same length, and each pair of items
+        // deep-equal — never an error, unlike `eq`, because mismatched
+        // types or counts are simply not equal rather than a type error.
+        "deep-equal" => deep_equal_call(name, args, context),
+
         _ => Err(EvalError::new(format!("unknown function {name}()"))),
+    }
+}
+
+/// `deep-equal($sequence, $sequence)`, split out to keep `call_v2_rest`
+/// short.
+fn deep_equal_call(
+    name: &str,
+    args: &[Value],
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let a = items_of(name, args, 0, context.version)?;
+    let b = items_of(name, args, 1, context.version)?;
+    Ok(Value::Boolean(
+        a.len() == b.len()
+            && a.iter()
+                .zip(b.iter())
+                .all(|(x, y)| deep_equal_item(x, y, context.document)),
+    ))
+}
+
+/// Whether two items are deep-equal, per `fn:deep-equal`.
+///
+/// Unlike `eq`, mismatched atomic types compare unequal rather than erroring
+/// — that is the whole difference between the two functions — and `NaN`
+/// deep-equals `NaN`, also unlike `eq`. A node compares structurally via
+/// [`deep_equal_node`], never against an atomic value.
+fn deep_equal_item(a: &Item, b: &Item, document: &Document) -> bool {
+    match (a, b) {
+        (Item::Node(x), Item::Node(y)) => deep_equal_node(*x, *y, document),
+        (Item::String(x), Item::String(y)) => x == y,
+        (Item::Number(x, _), Item::Number(y, _)) => (x.is_nan() && y.is_nan()) || x == y,
+        (Item::Boolean(x), Item::Boolean(y)) => x == y,
+        (Item::Temporal(x), Item::Temporal(y)) => x.kind() == y.kind() && x == y,
+        (Item::Duration(x), Item::Duration(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Whether two nodes are deep-equal: same kind, and then recursively —
+/// same expanded name where the kind has one, the same attribute set
+/// (compared as a set, not in document order — attribute order is not
+/// significant in XML), and the same children in the same order.
+///
+/// This crate does no schema-aware processing, so there is no typed value
+/// to compare beyond the string value every kind already carries.
+fn deep_equal_node(a: NodeId, b: NodeId, document: &Document) -> bool {
+    let kind = document.kind(a);
+    if kind != document.kind(b) {
+        return false;
+    }
+
+    let names_match = || match (document.name(a), document.name(b)) {
+        (Some(x), Some(y)) => x.matches(y),
+        (None, None) => true,
+        _ => false,
+    };
+
+    match kind {
+        NodeKind::Element => {
+            if !names_match() {
+                return false;
+            }
+            let attrs_of = |id: NodeId| -> Vec<(&QName, String)> {
+                document
+                    .attributes(id)
+                    .iter()
+                    .map(|&attr| (document.name(attr).expect("attributes are named"), document.string_value(attr)))
+                    .collect()
+            };
+            let (attrs_a, attrs_b) = (attrs_of(a), attrs_of(b));
+            if attrs_a.len() != attrs_b.len() {
+                return false;
+            }
+            if !attrs_a.iter().all(|(name_a, value_a)| {
+                attrs_b
+                    .iter()
+                    .any(|(name_b, value_b)| name_a.matches(name_b) && value_a == value_b)
+            }) {
+                return false;
+            }
+            let (children_a, children_b) = (document.children(a), document.children(b));
+            children_a.len() == children_b.len()
+                && children_a
+                    .iter()
+                    .zip(children_b.iter())
+                    .all(|(&x, &y)| deep_equal_node(x, y, document))
+        }
+        NodeKind::Root => {
+            let (children_a, children_b) = (document.children(a), document.children(b));
+            children_a.len() == children_b.len()
+                && children_a
+                    .iter()
+                    .zip(children_b.iter())
+                    .all(|(&x, &y)| deep_equal_node(x, y, document))
+        }
+        NodeKind::Text | NodeKind::Comment => document.string_value(a) == document.string_value(b),
+        NodeKind::Attribute | NodeKind::Namespace | NodeKind::ProcessingInstruction => {
+            names_match() && document.string_value(a) == document.string_value(b)
+        }
     }
 }
 
@@ -1390,13 +1495,20 @@ mod tests {
     }
 
     #[test]
+    fn deep_equal_is_available() {
+        assert!(check_function("deep-equal", 2, XPathVersion::V2).is_ok());
+        assert!(check_function("deep-equal", 1, XPathVersion::V2).is_err());
+        assert!(check_function("deep-equal", 2, XPathVersion::V1).is_err());
+    }
+
+    #[test]
     fn the_two_point_zero_library_has_the_documented_names() {
         let names = function_names_v2();
         // Growing this number is expected; the point of the check is that the
         // list and the documentation move together, which
         // `tests/docs.rs::the_xpath_two_function_list_in_the_spec_matches_the_engine`
         // enforces.
-        assert_eq!(names.len(), 54, "{names:?}");
+        assert_eq!(names.len(), 55, "{names:?}");
         for expected in [
             "matches",
             "replace",
@@ -1407,6 +1519,7 @@ mod tests {
             "distinct-values",
             "index-of",
             "reverse",
+            "deep-equal",
             "zero-or-one",
             "one-or-more",
             "exactly-one",

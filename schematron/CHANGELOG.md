@@ -3,6 +3,19 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.8.0
+
+### Added
+
+- **XPath 2.0 phase 7: `deep-equal()`.** Structural equality over
+  sequences: atomic items compare by value (`NaN` deep-equals `NaN`, and a
+  mismatched type is simply unequal — both unlike `eq`, which errors on
+  the second and treats `NaN` as never equal), and nodes compare
+  recursively by kind, expanded name, an order-independent attribute set,
+  and same-order children. This crate does not atomize for `deep-equal`: a
+  node never compares equal to an atomic value. See
+  [spec/xpath2/](spec/xpath2/index.md).
+
 ## 0.7.0
 
 ### Added
