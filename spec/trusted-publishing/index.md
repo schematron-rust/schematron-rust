@@ -26,3 +26,18 @@ machine, is the only real destination this policy governs.
 Given Codeberg's blocker looks structural rather than temporary, revisit
 this policy — rather than only re-checking Codeberg's status — the next time
 this document is read with intent to act on it.
+
+## Governance: who may run the manual publish
+
+As of 2026-09-02, an AI coding agent (Claude Code) acting on the
+maintainer's behalf is authorized to run `cargo publish` itself, as the
+final step of the release recipe in
+[`schematron/agents/tasks.md`](../../schematron/agents/tasks.md#release) —
+not only to prepare a release for a human to run it. This is still the
+"published manually" arrangement above, credential-wise: the same
+long-lived `cargo login` token on the maintainer's machine, not OIDC. What
+changed is who is trusted to press the button, given the release recipe's
+own gates (the four-command gate, the differential suite, and `cargo
+package --list`) have already run first. It does not change the Trusted
+Publishing question this document otherwise tracks, and does not extend to
+any other publish destination without a separate decision.
