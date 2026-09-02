@@ -103,6 +103,12 @@
   from a typo. `data()` atomizes a node to its typed value, which this
   schema-unaware crate always takes to be untyped atomic, represented as a
   plain string like every other untyped value in this engine.
+- XPath 2.0 phase 7: `deep-equal()`. Structural equality over sequences:
+  atomic items by value (`NaN` deep-equals `NaN`, and a mismatched type is
+  simply unequal — both unlike `eq`) and nodes recursively, by kind,
+  expanded name, an order-independent attribute set, and same-order
+  children. Not atomizing — a node never deep-equals an atomic value, even
+  one with an identical string value — is a deliberate choice, not a gap.
 
 ## Next
 
