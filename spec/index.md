@@ -15,6 +15,7 @@ A change to how the project accepts money belongs here.
 |---|---|
 | [Free and open source funding](free-open-source-funding/index.md) | In progress — GitHub Sponsors live, Open Collective pending |
 | [Trusted publishing](trusted-publishing/index.md) | Planned — blocked on Codeberg/Forgejo support |
+| [Release process](release-process/index.md) | Implemented — who decides a release is ready and executes it, and the bounds on that |
 | [Dependabot](dependabot/index.md) | Implemented |
 | [Rust MSRV policy](rust-msrv-n-minus-2/index.md) | Implemented — 1.96 |
 | [Agent skills](agent-skills/index.md) | Implemented — `schematron-skill`, `schematron-rust-maintainer-skill` |

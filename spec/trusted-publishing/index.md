@@ -29,15 +29,13 @@ this document is read with intent to act on it.
 
 ## Governance: who may run the manual publish
 
-As of 2026-09-02, an AI coding agent (Claude Code) acting on the
-maintainer's behalf is authorized to run `cargo publish` itself, as the
-final step of the release recipe in
-[`schematron/agents/tasks.md`](../../schematron/agents/tasks.md#release) —
-not only to prepare a release for a human to run it. This is still the
-"published manually" arrangement above, credential-wise: the same
-long-lived `cargo login` token on the maintainer's machine, not OIDC. What
-changed is who is trusted to press the button, given the release recipe's
-own gates (the four-command gate, the differential suite, and `cargo
-package --list`) have already run first. It does not change the Trusted
-Publishing question this document otherwise tracks, and does not extend to
-any other publish destination without a separate decision.
+As of 2026-09-02, an AI coding agent may run `cargo publish` itself —
+not only prepare a release for a human to run — using the same long-lived
+`cargo login` credential named above, not OIDC. This is still the
+"published manually" arrangement this document otherwise tracks; what
+changed is who is trusted to press the button. The full policy — that an
+agent may also *decide* a specific, gate-passed change warrants a release
+in the first place, not just execute one it's told to, and every bound on
+that — is [`spec/release-process/`](../release-process/index.md), which is
+now the normative document; this note is kept short deliberately rather
+than duplicated.
