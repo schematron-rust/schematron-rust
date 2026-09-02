@@ -3,6 +3,20 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.7.0
+
+### Added
+
+- **XPath 2.0 phase 6: the cardinality assertions and atomization** —
+  `zero-or-one()`, `one-or-more()`, `exactly-one()`, and `data()`. The first
+  three were an oversight rather than a deliberate gap: unlike every other
+  unimplemented XPath 2.0 function, they weren't named anywhere the crate
+  could say so, and calling one reported "unknown function" — indistinguishable
+  from a typo. `data()` atomizes a node to its typed value, which this
+  schema-unaware crate always takes to be untyped atomic, represented as a
+  plain string like every other untyped value in this engine. See
+  [spec/xpath2/](spec/xpath2/index.md).
+
 ## 0.6.0
 
 ### Changed

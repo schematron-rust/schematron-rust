@@ -401,6 +401,38 @@ fn remove_drops_one_item_by_position() {
 }
 
 #[test]
+fn cardinality_checks_pass_through_a_matching_sequence() {
+    assert!(check("count(zero-or-one(())) = 0", "<a/>"));
+    assert!(check("zero-or-one((1)) = 1", "<a/>"));
+    assert!(check("string-join(one-or-more((1, 2)), ',') = '1,2'", "<a/>"));
+    assert!(check("exactly-one((1)) = 1", "<a/>"));
+}
+
+#[test]
+fn cardinality_checks_raise_on_a_mismatch() {
+    let too_many = eval_error("zero-or-one((1, 2))", "<a/>");
+    assert_contains!(too_many, "zero-or-one()");
+    assert_contains!(too_many, "2 items");
+
+    let empty = eval_error("one-or-more(())", "<a/>");
+    assert_contains!(empty, "one-or-more()");
+
+    let two = eval_error("exactly-one((1, 2))", "<a/>");
+    assert_contains!(two, "exactly-one()");
+    assert_contains!(two, "2 items");
+
+    let zero = eval_error("exactly-one(())", "<a/>");
+    assert_contains!(zero, "exactly-one()");
+}
+
+#[test]
+fn data_atomizes_nodes_and_passes_atomic_values_through() {
+    assert!(check("data(@x) eq 'open'", r#"<a x="open"/>"#));
+    assert!(check("data(1) = 1", "<a/>"));
+    assert!(check("string-join(data((@x, 'y')), ',') = 'open,y'", r#"<a x="open"/>"#));
+}
+
+#[test]
 fn aggregates_accept_sequences_as_well_as_node_sets() {
     assert!(check("sum((1, 2, 3)) = 6", "<a/>"));
     assert!(check("min((3, 1, 2)) = 1", "<a/>"));
