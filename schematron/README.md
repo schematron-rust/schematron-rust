@@ -377,6 +377,16 @@ shown in the docs, resolves every relative link, and ties duplicated facts —
 the MSRV, the CLI flags, the XPath function list — back to their single
 source. See [agents/testing.md](agents/testing.md).
 
+### Releases
+
+An AI coding agent may decide a specific, already-landed, gate-passed
+change warrants a release, and run the actual `cargo publish` for it — not
+only prepare one for a human to run — bounded by
+[`../spec/release-process/`](../spec/release-process/index.md) and
+disclosed in [`../AI_STATEMENT.md`](../AI_STATEMENT.md). The maintainer
+remains accountable either way; see both documents for exactly what that
+does and does not mean.
+
 ---
 
 ## License
