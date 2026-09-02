@@ -614,7 +614,12 @@ fn looks_up_key(expr: &Expr, name: &str) -> bool {
             }
         }
         Expr::Function { args, .. } => args.iter().any(|arg| looks_up_key(arg, name)),
-        Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) => false,
+        // A named reference to `key` itself only names it; nothing is
+        // called until a dynamic call invokes it, which `DynamicCall`'s arm
+        // below already walks into.
+        Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) | Expr::NamedFunctionRef { .. } => {
+            false
+        }
         Expr::Negate(inner) => looks_up_key(inner, name),
         Expr::Binary(_, left, right) => {
             looks_up_key(left, name) || looks_up_key(right, name)
@@ -636,6 +641,10 @@ fn looks_up_key(expr: &Expr, name: &str) -> bool {
             looks_up_key(condition, name)
                 || looks_up_key(then_branch, name)
                 || looks_up_key(else_branch, name)
+        }
+        Expr::InlineFunction { body, .. } => looks_up_key(body, name),
+        Expr::DynamicCall { function, args } => {
+            looks_up_key(function, name) || args.iter().any(|a| looks_up_key(a, name))
         }
         Expr::Path(path) => {
             let start = match &path.start {
@@ -744,7 +753,9 @@ fn constant_test(schema: &Schema, source: &str) -> Option<&'static str> {
 /// attribute really is in no namespace.
 fn first_unprefixed_element_name(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) => None,
+        Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) | Expr::NamedFunctionRef { .. } => {
+            None
+        }
         Expr::Negate(inner) => first_unprefixed_element_name(inner),
         Expr::Binary(_, left, right) => {
             first_unprefixed_element_name(left).or_else(|| first_unprefixed_element_name(right))
@@ -768,6 +779,9 @@ fn first_unprefixed_element_name(expr: &Expr) -> Option<String> {
         Expr::Quantified { input, test, .. } => [input, test]
             .into_iter()
             .find_map(|part| first_unprefixed_element_name(part)),
+        Expr::InlineFunction { body, .. } => first_unprefixed_element_name(body),
+        Expr::DynamicCall { function, args } => first_unprefixed_element_name(function)
+            .or_else(|| args.iter().find_map(first_unprefixed_element_name)),
         Expr::Path(path) => {
             if let PathStart::Expr(start, predicates) = &path.start {
                 if let Some(found) = first_unprefixed_element_name(start) {
@@ -975,7 +989,7 @@ fn lint_variables(schema: &Schema, lints: &mut Vec<Lint>) {
 fn references_variable(expr: &Expr, name: &str) -> bool {
     match expr {
         Expr::Variable(variable) => variable.to_string() == name,
-        Expr::Literal(_) | Expr::Number(_, _) => false,
+        Expr::Literal(_) | Expr::Number(_, _) | Expr::NamedFunctionRef { .. } => false,
         Expr::Negate(inner) => references_variable(inner, name),
         Expr::Binary(_, left, right) => {
             references_variable(left, name) || references_variable(right, name)
@@ -1000,6 +1014,14 @@ fn references_variable(expr: &Expr, name: &str) -> bool {
             references_variable(condition, name)
                 || references_variable(then_branch, name)
                 || references_variable(else_branch, name)
+        }
+        // A parameter of the same name would shadow `$name` inside the
+        // body, but this is a lint heuristic scanning for a mention, not a
+        // scope resolver — a false positive here just means a diagnostic
+        // considers a shadowed reference too, which is the safe direction.
+        Expr::InlineFunction { body, .. } => references_variable(body, name),
+        Expr::DynamicCall { function, args } => {
+            references_variable(function, name) || args.iter().any(|a| references_variable(a, name))
         }
         Expr::Path(path) => {
             let start = match &path.start {

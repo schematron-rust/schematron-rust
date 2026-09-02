@@ -225,9 +225,11 @@ states the limits and deliberate divergences in full.
 | XPath 1.0 — 13 axes, 27 core functions, exact conversion semantics | Full |
 | XPath `document()`, with cross-document node-sets | Full |
 | XPath 2.0 sequences, dates, durations, type operators, value and node comparisons, `for`, `some`, `every`, ranges, regular expressions | Subset — see [spec/xpath2/](spec/xpath2/index.md) |
+| XPath 3.0 function items, inline function expressions, named function references, dynamic calls, `for-each()` | Subset — see [spec/xpath3/](spec/xpath3/index.md) |
 | `queryBinding="xslt"`, `"xpath"`, or absent | Supported |
 | `queryBinding="xslt2"`, `"xpath2"` | Partly — see [spec/xpath2/](spec/xpath2/index.md) |
-| `queryBinding="xslt3"` and later | Refused by default |
+| `queryBinding="xslt3"`, `"xpath3"` | Partly — see [spec/xpath3/](spec/xpath3/index.md) |
+| `queryBinding="xpath31"` and later | Refused by default |
 | `extends rule` and `extends href`, with `#fragment` identifiers | Full |
 | `document(uri, base)` | Full — resolves against the second argument's first node |
 | XPath 2.0 kind tests as node tests — `element()`, `attribute(id)`, `document-node()` | Full, under an `xslt2` binding |
@@ -329,6 +331,7 @@ be read:
 | [spec/validation/](spec/validation/index.md) | The validation algorithm, exactly |
 | [spec/xpath/](spec/xpath/index.md) | The XPath 1.0 engine |
 | [spec/xpath2/](spec/xpath2/index.md) | The XPath 2.0 subset, and its limits |
+| [spec/xpath3/](spec/xpath3/index.md) | The XPath 3.0 subset: function items and `for-each()` |
 | [spec/xml/](spec/xml/index.md) | The XML parser and data model |
 | [spec/parsing/](spec/parsing/index.md) | The five compilation passes |
 | [spec/svrl/](spec/svrl/index.md) | The SVRL report format, read and written |

@@ -13,7 +13,7 @@ use super::temporal::{
     adjust_to_timezone, from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind,
 };
 use super::uri;
-use super::value::{parse_number, Item, NumericType, Value};
+use super::value::{parse_number, FunctionItem, Item, NumericType, Value};
 use super::version::XPathVersion;
 use crate::xml::{Document, NodeId, NodeKind, QName};
 
@@ -133,15 +133,11 @@ const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &["duration"];
 
 /// Other XPath 2.0 functions that are simply not implemented yet.
 ///
-/// `for-each` looks like a sequence function and was filed as one until this
-/// list was audited: it is not part of XPath 2.0 at all. `fn:for-each` takes
-/// a **function item** as its second argument, and function items — inline
-/// function expressions, named function references, dynamic calls — are an
-/// XPath 3.0 feature this crate does not have. Its neighbours here
-/// (`subsequence`, `insert-before`, `remove`, `reverse`, `unordered`) needed
-/// only the sequence type, which phase 2a already shipped, and are
-/// implemented; `for-each` needs a type this crate has no representation
-/// for.
+/// `for-each` used to be filed here too, on the theory that it was a
+/// not-yet-written sequence function; auditing the list found that wrong —
+/// it is not part of XPath 2.0 at all, because `fn:for-each` takes a
+/// **function item**, an XPath 3.0 feature. It now lives in
+/// [`SIGNATURES_V3`], implemented, alongside the explanation of the mistake.
 ///
 /// `trace()` is left here deliberately, not because it is hard: its
 /// destination is implementation-defined, and returning the value unchanged
@@ -150,7 +146,16 @@ const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &["duration"];
 /// real channel — `stderr`, a caller-supplied sink — would be this engine's
 /// first debug side effect during otherwise-pure evaluation, which is an
 /// architecture decision, not a one-function addition; see `spec/roadmap/`.
-const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] = &["trace", "for-each"];
+const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] = &["trace"];
+
+/// The XPath 3.0 functions this crate implements, with their arities.
+///
+/// Available only under an `xslt3`/`xpath3` query binding. `for-each` was
+/// filed for years as a not-yet-written XPath 2.0 sequence function before
+/// the audit that produced [`V2_FUNCTIONS_NOT_IMPLEMENTED`]'s current
+/// comment caught the mistake: it needs a **function item**, which XPath
+/// 2.0 does not have at all. It belongs here, now that function items do.
+const SIGNATURES_V3: &[(&str, usize, Option<usize>)] = &[("for-each", 2, Some(2))];
 
 /// Checks that a function exists and accepts this many arguments.
 ///
@@ -174,7 +179,9 @@ const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] = &["trace", "for-each"];
 /// assert!(check_function("matches", 2, XPathVersion::V2).is_ok());
 /// ```
 pub fn check_function(name: &str, arity: usize, version: XPathVersion) -> Result<(), String> {
-    let tables: &[&[(&str, usize, Option<usize>)]] = if version.is_v2() {
+    let tables: &[&[(&str, usize, Option<usize>)]] = if version.is_v3() {
+        &[SIGNATURES, SIGNATURES_V2, SIGNATURES_V3]
+    } else if version.is_v2() {
         &[SIGNATURES, SIGNATURES_V2]
     } else {
         &[SIGNATURES]
@@ -199,6 +206,16 @@ pub fn check_function(name: &str, arity: usize, version: XPathVersion) -> Result
         return Ok(());
     }
 
+    // A 3.0 function used under an earlier binding: say which binding it
+    // needs. Checked before the 2.0 case below, since a 3.0 function is
+    // never also a 2.0 one.
+    if !version.is_v3() && SIGNATURES_V3.iter().any(|(f, _, _)| *f == name) {
+        return Err(format!(
+            "{name}() is an XPath 3.0 function, and this schema's query binding is \
+             {}. Set queryBinding=\"xslt3\" to use it; see spec/xpath3/.",
+            version.as_str()
+        ));
+    }
     // A 2.0 function used under a 1.0 binding: say which binding it needs.
     if !version.is_v2() && SIGNATURES_V2.iter().any(|(f, _, _)| *f == name) {
         return Err(format!(
@@ -265,6 +282,14 @@ pub fn function_names_v2() -> Vec<&'static str> {
     names
 }
 
+/// The names of the XPath 3.0 functions this crate implements, sorted.
+#[must_use]
+pub fn function_names_v3() -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = SIGNATURES_V3.iter().map(|(name, _, _)| *name).collect();
+    names.sort_unstable();
+    names
+}
+
 /// Calls a function with already-evaluated arguments.
 ///
 /// Re-checks arity here rather than trusting that [`check_function`] ran.
@@ -305,15 +330,8 @@ pub(crate) fn call(
                 .unwrap_or_default(),
         )),
 
-        "string" => Ok(Value::String(match args.first() {
-            Some(value) => value.to_xpath_string(document),
-            None => document.string_value(context.node),
-        })),
-        "concat" => Ok(Value::String(
-            args.iter()
-                .map(|a| a.to_xpath_string(document))
-                .collect::<String>(),
-        )),
+        "string" => string_function(args, context),
+        "concat" => concat_function(args, document),
         "starts-with" => {
             let (haystack, needle) = two_strings(args, document);
             Ok(Value::Boolean(haystack.starts_with(&needle)))
@@ -363,10 +381,7 @@ pub(crate) fn call(
             context.node,
         ))),
 
-        "number" => Ok(double(match args.first() {
-            Some(value) => value.to_number(document),
-            None => parse_number(&document.string_value(context.node)),
-        })),
+        "number" => number_function(args, context),
         // Folded from `0.0` rather than `.sum()`: Rust's `Sum` for `f64` starts
         // from `-0.0`, which is the true additive identity — `-0.0 + x == x`
         // for every `x`, including `-0.0` itself, which `0.0` does not manage.
@@ -723,7 +738,49 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
 
         "resolve-uri" => resolve_uri_call(name, args, context),
 
+        // XPath 3.0. Reachable only under a 3.0 query binding, because
+        // `check_function` above gates on the version — same pattern as
+        // `call()` delegating to `call_v2` for `is_v2()`.
+        _ if context.version.is_v3() => call_v3(name, args, context),
+
         _ => Err(EvalError::new(format!("unknown function {name}()"))),
+    }
+}
+
+/// The XPath 3.0 additions.
+fn call_v3(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
+    match name {
+        "for-each" => {
+            let items = items_of(name, args, 0, context.version)?;
+            let action = single_function_argument(name, args, 1)?;
+            super::eval::for_each(items, action, context)
+        }
+        _ => Err(EvalError::new(format!("unknown function {name}()"))),
+    }
+}
+
+/// Extracts the one function item at `args[index]`, for a function whose
+/// signature takes a function item directly — `for-each()`'s `$action`, and
+/// nothing else in this phase.
+fn single_function_argument<'a>(
+    name: &str,
+    args: &'a [Value],
+    index: usize,
+) -> Result<&'a FunctionItem, EvalError> {
+    match args.get(index).and_then(Value::as_sequence) {
+        Some([Item::Function(function)]) => Ok(function),
+        Some([other]) => Err(EvalError::new(format!(
+            "{name}()'s function argument must be a function item, not a {}",
+            other.type_name()
+        ))),
+        Some(items) => Err(EvalError::new(format!(
+            "{name}()'s function argument must be exactly one function item, but \
+             there are {}",
+            items.len()
+        ))),
+        None => Err(EvalError::new(format!(
+            "{name}()'s function argument must be a function item"
+        ))),
     }
 }
 
@@ -907,6 +964,51 @@ fn as_f64(value: usize) -> f64 {
 /// never a more specific tracked type. See [`NumericType`].
 fn double(value: f64) -> Value {
     Value::Number(value, NumericType::Double)
+}
+
+/// Rejects a function item passed to an atomizing function.
+///
+/// `name` is the call site's own name, for the message. `eval.rs` has a
+/// two-operand counterpart of this, used for the comparison operators.
+fn reject_function_item(name: &str, value: &Value) -> Result<(), EvalError> {
+    if value.contains_function_item() {
+        return Err(EvalError::new(format!(
+            "{name} cannot convert a function item; it has no string or numeric value"
+        )));
+    }
+    Ok(())
+}
+
+/// `string()`, split out to keep `call` under the line-count lint.
+fn string_function(args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
+    if let Some(value) = args.first() {
+        reject_function_item("string()", value)?;
+    }
+    Ok(Value::String(match args.first() {
+        Some(value) => value.to_xpath_string(context.document),
+        None => context.document.string_value(context.node),
+    }))
+}
+
+/// `concat()`, split out to keep `call` under the line-count lint.
+fn concat_function(args: &[Value], document: &Document) -> Result<Value, EvalError> {
+    for arg in args {
+        reject_function_item("concat()", arg)?;
+    }
+    Ok(Value::String(
+        args.iter().map(|a| a.to_xpath_string(document)).collect::<String>(),
+    ))
+}
+
+/// `number()`, split out to keep `call` under the line-count lint.
+fn number_function(args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
+    if let Some(value) = args.first() {
+        reject_function_item("number()", value)?;
+    }
+    Ok(double(match args.first() {
+        Some(value) => value.to_number(context.document),
+        None => parse_number(&context.document.string_value(context.node)),
+    }))
 }
 
 /// The items of an argument that may be a node-set or an XPath 2.0 sequence.
@@ -1538,11 +1640,16 @@ mod tests {
     fn unimplemented_two_point_zero_functions_say_what_they_need() {
         let duration = check_function("duration", 1, XPathVersion::V2).unwrap_err();
         assert!(duration.contains("date and time"), "{duration}");
+    }
 
-        // Looks like a sequence function, but needs function items instead
-        // (see the comment on `V2_FUNCTIONS_NOT_IMPLEMENTED`).
-        let for_each = check_function("for-each", 2, XPathVersion::V2).unwrap_err();
-        assert!(for_each.contains("does not implement"), "{for_each}");
+    #[test]
+    fn for_each_needs_the_xpath_three_binding() {
+        // It is implemented (phase 1, see `SIGNATURES_V3`) but needs
+        // function items, which only a 3.0 binding admits.
+        let message = check_function("for-each", 2, XPathVersion::V2).unwrap_err();
+        assert!(message.contains("XPath 3.0"), "{message}");
+        assert!(message.contains("xslt3"), "{message}");
+        assert!(check_function("for-each", 2, XPathVersion::V3).is_ok());
     }
 
     #[test]

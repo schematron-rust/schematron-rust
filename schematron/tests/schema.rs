@@ -150,9 +150,10 @@ fn an_xpath_two_construct_under_a_one_point_zero_binding_says_so_by_name() {
 
 #[test]
 fn an_unsupported_query_binding_is_refused_by_default_and_can_be_forced() {
-    // XPath 3.0 and later remain refused: the crate implements 1.0 and the
-    // phase-1 subset of 2.0, and accepting 3.x would overclaim.
-    let source = r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt3">
+    // XPath 3.1 and later remain refused: the crate implements 1.0, 2.0,
+    // and the phase-1 subset of 3.0, and accepting 3.1 would overclaim —
+    // it adds maps and arrays, which this crate does not have.
+    let source = r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath31">
                       <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>
                     </schema>"#;
 

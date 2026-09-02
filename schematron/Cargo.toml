@@ -1,10 +1,10 @@
 [package]
 name = "schematron"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 rust-version = "1.96"  # Policy: current stable minus two. See spec/rust-msrv-n-minus-2/index.md.
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
-description = "Schematron: pure Rust implementation of ISO/IEC 19757-3 rule-based XML validation, with its own XML parser, XPath 1.0 engine, XPath 2.0 subset, schema linting, and SVRL reporting. By SixArm.com."
+description = "Schematron: pure Rust implementation of ISO/IEC 19757-3 rule-based XML validation, with its own XML parser, XPath 1.0 engine, XPath 2.0 and 3.0 subsets, schema linting, and SVRL reporting. By SixArm.com."
 documentation = "https://docs.rs/schematron"
 homepage = "https://schematron-rust.github.io"
 repository = "https://github.com/schematron-rust/schematron-rust/tree/main/schematron"

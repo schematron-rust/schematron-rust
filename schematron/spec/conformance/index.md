@@ -10,24 +10,34 @@ has to discover a gap by hitting it in production.
 | absent | Yes — XPath 1.0, the standard's default |
 | `xslt` | Yes — XPath 1.0 plus `document()` and `current()` |
 | `xpath` | Yes — XPath 1.0 |
-| `xslt2`, `xpath2` | Partly — phases 1 through 4 of the subset in [xpath2/](../xpath2/index.md) |
-| `xslt3`, `xpath3`, `xpath31` | No — rejected, unless `allow_unknown_query_binding` |
+| `xslt2`, `xpath2` | Partly — phases 1 through 9 of the subset in [xpath2/](../xpath2/index.md) |
+| `xslt3`, `xpath3` | Partly — phase 1 of the subset in [xpath3/](../xpath3/index.md) |
+| `xpath31`, `xslt31` | No — rejected, unless `allow_unknown_query_binding` |
 
 **Read [xpath2/](../xpath2/index.md) before declaring `xslt2`.** The subset covers
 the function library, conditionals, sequences (`for`, `some`, `every`,
 ranges), date and time types, value comparisons (`eq`/`ne`/`lt`/…), durations,
 node comparisons, an implicit timezone, the type operators (`instance of`,
-`cast as`, `castable as`, `treat as`), and the numeric type hierarchy
-(`xs:integer`/`xs:decimal`/`xs:float`/`xs:double`); everything outside it is a
-hard error naming the construct. But expressions still evaluate on the XPath
-1.0 engine, so the handful of places where the two languages genuinely
-disagree — chiefly, where XPath 2.0 raises a type error and XPath 1.0 yields
-`NaN` — follow 1.0. That document lists them.
+`cast as`, `castable as`, `treat as`), the numeric type hierarchy
+(`xs:integer`/`xs:decimal`/`xs:float`/`xs:double`), `deep-equal()`,
+`resolve-uri()`, and the `adjust-*-to-timezone()` family; everything outside
+it is a hard error naming the construct. But expressions still evaluate on
+the XPath 1.0 engine, so the handful of places where the two languages
+genuinely disagree — chiefly, where XPath 2.0 raises a type error and XPath
+1.0 yields `NaN` — follow 1.0. That document lists them.
 
-XPath 3.0 and later add more than this crate implements, so they stay refused:
-accepting them would overclaim. `allow_unknown_query_binding` compiles such a
+**Read [xpath3/](../xpath3/index.md) before declaring `xslt3`.** Phase 1
+covers function items — inline function expressions, named function
+references, dynamic calls — and `for-each()`, the one function that needed
+them. Everything XPath 1.0 and 2.0 implement is available too, at exactly
+their own semantics; `=>`, `||`, `!`, the rest of the higher-order function
+library, and maps and arrays (XPath 3.1) are not implemented.
+
+XPath 3.1 adds more than this crate implements, so it stays refused:
+accepting it would overclaim. `allow_unknown_query_binding` compiles such a
 schema anyway, treating it as XPath 1.0 — it does **not** grant the XPath 2.0
-subset, so a 2.0 construct in a forced 3.x schema is still an error.
+or 3.0 subsets, so a 2.0 or 3.0 construct in a forced 3.1 schema is still an
+error.
 
 Practically, under an XPath 1.0 binding, expressions like `current-date()`,
 `if/then/else`, `for $x in ...`, `castable as`, and `matches()` are not

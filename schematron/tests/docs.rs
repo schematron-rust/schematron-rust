@@ -395,6 +395,21 @@ fn the_xpath_two_function_list_in_the_spec_matches_the_engine() {
 }
 
 #[test]
+fn the_xpath_three_function_list_in_the_spec_matches_the_engine() {
+    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath3/index.md"))
+        .expect("spec/xpath3/index.md should exist");
+
+    for function in schematron::xpath::function_names_v3() {
+        let bare = format!("`{function}`");
+        let called = format!("`{function}(");
+        assert!(
+            spec.contains(&bare) || spec.contains(&called),
+            "spec/xpath3/index.md does not document the `{function}` function"
+        );
+    }
+}
+
+#[test]
 fn the_lint_table_in_the_spec_matches_the_linter() {
     // Every lint must be documented, and every documented lint must exist.
     // A lint nobody can look up is a lint nobody acts on.

@@ -5,8 +5,11 @@
 //! including the number-to-string format, which is the detail engines most
 //! often get wrong.
 
+use super::ast::Expr;
+use super::context::Variables;
 use super::temporal::{Duration, Temporal};
 use crate::xml::{Document, NodeId};
+use std::sync::Arc;
 
 /// An XPath 1.0 value.
 ///
@@ -101,10 +104,83 @@ pub enum Item {
     Temporal(Temporal),
     /// An `xs:dayTimeDuration` or `xs:yearMonthDuration`.
     Duration(Duration),
+    /// An XPath 3.0 function item. See [`FunctionItem`].
+    ///
+    /// **Unreachable under XPath 1.0 and 2.0.** Neither grammar has a
+    /// construct that produces one, matching how [`Value::Sequence`] is
+    /// unreachable under 1.0. See `spec/xpath3/`.
+    Function(FunctionItem),
+}
+
+/// An XPath 3.0 function item: something a dynamic call (`$f(...)`) can
+/// invoke.
+///
+/// A function item is not atomizable: it has no string or numeric value,
+/// and comparing one — with `=`, `eq`, or any value comparison — is a type
+/// error, the same way comparing two nodes of incompatible types would be.
+/// [`Item::to_xpath_string`] and [`Item::to_number`] cannot themselves
+/// raise that error, because they are used throughout the engine as total
+/// functions; see `spec/xpath3/` for exactly which call sites (`string()`,
+/// `number()`, and value/general comparisons) reject a function item
+/// explicitly, and what the few that don't fall back to.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum FunctionItem {
+    /// `name#arity` — a reference to one of this crate's own built-in
+    /// functions, resolved by name at call time rather than closed over.
+    Named {
+        /// The function's name, unprefixed.
+        name: String,
+        /// The arity written after `#`.
+        arity: usize,
+    },
+    /// `function($a, $b) { … }` — a closure over an inline function
+    /// expression.
+    ///
+    /// `captured` is the variable environment where the expression was
+    /// written, cloned rather than borrowed so the closure can outlive the
+    /// call that created it — passed to `for-each()`, bound to a variable,
+    /// returned from another function. [`Variables`] holds only owned
+    /// [`Value`]s, so cloning it is exactly as cheap or expensive as
+    /// cloning the values already in scope, no more.
+    Inline {
+        /// The parameter names, in the order they are bound on each call.
+        params: Vec<String>,
+        /// The body, evaluated once per call. `Arc`, not `Box`, because
+        /// cloning an `Item` — routine throughout this engine — must not
+        /// deep-copy the AST every time; `Arc` rather than `Rc` because
+        /// opt-in parallel pattern evaluation sends `Value`s across a
+        /// thread scope, and `Rc` is not `Send`.
+        body: Arc<Expr>,
+        /// The lexical environment at the point the expression was
+        /// written.
+        captured: Variables,
+    },
+}
+
+impl FunctionItem {
+    /// The arity this function item accepts.
+    #[must_use]
+    pub fn arity(&self) -> usize {
+        match self {
+            FunctionItem::Named { arity, .. } => *arity,
+            FunctionItem::Inline { params, .. } => params.len(),
+        }
+    }
 }
 
 impl Item {
     /// The item's string value.
+    ///
+    /// A function item has none — atomizing one is a type error in real
+    /// XPath 3.0 (`err:FOTY0013`) — but this method cannot itself raise:
+    /// it is called throughout the engine as a total conversion. The call
+    /// sites that matter (`string()`, `concat()`, and the value/general
+    /// comparisons, via [`Item::type_name`] feeding their existing
+    /// type-mismatch error) reject a function item explicitly before
+    /// reaching here; this fallback exists only for the few that don't,
+    /// and an empty string is the least surprising thing to return rather
+    /// than inventing one. See `spec/xpath3/`.
     #[must_use]
     pub fn to_xpath_string(&self, document: &Document) -> String {
         match self {
@@ -114,6 +190,7 @@ impl Item {
             Item::Boolean(boolean) => if *boolean { "true" } else { "false" }.to_string(),
             Item::Temporal(temporal) => temporal.to_lexical(),
             Item::Duration(duration) => duration.to_lexical(),
+            Item::Function(_) => String::new(),
         }
     }
 
@@ -125,10 +202,11 @@ impl Item {
             Item::String(text) => parse_number(text),
             Item::Number(number, _) => *number,
             Item::Boolean(boolean) => f64::from(u8::from(*boolean)),
-            // Neither a date nor a duration has a numeric value in XPath 2.0;
-            // NaN keeps every numeric comparison against one false rather
-            // than inventing an answer.
-            Item::Temporal(_) | Item::Duration(_) => f64::NAN,
+            // Neither a date, a duration, nor a function item has a numeric
+            // value; NaN keeps every numeric comparison against one false
+            // rather than inventing an answer. See `to_xpath_string`'s doc
+            // for why a function item can reach here at all.
+            Item::Temporal(_) | Item::Duration(_) | Item::Function(_) => f64::NAN,
         }
     }
 
@@ -142,6 +220,7 @@ impl Item {
             Item::Boolean(_) => "boolean",
             Item::Temporal(temporal) => temporal.kind().as_str(),
             Item::Duration(duration) => duration.kind().as_str(),
+            Item::Function(_) => "function item",
         }
     }
 
@@ -312,6 +391,20 @@ impl Value {
                 parse_number(&self.to_xpath_string(document))
             }
         }
+    }
+
+    /// Whether a function item appears anywhere in this value.
+    ///
+    /// A node-set, a boolean, a number and a string obviously hold none; a
+    /// sequence might, since [`Item::Function`] is unreachable any other
+    /// way. Used to reject a function item explicitly at the handful of
+    /// atomization call sites that matter — `string()`, `concat()`, and
+    /// general comparison — rather than letting it reach
+    /// [`Item::to_xpath_string`]'s or [`Item::to_number`]'s silent
+    /// fallback. See those methods' doc comments for the fuller account.
+    #[must_use]
+    pub fn contains_function_item(&self) -> bool {
+        matches!(self, Value::Sequence(items) if items.iter().any(|item| matches!(item, Item::Function(_))))
     }
 
     /// The sequence's items, or `None` for the other types.

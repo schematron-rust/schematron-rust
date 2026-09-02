@@ -82,6 +82,40 @@ pub enum Expr {
         /// The value when it does not.
         else_branch: Box<Expr>,
     },
+    /// `function($a, $b) { E }` — an XPath 3.0 inline function expression.
+    ///
+    /// XPath 3.0 only. Parameter and return type annotations (`function($a
+    /// as xs:integer) as xs:integer { … }`) are not accepted in this
+    /// phase — a schema that writes one gets a parse error naming the
+    /// construct, not a silently ignored annotation. See `spec/xpath3/`.
+    InlineFunction {
+        /// The parameter names, in order.
+        params: Vec<String>,
+        /// The body, evaluated once per call with the parameters bound.
+        ///
+        /// `Arc`, not `Box`: every evaluation of this node builds a fresh
+        /// [`Item::Function`](super::Item) closure, and that closure must
+        /// not deep-copy the body — an `Arc` clone shares it instead. See
+        /// `FunctionItem::Inline` in `value.rs`.
+        body: std::sync::Arc<Expr>,
+    },
+    /// `name#arity` — an XPath 3.0 named function reference, naming one of
+    /// this crate's built-in functions without calling it.
+    NamedFunctionRef {
+        /// The function name, possibly prefixed (a prefix is rejected at
+        /// compile time — every built-in is unprefixed).
+        name: String,
+        /// The arity written after `#`.
+        arity: usize,
+    },
+    /// `E(E, E, …)` — an XPath 3.0 dynamic function call: `E` evaluates to a
+    /// function item, which is then invoked with the given arguments.
+    DynamicCall {
+        /// The expression that must evaluate to a function item.
+        function: Box<Expr>,
+        /// The argument expressions.
+        args: Vec<Expr>,
+    },
 }
 
 /// Which of XPath 2.0's four type operators an [`Expr::TypeOp`] applies.

@@ -540,6 +540,17 @@ impl Parser {
 
     /// Whether the next token can begin a location path step.
     fn at_step_start(&self) -> bool {
+        // `name#N` is XPath 3.0's named function reference — a primary
+        // expression, not a location step — even though a bare name alone
+        // always starts one.
+        if matches!(self.peek(), Some(TokenKind::Name(_)))
+            && matches!(
+                self.tokens.get(self.index + 1).map(|t| &t.kind),
+                Some(TokenKind::Hash)
+            )
+        {
+            return false;
+        }
         matches!(
             self.peek(),
             Some(
@@ -570,7 +581,45 @@ impl Parser {
 
         // Otherwise it starts with a primary expression: a literal, a number,
         // a variable, a parenthesised expression, or a function call.
-        let primary = self.parse_primary()?;
+        let mut primary = self.parse_primary()?;
+
+        // XPath 3.0's dynamic call: `(args)` directly after a primary,
+        // chainable (`$f(1)(2)`). This is new syntax with no prior meaning —
+        // a name directly followed by `(` was always a `FunctionName` token,
+        // never reaching here — so a 1.0 or 2.0 binding rejects the
+        // resulting `Expr::DynamicCall` at compile time rather than the
+        // parser needing to know the version.
+        //
+        // Unlike a location path's steps, which `evaluate_path` walks in a
+        // plain loop, each chained call nests one `Expr::DynamicCall` inside
+        // the last and `evaluate` unwraps that recursively — so, unlike a
+        // path of any length, an unbounded chain here would risk a stack
+        // overflow at evaluation time rather than a clean parse error. Each
+        // call in the chain is charged against the shared recursion depth,
+        // released only once the whole chain is done, so the chain's total
+        // length is bounded exactly like any other nesting.
+        let mut chained = 0usize;
+        while self.peek() == Some(&TokenKind::LeftParen) {
+            self.enter()?;
+            chained += 1;
+            let args = match self.parse_arguments() {
+                Ok(args) => args,
+                Err(error) => {
+                    for _ in 0..chained {
+                        self.leave();
+                    }
+                    return Err(error);
+                }
+            };
+            primary = Expr::DynamicCall {
+                function: Box::new(primary),
+                args,
+            };
+        }
+        for _ in 0..chained {
+            self.leave();
+        }
+
         let predicates = self.parse_predicates()?;
         if matches!(self.peek(), Some(TokenKind::Slash | TokenKind::DoubleSlash)) {
             let steps = self.parse_path_tail()?;
@@ -815,20 +864,40 @@ impl Parser {
                     else_branch: Box::new(else_branch),
                 })
             }
+            Some(TokenKind::FunctionName(name)) if name == "function" => {
+                self.parse_inline_function()
+            }
             Some(TokenKind::FunctionName(name)) => {
-                self.expect(&TokenKind::LeftParen)?;
-                let mut args = Vec::new();
-                if !self.eat(&TokenKind::RightParen) {
-                    loop {
-                        args.push(self.parse_expr_single()?);
-                        if self.eat(&TokenKind::Comma) {
-                            continue;
-                        }
-                        self.expect(&TokenKind::RightParen)?;
-                        break;
+                let args = self.parse_arguments()?;
+                Ok(Expr::Function { name, args })
+            }
+            // XPath 3.0's named function reference: `name#arity`. Reached
+            // only when `at_step_start` has already ruled out this being a
+            // location step — see its doc comment.
+            Some(TokenKind::Name(name)) if self.peek() == Some(&TokenKind::Hash) => {
+                self.index += 1; // `#`
+                match self.advance() {
+                    Some(TokenKind::Number(value, super::value::NumericType::Integer))
+                        if value >= 0.0 =>
+                    {
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        Ok(Expr::NamedFunctionRef {
+                            name,
+                            arity: value as usize,
+                        })
+                    }
+                    other => {
+                        self.index = self.index.saturating_sub(1);
+                        let found = other.map_or_else(
+                            || "end of expression".to_string(),
+                            |kind| kind.to_string(),
+                        );
+                        self.error(format!(
+                            "expected a non-negative integer arity after `{name}#`, \
+                             but found {found}"
+                        ))
                     }
                 }
-                Ok(Expr::Function { name, args })
             }
             other => {
                 self.index = self.index.saturating_sub(1);
@@ -839,6 +908,62 @@ impl Parser {
                 self.error(format!("expected an expression but found {found}"))
             }
         }
+    }
+
+    /// `ArgumentList := "(" (ExprSingle ("," ExprSingle)*)? ")"`
+    ///
+    /// Shared by an ordinary function call, a dynamic call, and — indirectly,
+    /// since it takes the same shape — nothing else, but kept as its own
+    /// production because two call sites need it identically.
+    fn parse_arguments(&mut self) -> Result<Vec<Expr>, ParseError> {
+        self.expect(&TokenKind::LeftParen)?;
+        let mut args = Vec::new();
+        if !self.eat(&TokenKind::RightParen) {
+            loop {
+                args.push(self.parse_expr_single()?);
+                if self.eat(&TokenKind::Comma) {
+                    continue;
+                }
+                self.expect(&TokenKind::RightParen)?;
+                break;
+            }
+        }
+        Ok(args)
+    }
+
+    /// `InlineFunctionExpr := "function" "(" ParamList? ")" EnclosedExpr`
+    ///
+    /// `EnclosedExpr := "{" Expr? "}"`. Neither a parameter's nor the
+    /// function's own return type may be annotated in this phase — see the
+    /// doc comment on `Expr::InlineFunction`.
+    fn parse_inline_function(&mut self) -> Result<Expr, ParseError> {
+        // The `function` token itself was already consumed by `parse_primary`'s
+        // `self.advance()`, which is how it dispatched here.
+        self.expect(&TokenKind::LeftParen)?;
+        let mut params = Vec::new();
+        if !self.eat(&TokenKind::RightParen) {
+            loop {
+                params.push(self.expect_variable()?.to_string());
+                if self.eat(&TokenKind::Comma) {
+                    continue;
+                }
+                self.expect(&TokenKind::RightParen)?;
+                break;
+            }
+        }
+        self.expect(&TokenKind::LeftBrace)?;
+        self.enter()?;
+        let body = if self.peek() == Some(&TokenKind::RightBrace) {
+            Expr::Sequence(Vec::new())
+        } else {
+            self.parse_expr()?
+        };
+        self.leave();
+        self.expect(&TokenKind::RightBrace)?;
+        Ok(Expr::InlineFunction {
+            params,
+            body: std::sync::Arc::new(body),
+        })
     }
 }
 
@@ -1015,5 +1140,20 @@ mod tests {
         // Paths are parsed iteratively, so length is not depth.
         let long = (0..500).map(|_| "a").collect::<Vec<_>>().join("/");
         assert!(parse(&long).is_ok());
+    }
+
+    #[test]
+    fn a_long_chain_of_dynamic_calls_is_bounded_unlike_a_path() {
+        // Unlike a path's steps, each chained call nests one `DynamicCall`
+        // inside the last, and `evaluate` unwraps that recursively — so,
+        // unlike `long_location_paths_do_not_count_as_nesting` above, this
+        // one genuinely must count, or a long enough chain would risk a
+        // stack overflow at evaluation time instead of a clean parse error.
+        let chain = format!("a{}", "()".repeat(5000));
+        let error = parse(&chain).unwrap_err();
+        assert!(error.message.contains("nested deeper"), "{}", error.message);
+
+        let shallow = format!("a{}", "()".repeat(MAX_RECURSION_DEPTH / 2));
+        assert!(parse(&shallow).is_ok());
     }
 }

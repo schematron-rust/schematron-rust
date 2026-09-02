@@ -538,7 +538,7 @@ time. None of them silently does something else.
 | The general `xs:duration` | Only partially ordered; see above |
 | `for-each()` | Not actually XPath 2.0: it takes a function item, an XPath 3.0 feature this crate has no representation for. Unlike its five neighbours in the table above, this one isn't a matter of writing the function. |
 | `trace()` | Its destination is implementation-defined; returning the value unchanged with no actual trace output would satisfy the signature while doing nothing useful. A real one needs a debug-output channel this otherwise-pure evaluator doesn't have — an architecture decision, not a one-function addition |
-| `xslt3`, `xpath3`, `xpath31` bindings | Still refused; use `allow_unknown_query_binding` |
+| `xpath31`, `xslt31` bindings | Still refused; use `allow_unknown_query_binding`. `xslt3`/`xpath3` are supported — see `spec/xpath3/` |
 
 ## Divergences: where 2.0 still behaves like 1.0
 
