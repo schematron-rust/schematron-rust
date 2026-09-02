@@ -9,7 +9,7 @@ crate implements, and, more importantly, **where it still behaves like XPath
 Read the divergences section before relying on this. It is short and it
 matters.
 
-## Status: phases 1 through 4
+## Status: phases 1 through 5
 
 Schematron schemas in the wild declare `xslt2` far more often than they use
 the parts of XPath 2.0 that are genuinely incompatible with 1.0. The
@@ -45,6 +45,11 @@ companions now recognize `xs:integer`, `xs:decimal`, and `xs:float` as well
 as `xs:double`, tracked for numeric literals and explicit casts. See
 "Numbers, and what `instance of` reports" below for exactly what is, and
 deliberately is not, tracked.
+
+**Phase 5** adds the remaining **sequence-manipulating functions** —
+`reverse()`, `subsequence()`, `insert-before()`, `remove()`, and
+`unordered()`. None of these were blocked on the sequence type itself, which
+phase 2a already shipped; they were simply unwritten.
 
 ### The sequence type, and why XPath 1.0 is unaffected
 
@@ -126,6 +131,12 @@ cannot accidentally acquire 2.0 behaviour.
 | `tokenize(input, pattern, flags)` | |
 | `distinct-values(sequence)` | Removes duplicates, keeping first-seen order |
 | `index-of(sequence, value)` | The one-based positions of matching items |
+| `reverse(sequence)` | The items in reverse order |
+| `subsequence(sequence, start)` | Items from one-based `start` to the end |
+| `subsequence(sequence, start, length)` | Both positions rounded via `fn:round`'s rule, halves upward |
+| `insert-before(sequence, position, inserts)` | Splices `inserts` before one-based `position`; out-of-range clamps to an end |
+| `remove(sequence, position)` | Drops the item at `position`; out of range leaves the sequence unchanged |
+| `unordered(sequence)` | Returns the sequence unchanged — order is implementation-defined, and this is a conformant, deterministic choice |
 | `count`, `exists`, `empty`, `min`, `max`, `avg`, `sum` | Accept a sequence as well as a node-set |
 | `current-date()`, `current-dateTime()`, `current-time()` | Stable for a whole validation run; see below |
 | `year-from-date`, `month-from-date`, `day-from-date` | Components of a date |
@@ -477,6 +488,7 @@ time. None of them silently does something else.
 | Schema-aware types — `element(name, type)`, `schema-element()` | Needs a schema processor, which is out of scope |
 | The general `xs:duration` | Only partially ordered; see above |
 | `adjust-date-to-timezone()` and its companions | Needs a timezone-bearing cast |
+| `for-each()` | Not actually XPath 2.0: it takes a function item, an XPath 3.0 feature this crate has no representation for. Unlike its five neighbours in the table above, this one isn't a matter of writing the function. |
 | `xslt3`, `xpath3`, `xpath31` bindings | Still refused; use `allow_unknown_query_binding` |
 
 ## Divergences: where 2.0 still behaves like 1.0
