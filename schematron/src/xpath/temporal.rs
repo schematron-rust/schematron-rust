@@ -338,6 +338,44 @@ pub fn add_seconds(temporal: &Temporal, seconds: f64) -> Temporal {
     }
 }
 
+/// Adjusts a temporal value to a new timezone, per XPath 2.0's
+/// `adjust-date-to-timezone()`, `adjust-dateTime-to-timezone()`, and
+/// `adjust-time-to-timezone()`.
+///
+/// One function serves all three because this crate's representation
+/// already puts every kind in the shape the spec's own algorithm needs: a
+/// `Date`'s hour/minute/second are already fixed at midnight, and a
+/// `Time`'s year/month/day are already fixed at [`TIME_REFERENCE`] — the
+/// exact "combine with 00:00:00" and "combine with 1972-12-31" recipes F&O
+/// describes for those two forms, applied once here instead of three times.
+///
+/// `new_offset`: `None` removes the timezone. `Some(minutes)` sets it —
+/// converting the instant `temporal` denotes, when it already had a
+/// timezone (the local fields shift so the same instant is now expressed
+/// at the new offset, which is how a date can roll to an adjacent day);
+/// simply attaching the new offset with no conversion, when it had none,
+/// since there is no instant yet to preserve.
+#[must_use]
+pub fn adjust_to_timezone(temporal: &Temporal, new_offset: Option<i32>) -> Temporal {
+    match (temporal.offset_minutes, new_offset) {
+        (None, target) => Temporal {
+            offset_minutes: target,
+            ..*temporal
+        },
+        (Some(_), None) => Temporal {
+            offset_minutes: None,
+            ..*temporal
+        },
+        (Some(_), Some(new)) => {
+            let instant = temporal.to_seconds();
+            Temporal {
+                offset_minutes: Some(new),
+                ..from_unix_seconds(temporal.kind, instant + f64::from(new) * 60.0)
+            }
+        }
+    }
+}
+
 /// The date an `xs:time` is placed on, so that two times compare by their
 /// time of day alone.
 ///
@@ -839,6 +877,49 @@ mod tests {
         let ahead = Temporal::parse("2026-08-21T00:00:00+01:00", TemporalKind::DateTime).unwrap();
         assert!(ahead < utc);
         assert!((utc.to_seconds() - ahead.to_seconds() - 3600.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn adjusting_a_date_can_roll_it_to_an_adjacent_day() {
+        // The worked example from the F&O spec's own reference material:
+        // 2002-03-07-07:00, adjusted to -PT10H, rolls back to 2002-03-06.
+        let date = Temporal::parse("2002-03-07-07:00", TemporalKind::Date).unwrap();
+        let adjusted = adjust_to_timezone(&date, Some(-600));
+        assert_eq!((adjusted.year(), adjusted.month(), adjusted.day()), (2002, 3, 6));
+        assert_eq!(adjusted.offset_minutes(), Some(-600));
+    }
+
+    #[test]
+    fn adjusting_a_time_wraps_within_its_reference_day() {
+        // 10:00:00-07:00, adjusted to -PT10H, becomes 07:00:00-10:00.
+        let time = Temporal::parse("10:00:00-07:00", TemporalKind::Time).unwrap();
+        let adjusted = adjust_to_timezone(&time, Some(-600));
+        assert_eq!((adjusted.hour(), adjusted.minute()), (7, 0));
+        assert_eq!(adjusted.offset_minutes(), Some(-600));
+    }
+
+    #[test]
+    fn adjusting_preserves_the_instant() {
+        let dt = Temporal::parse("2026-08-21T09:00:00+02:00", TemporalKind::DateTime).unwrap();
+        let adjusted = adjust_to_timezone(&dt, Some(-300));
+        assert!((dt.to_seconds() - adjusted.to_seconds()).abs() < f64::EPSILON);
+        assert_eq!(adjusted.offset_minutes(), Some(-300));
+    }
+
+    #[test]
+    fn adjusting_a_timezone_less_value_attaches_without_converting() {
+        let dt = Temporal::parse("2026-08-21T09:00:00", TemporalKind::DateTime).unwrap();
+        let adjusted = adjust_to_timezone(&dt, Some(-300));
+        assert_eq!((adjusted.hour(), adjusted.minute()), (9, 0));
+        assert_eq!(adjusted.offset_minutes(), Some(-300));
+    }
+
+    #[test]
+    fn adjusting_to_no_timezone_strips_it_without_converting() {
+        let dt = Temporal::parse("2026-08-21T09:00:00+02:00", TemporalKind::DateTime).unwrap();
+        let adjusted = adjust_to_timezone(&dt, None);
+        assert_eq!((adjusted.hour(), adjusted.minute()), (9, 0));
+        assert_eq!(adjusted.offset_minutes(), None);
     }
 
     #[test]

@@ -173,8 +173,10 @@ fn constructs_still_needing_phase_two_b_say_so() {
 #[test]
 fn constructs_still_needing_the_type_system_say_so() {
     // What the subset does not reach still names itself rather than
-    // misbehaving.
-    let message = compile_error("xslt2", "adjust-date-to-timezone(@d, @z)");
+    // misbehaving. `adjust-date-to-timezone()` moved out of this list in
+    // phase 9; `duration()` — the general xs:duration type, a deliberate
+    // omission — has not.
+    let message = compile_error("xslt2", "duration(@d)");
     assert_contains!(message, "date and time");
     assert_contains!(message, "spec/xpath2/");
 }
@@ -1186,6 +1188,78 @@ fn timezone_from_a_value_reports_its_own_offset() {
         "empty(timezone-from-date(xs:date('2026-08-21')))",
         "<a/>"
     ));
+}
+
+#[test]
+fn adjust_to_timezone_converts_when_a_timezone_is_already_present() {
+    // The instant is preserved; only its offset — and so its local fields —
+    // changes. A date can roll to an adjacent day this way.
+    assert!(check(
+        "adjust-dateTime-to-timezone(xs:dateTime('2026-08-21T09:00:00+02:00'), xs:dayTimeDuration('-PT5H')) \
+         eq xs:dateTime('2026-08-21T02:00:00-05:00')",
+        "<a/>"
+    ));
+    assert!(check(
+        "adjust-date-to-timezone(xs:date('2002-03-07-07:00'), xs:dayTimeDuration('-PT10H')) \
+         eq xs:date('2002-03-06-10:00')",
+        "<a/>"
+    ));
+    assert!(check(
+        "adjust-time-to-timezone(xs:time('10:00:00-07:00'), xs:dayTimeDuration('-PT10H')) \
+         eq xs:time('07:00:00-10:00')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn adjust_to_timezone_attaches_without_converting_when_there_was_none() {
+    assert!(check(
+        "adjust-dateTime-to-timezone(xs:dateTime('2026-08-21T09:00:00'), xs:dayTimeDuration('-PT5H')) \
+         eq xs:dateTime('2026-08-21T09:00:00-05:00')",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn adjust_to_timezone_with_an_empty_timezone_strips_it() {
+    assert!(check(
+        "string(adjust-dateTime-to-timezone(xs:dateTime('2026-08-21T09:00:00+02:00'), ())) \
+         = '2026-08-21T09:00:00'",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn adjust_to_timezone_with_one_argument_uses_the_implicit_timezone() {
+    use schematron::validate::ValidateOptions;
+
+    let source = schema_with(
+        "xslt2",
+        r#"<ns prefix="xs" uri="http://www.w3.org/2001/XMLSchema"/>
+           <pattern><rule context="a">
+             <assert test="adjust-dateTime-to-timezone(xs:dateTime('2026-08-21T09:00:00+02:00'))
+                            eq xs:dateTime('2026-08-21T02:00:00-05:00')">m</assert>
+           </rule></pattern>"#,
+    );
+    let schema = Schema::from_str(&source).expect("schema should compile");
+    let document = Document::from_str("<a/>").unwrap();
+    let options = ValidateOptions::new().with_implicit_timezone(-5 * 60);
+    assert!(schema.validate_with(&document, &options).unwrap().is_valid());
+}
+
+#[test]
+fn adjust_to_timezone_propagates_the_empty_sequence() {
+    assert!(check("empty(adjust-dateTime-to-timezone(()))", "<a/>"));
+}
+
+#[test]
+fn adjust_to_timezone_refuses_an_out_of_range_timezone() {
+    let message = eval_error(
+        "adjust-dateTime-to-timezone(xs:dateTime('2026-08-21T09:00:00'), xs:dayTimeDuration('PT15H'))",
+        "<a/>",
+    );
+    assert_contains!(message, "adjust-dateTime-to-timezone()");
+    assert_contains!(message, "-14:00");
 }
 
 #[test]

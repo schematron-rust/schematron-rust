@@ -3,6 +3,18 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.10.0
+
+### Added
+
+- **XPath 2.0 phase 9: `adjust-date-to-timezone()`, `adjust-dateTime-to-timezone()`,
+  and `adjust-time-to-timezone()`.** One function
+  (`temporal::adjust_to_timezone`) serves all three types. Converts the
+  instant a value denotes when it already has a timezone — which can roll
+  a date to the adjacent day — or simply attaches the given timezone when
+  it doesn't. Verified against the F&O reference material's own worked
+  examples. See [spec/xpath2/](spec/xpath2/index.md).
+
 ## 0.9.0
 
 ### Added

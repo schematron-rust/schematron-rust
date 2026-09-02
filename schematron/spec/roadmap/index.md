@@ -119,6 +119,17 @@
   destination is implementation-defined, and this engine has no
   debug-output channel to point it at without a real architecture
   decision, which a single function shouldn't make unilaterally.
+- XPath 2.0 phase 9: `adjust-date-to-timezone()`, `adjust-dateTime-to-timezone()`,
+  and `adjust-time-to-timezone()`. Previously recorded as needing "a
+  timezone-bearing cast, which nothing in the crate currently produces" —
+  that turned out to already exist: `Temporal` has carried an optional
+  offset since phase 2b. What was missing was the arithmetic, and one
+  function serves all three types, because a `Date`'s time-of-day and a
+  `Time`'s date are already fixed at their respective canonical values,
+  which is exactly the "combine, adjust, extract" recipe F&O specifies for
+  those two forms. Verified against the F&O reference material's own
+  worked examples, including the one where converting a date's timezone
+  rolls it to the adjacent day.
 
 ## Next
 

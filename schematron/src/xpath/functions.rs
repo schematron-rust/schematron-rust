@@ -9,7 +9,9 @@
 
 use super::context::EvalContext;
 use super::eval::EvalError;
-use super::temporal::{from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind};
+use super::temporal::{
+    adjust_to_timezone, from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind,
+};
 use super::uri;
 use super::value::{parse_number, Item, NumericType, Value};
 use super::version::XPathVersion;
@@ -112,6 +114,9 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("timezone-from-dateTime", 1, Some(1)),
     ("timezone-from-time", 1, Some(1)),
     ("implicit-timezone", 0, Some(0)),
+    ("adjust-date-to-timezone", 1, Some(2)),
+    ("adjust-dateTime-to-timezone", 1, Some(2)),
+    ("adjust-time-to-timezone", 1, Some(2)),
 ];
 
 /// XPath 2.0 date/time-related functions this crate does not implement yet.
@@ -119,14 +124,12 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
 /// Not blocked on the date and time types, which shipped in phase 2b:
 /// `duration()` needs the general `xs:duration` type, which
 /// `spec/xpath2/` documents as a deliberate omission (only the two ordered
-/// subtypes are implemented); the `adjust-*-to-timezone()` functions need a
-/// timezone-bearing cast, which nothing in the crate currently produces.
-const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &[
-    "duration",
-    "adjust-date-to-timezone",
-    "adjust-dateTime-to-timezone",
-    "adjust-time-to-timezone",
-];
+/// subtypes are implemented). The `adjust-*-to-timezone()` functions moved
+/// out of this list in phase 9: what they needed was a timezone-bearing
+/// *cast*, produced from a lexical form with an explicit offset — that
+/// already existed in `Temporal::offset_minutes`, once the arithmetic was
+/// written to use it.
+const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &["duration"];
 
 /// Other XPath 2.0 functions that are simply not implemented yet.
 ///
@@ -515,8 +518,79 @@ fn call_v2_temporal(
             component_of(name, args, document)
         }
 
+        _ if name.starts_with("adjust-") && name.ends_with("-to-timezone") => {
+            adjust_to_timezone_call(name, args, context)
+        }
+
         _ => call_v2_rest(name, args, context),
     }
+}
+
+/// `adjust-date-to-timezone()`, `adjust-dateTime-to-timezone()`, and
+/// `adjust-time-to-timezone()`.
+///
+/// The type-specific work is [`adjust_to_timezone`]; this is argument
+/// handling — the expected `TemporalKind` from the name, the empty-sequence
+/// propagation for `$arg`, and resolving `$timezone`: omitted means the
+/// implicit timezone, present-but-empty means "remove the timezone",
+/// present-and-non-empty must be an `xs:dayTimeDuration` within ±14:00
+/// (`err:FODT0003`'s range, though this crate doesn't carry F&O error codes).
+fn adjust_to_timezone_call(
+    name: &str,
+    args: &[Value],
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let document = context.document;
+    let kind = match name
+        .strip_prefix("adjust-")
+        .and_then(|s| s.strip_suffix("-to-timezone"))
+    {
+        Some("date") => TemporalKind::Date,
+        Some("dateTime") => TemporalKind::DateTime,
+        Some("time") => TemporalKind::Time,
+        _ => return Err(EvalError::new(format!("unknown function {name}()"))),
+    };
+
+    if items_of(name, args, 0, context.version)?.is_empty() {
+        return Ok(Value::Sequence(Vec::new()));
+    }
+
+    let temporal = match args[0].as_sequence().and_then(|items| match items {
+        [Item::Temporal(temporal)] if temporal.kind() == kind => Some(*temporal),
+        _ => None,
+    }) {
+        Some(temporal) => temporal,
+        None => {
+            Temporal::parse(&args[0].to_xpath_string(document), kind).map_err(EvalError::new)?
+        }
+    };
+
+    let target = match args.get(1) {
+        None => Some(context.implicit_timezone),
+        Some(_) => match items_of(name, args, 1, context.version)?.as_slice() {
+            [] => None,
+            [Item::Duration(duration)] if duration.kind() == DurationKind::DayTime => {
+                #[allow(clippy::cast_possible_truncation)]
+                let minutes = (duration.to_seconds() / 60.0).round() as i32;
+                if !(-840..=840).contains(&minutes) {
+                    return Err(EvalError::new(format!(
+                        "{name}()'s timezone is {minutes} minutes, outside the valid \
+                         range of -14:00 to +14:00"
+                    )));
+                }
+                Some(minutes)
+            }
+            _ => {
+                return Err(EvalError::new(format!(
+                    "{name}()'s second argument must be an xs:dayTimeDuration"
+                )))
+            }
+        },
+    };
+
+    Ok(Value::Sequence(vec![Item::Temporal(adjust_to_timezone(
+        &temporal, target,
+    ))]))
 }
 
 /// The remaining XPath 2.0 functions.
@@ -1462,13 +1536,30 @@ mod tests {
 
     #[test]
     fn unimplemented_two_point_zero_functions_say_what_they_need() {
-        let dates = check_function("adjust-date-to-timezone", 2, XPathVersion::V2).unwrap_err();
-        assert!(dates.contains("date and time"), "{dates}");
+        let duration = check_function("duration", 1, XPathVersion::V2).unwrap_err();
+        assert!(duration.contains("date and time"), "{duration}");
 
         // Looks like a sequence function, but needs function items instead
         // (see the comment on `V2_FUNCTIONS_NOT_IMPLEMENTED`).
         let for_each = check_function("for-each", 2, XPathVersion::V2).unwrap_err();
         assert!(for_each.contains("does not implement"), "{for_each}");
+    }
+
+    #[test]
+    fn the_timezone_adjustment_functions_are_available_now_that_they_are_implemented() {
+        // Moved out of "needs dates" in phase 9.
+        for name in [
+            "adjust-date-to-timezone",
+            "adjust-dateTime-to-timezone",
+            "adjust-time-to-timezone",
+        ] {
+            assert!(
+                check_function(name, 1, XPathVersion::V2).is_ok(),
+                "{name}() should be available"
+            );
+            assert!(check_function(name, 2, XPathVersion::V2).is_ok());
+            assert!(check_function(name, 3, XPathVersion::V2).is_err());
+        }
     }
 
     #[test]
@@ -1570,7 +1661,7 @@ mod tests {
         // list and the documentation move together, which
         // `tests/docs.rs::the_xpath_two_function_list_in_the_spec_matches_the_engine`
         // enforces.
-        assert_eq!(names.len(), 56, "{names:?}");
+        assert_eq!(names.len(), 59, "{names:?}");
         for expected in [
             "matches",
             "replace",
@@ -1583,6 +1674,9 @@ mod tests {
             "reverse",
             "deep-equal",
             "resolve-uri",
+            "adjust-date-to-timezone",
+            "adjust-dateTime-to-timezone",
+            "adjust-time-to-timezone",
             "zero-or-one",
             "one-or-more",
             "exactly-one",
