@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.0.1 |
 | Effective date | 2026-09-02 |
 | Status | Active |
 | Author and owner | Joel Parker Henderson, maintainer |
@@ -80,14 +80,22 @@ One named human — the maintainer, Joel Parker Henderson (`Cargo.toml`'s
 `authors` field; the sole human author in the git history, alongside
 Dependabot's automated dependency-bump commits, which are a separate,
 non-AI tool) — is the author of and accountable for every change in this
-repository, whatever tool produced the bytes. A tool **shall not** be named
-as the author of, or a signer of, anything here, because a tool cannot be
-responsible for accuracy, integrity, or originality, and responsibility
-that cannot be borne cannot be assigned.
+repository, whatever tool produced the bytes. A tool **shall not** be
+recorded in git's `Author:` or `Committer:` field, and **shall not** sign
+anything, because a tool cannot be responsible for accuracy, integrity, or
+originality, and responsibility that cannot be borne cannot be assigned.
 
-The commit trailers described in §10 record *participation*, not
-authorship. The `Author:` field of every non-Dependabot commit in this
-history is the maintainer.
+That is a narrower rule than "a tool shall not be named as a co-author,"
+and the distinction matters enough to state precisely rather than let a
+reader infer it: §10's `Co-Authored-By:` commit trailer **does** name the
+tool, in the trailer, on every commit an agentic tool touched — that is
+disclosure, not a violation of this section. What is prohibited is the
+`Author:`/`Committer:` field itself, which git always records as the
+human who ran the commit — `git log --format='%an <%ae>'` shows the
+maintainer on every commit in this history — and the act of signing. A
+trailer that discloses participation and a field that assigns
+accountability are different things, and conflating them is exactly the
+mistake this section exists to avoid.
 
 ## 5. Where AI is used, and at what level
 
@@ -318,6 +326,7 @@ this repository's actual files rather than copied from theirs.
 | Version | Date | Change |
 |---|---|---|
 | 1.0.0 | 2026-09-02 | First issue, written to reconcile this repository with the AI-disclosure practice already adopted in this maintainer's other Rust workspaces, and to record the same day's governance change: an agentic tool may now decide a landed change warrants a crates.io release and run `cargo publish` for it, bounded by [`spec/trusted-publishing/`](spec/trusted-publishing/index.md). |
+| 1.0.1 | 2026-09-02 | §4 corrected: the first issue's "shall not be named as the author of, or a signer of" was imprecise about the `Co-Authored-By:` trailer §10 already documents, echoing wording an earlier sibling-workspace draft got wrong (a blanket "no co-author" rule that its own commit history contradicted). Restated precisely: git's `Author:`/`Committer:` field is always the human, and is what §4 prohibits a tool from occupying; a trailer naming the tool as co-author is disclosure, not a violation. `CONTRIBUTING.md` gained a matching "Using AI tools" section, so the same mistake cannot be reintroduced there either. |
 
 ## Annex B. Machine-readable summary
 
@@ -326,7 +335,7 @@ is authoritative where the two could ever disagree.
 
 ```yaml
 ai-statement:
-  version: 1.0.0
+  version: 1.0.1
   last-updated: 2026-09-02
   vocabulary: w3c-ai-content-disclosure
   disclosure-default: ai-generated

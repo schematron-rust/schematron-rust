@@ -50,6 +50,21 @@ for the site's own `pnpm` commands.
 4. Open the pull request. CI runs the same checks; a red check is something
    to fix, not to explain away.
 
+## Using AI tools
+
+You **may** use AI tools to write a contribution. Say so in the pull
+request description: which tool, and what it did.
+
+**This project discloses tool participation in commit trailers**, not only
+in the PR description — `Co-Authored-By: <tool> <email>` on any commit an
+agentic tool touched. That names the tool as a co-author *in the trailer*;
+it does not change who git records as the commit's `Author:`, which is
+always the human who ran it, and it is not a claim of accountability —
+[`AI_STATEMENT.md`](AI_STATEMENT.md) §4 states that distinction precisely,
+because the two are easy to conflate and mean different things. You remain
+responsible for your submission in full, understood, explained on request,
+tested, and honest, whichever tool helped write it.
+
 ## Financial support
 
 Contributing code and funding maintenance are two independent ways to help —
