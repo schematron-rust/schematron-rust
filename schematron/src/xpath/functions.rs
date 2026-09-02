@@ -75,6 +75,10 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("insert-before", 3, Some(3)),
     ("remove", 2, Some(2)),
     ("unordered", 1, Some(1)),
+    ("zero-or-one", 1, Some(1)),
+    ("one-or-more", 1, Some(1)),
+    ("exactly-one", 1, Some(1)),
+    ("data", 1, Some(1)),
     ("current-date", 0, Some(0)),
     ("current-dateTime", 0, Some(0)),
     ("current-time", 0, Some(0)),
@@ -132,8 +136,7 @@ const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &[
 /// only the sequence type, which phase 2a already shipped, and are
 /// implemented; `for-each` needs a type this crate has no representation
 /// for.
-const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] =
-    &["data", "deep-equal", "trace", "resolve-uri", "for-each"];
+const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] = &["deep-equal", "trace", "resolve-uri", "for-each"];
 
 /// Checks that a function exists and accepts this many arguments.
 ///
@@ -572,6 +575,60 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
                 items.remove(position as usize - 1);
             }
             Ok(Value::Sequence(items))
+        }
+
+        // The three cardinality assertions. Each passes its argument through
+        // unchanged when the cardinality holds, and raises rather than
+        // silently truncating or padding otherwise — the same choice
+        // `eq`/`ne`/… make for "more than one item", and for the same
+        // reason: guessing which item to keep would be a wrong answer
+        // wearing the shape of a right one.
+        "zero-or-one" => {
+            let items = items_of(name, args, 0, context.version)?;
+            if items.len() > 1 {
+                return Err(EvalError::new(format!(
+                    "zero-or-one() requires a sequence of at most one item, but got {} items",
+                    items.len()
+                )));
+            }
+            Ok(Value::Sequence(items))
+        }
+        "one-or-more" => {
+            let items = items_of(name, args, 0, context.version)?;
+            if items.is_empty() {
+                return Err(EvalError::new(
+                    "one-or-more() requires a sequence of at least one item, but got 0",
+                ));
+            }
+            Ok(Value::Sequence(items))
+        }
+        "exactly-one" => {
+            let items = items_of(name, args, 0, context.version)?;
+            if items.len() != 1 {
+                return Err(EvalError::new(format!(
+                    "exactly-one() requires a sequence of exactly one item, but got {} items",
+                    items.len()
+                )));
+            }
+            Ok(Value::Sequence(items))
+        }
+
+        // Atomizes: a node becomes its typed value, everything else passes
+        // through. This crate does no schema-aware processing, so a node's
+        // typed value is always untyped atomic — which, like every untyped
+        // value elsewhere in this engine (see the divergences table in
+        // spec/xpath2/), is represented as a plain string.
+        "data" => {
+            let items = items_of(name, args, 0, context.version)?;
+            Ok(Value::Sequence(
+                items
+                    .iter()
+                    .map(|item| match item {
+                        Item::Node(_) => Item::String(item.to_xpath_string(document)),
+                        _ => item.clone(),
+                    })
+                    .collect(),
+            ))
         }
 
         _ => Err(EvalError::new(format!("unknown function {name}()"))),
@@ -1323,13 +1380,23 @@ mod tests {
     }
 
     #[test]
+    fn the_cardinality_and_atomization_functions_are_available() {
+        for name in ["zero-or-one", "one-or-more", "exactly-one", "data"] {
+            assert!(
+                check_function(name, 1, XPathVersion::V2).is_ok(),
+                "{name}() should be available"
+            );
+        }
+    }
+
+    #[test]
     fn the_two_point_zero_library_has_the_documented_names() {
         let names = function_names_v2();
         // Growing this number is expected; the point of the check is that the
         // list and the documentation move together, which
         // `tests/docs.rs::the_xpath_two_function_list_in_the_spec_matches_the_engine`
         // enforces.
-        assert_eq!(names.len(), 50, "{names:?}");
+        assert_eq!(names.len(), 54, "{names:?}");
         for expected in [
             "matches",
             "replace",
@@ -1340,6 +1407,10 @@ mod tests {
             "distinct-values",
             "index-of",
             "reverse",
+            "zero-or-one",
+            "one-or-more",
+            "exactly-one",
+            "data",
             "subsequence",
             "insert-before",
             "remove",

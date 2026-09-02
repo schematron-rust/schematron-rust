@@ -95,6 +95,14 @@
   one that had been filed alongside them by mistake: `for-each()` needs a
   function item, an XPath 3.0 feature this crate does not have, not merely a
   sequence — it moved to the "not implemented" table instead.
+- XPath 2.0 phase 6: the cardinality assertions and atomization —
+  `zero-or-one()`, `one-or-more()`, `exactly-one()`, and `data()`. The first
+  three were an oversight rather than a deliberate gap: unlike every other
+  unimplemented XPath 2.0 function, they were not named anywhere the crate
+  could say so, and calling one reported "unknown function" — indistinguishable
+  from a typo. `data()` atomizes a node to its typed value, which this
+  schema-unaware crate always takes to be untyped atomic, represented as a
+  plain string like every other untyped value in this engine.
 
 ## Next
 

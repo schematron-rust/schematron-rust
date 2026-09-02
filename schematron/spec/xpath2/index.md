@@ -9,7 +9,7 @@ crate implements, and, more importantly, **where it still behaves like XPath
 Read the divergences section before relying on this. It is short and it
 matters.
 
-## Status: phases 1 through 5
+## Status: phases 1 through 6
 
 Schematron schemas in the wild declare `xslt2` far more often than they use
 the parts of XPath 2.0 that are genuinely incompatible with 1.0. The
@@ -50,6 +50,15 @@ deliberately is not, tracked.
 `reverse()`, `subsequence()`, `insert-before()`, `remove()`, and
 `unordered()`. None of these were blocked on the sequence type itself, which
 phase 2a already shipped; they were simply unwritten.
+
+**Phase 6** adds the **cardinality assertions and atomization** —
+`zero-or-one()`, `one-or-more()`, `exactly-one()`, and `data()`. The first
+three were an oversight rather than a deliberate gap: unlike every other
+unimplemented XPath 2.0 function, they were not named anywhere, so calling
+one reported "unknown function" rather than saying what was actually wrong.
+`data()` atomizes a node to its typed value; since this crate does no
+schema-aware processing, that value is always untyped atomic, which — like
+every other untyped value in this engine — is represented as a plain string.
 
 ### The sequence type, and why XPath 1.0 is unaffected
 
@@ -137,6 +146,10 @@ cannot accidentally acquire 2.0 behaviour.
 | `insert-before(sequence, position, inserts)` | Splices `inserts` before one-based `position`; out-of-range clamps to an end |
 | `remove(sequence, position)` | Drops the item at `position`; out of range leaves the sequence unchanged |
 | `unordered(sequence)` | Returns the sequence unchanged — order is implementation-defined, and this is a conformant, deterministic choice |
+| `zero-or-one(sequence)` | Passes through a sequence of 0 or 1 items; raises otherwise |
+| `one-or-more(sequence)` | Passes through a sequence of 1 or more items; raises on the empty sequence |
+| `exactly-one(sequence)` | Passes through a sequence of exactly 1 item; raises otherwise |
+| `data(sequence)` | Atomizes: a node becomes its string value, everything else passes through |
 | `count`, `exists`, `empty`, `min`, `max`, `avg`, `sum` | Accept a sequence as well as a node-set |
 | `current-date()`, `current-dateTime()`, `current-time()` | Stable for a whole validation run; see below |
 | `year-from-date`, `month-from-date`, `day-from-date` | Components of a date |
