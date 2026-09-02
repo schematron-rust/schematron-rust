@@ -3,6 +3,17 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.9.0
+
+### Added
+
+- **XPath 2.0 phase 8: `resolve-uri()`.** RFC 3986 URI-reference
+  resolution, implemented by hand (`src/xpath/uri.rs`) rather than adding
+  a dependency, and verified against the RFC's own worked examples. The
+  one-argument form falls back to the document's own base URI and errors,
+  naming what's missing, when the document has none. See
+  [spec/xpath2/](spec/xpath2/index.md).
+
 ## 0.8.0
 
 ### Added

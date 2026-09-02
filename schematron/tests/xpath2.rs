@@ -33,6 +33,20 @@ fn check(test: &str, document: &str) -> bool {
     schema.validate(&document).expect("validation should run").is_valid()
 }
 
+/// Like [`check`], but with `document`'s base URI set first — for the
+/// functions (`resolve-uri()`'s one-argument form) that fall back to it.
+fn check_with_base(test: &str, document: &str, base: &str) -> bool {
+    let source = schema_with(
+        "xslt2",
+        &format!(r#"<pattern><rule context="a"><assert test="{test}">failed</assert></rule></pattern>"#),
+    );
+    let schema = Schema::from_str(&source)
+        .unwrap_or_else(|e| panic!("schema with test {test:?} should compile: {e}"));
+    let mut document = Document::from_str(document).expect("document should parse");
+    document.set_base_uri(base);
+    schema.validate(&document).expect("validation should run").is_valid()
+}
+
 /// The compile error for a test under a binding, if it does not compile.
 fn compile_error(binding: &str, test: &str) -> String {
     let source = schema_with(
@@ -149,7 +163,6 @@ fn constructs_still_needing_phase_two_b_say_so() {
     for (test, expected) in [
         ("count(for-each(b, 1))", "does not implement"),
         ("trace(b, 'x')", "does not implement"),
-        ("resolve-uri('a', 'b')", "does not implement"),
     ] {
         let message = compile_error("xslt2", test);
         assert_contains!(message, expected);
@@ -469,6 +482,39 @@ fn deep_equal_compares_elements_structurally() {
     // A node never deep-equals an atomic value, even with the same string
     // value — this crate does not atomize for `deep-equal`.
     assert!(!check("deep-equal(p/b/i, 't')", doc));
+}
+
+#[test]
+fn resolve_uri_resolves_against_an_explicit_base() {
+    assert!(check(
+        "resolve-uri('g', 'http://a/b/c/d;p?q') eq 'http://a/b/c/g'",
+        "<a/>"
+    ));
+    // A reference with its own scheme ignores the base entirely.
+    assert!(check(
+        "resolve-uri('mailto:x@example.com', 'http://a/') eq 'mailto:x@example.com'",
+        "<a/>"
+    ));
+    // The empty sequence in, the empty sequence out.
+    assert!(check("empty(resolve-uri((), 'http://a/'))", "<a/>"));
+}
+
+#[test]
+fn resolve_uri_falls_back_to_the_documents_base_uri() {
+    assert!(check_with_base(
+        "resolve-uri('g') eq 'http://a/b/c/g'",
+        "<a/>",
+        "http://a/b/c/d"
+    ));
+}
+
+#[test]
+fn resolve_uri_without_a_base_needs_one() {
+    // No base argument, and the test document has no base URI either —
+    // the resolver has nothing to resolve against, and says so.
+    let message = eval_error("resolve-uri('g')", "<a/>");
+    assert_contains!(message, "resolve-uri()");
+    assert_contains!(message, "base URI");
 }
 
 #[test]
