@@ -9,7 +9,7 @@ crate implements, and, more importantly, **where it still behaves like XPath
 Read the divergences section before relying on this. It is short and it
 matters.
 
-## Status: phases 1 through 8
+## Status: phases 1 through 9
 
 Schematron schemas in the wild declare `xslt2` far more often than they use
 the parts of XPath 2.0 that are genuinely incompatible with 1.0. The
@@ -75,6 +75,21 @@ one-argument form falls back to the document's own base URI — this crate
 has no other notion of a query's static base URI — and is an error, naming
 what's missing, when the document doesn't have one. `resolve-uri(())` is
 `()`, matching every other function that takes `xs:string?`.
+
+**Phase 9** adds **`adjust-date-to-timezone()`, `adjust-dateTime-to-timezone()`,
+and `adjust-time-to-timezone()`**. `spec/xpath2/` used to record these as
+needing "a timezone-bearing cast, which nothing in the crate currently
+produces" — that turned out to already exist: `Temporal` has carried
+`offset_minutes: Option<i32>` since phase 2b, tracking whether a value's
+timezone was written at all. What was missing was the arithmetic, not the
+representation: one function,
+[`temporal::adjust_to_timezone`](../../src/xpath/temporal.rs), serves all
+three, because a `Date`'s time-of-day is already fixed at midnight and a
+`Time`'s date is already fixed at the reference day `1972-12-31` — exactly
+the "combine with 00:00:00" / "combine with 1972-12-31" recipe the F&O
+spec describes for those two forms, needing no special case here. Verified
+against the F&O reference material's own worked examples, including the
+one where converting a date's timezone rolls it to the adjacent day.
 
 ### The sequence type, and why XPath 1.0 is unaffected
 
@@ -181,6 +196,8 @@ cannot accidentally acquire 2.0 behaviour.
 | `years-from-duration`, `months-from-duration` | Components of a yearMonthDuration |
 | `timezone-from-date`, `timezone-from-dateTime`, `timezone-from-time` | The value's own timezone, as a dayTimeDuration, or the empty sequence |
 | `implicit-timezone()` | The run's implicit timezone, as a dayTimeDuration |
+| `adjust-date-to-timezone(value)`, `adjust-dateTime-to-timezone(value)`, `adjust-time-to-timezone(value)` | One-argument form: adjusts to the implicit timezone |
+| `adjust-date-to-timezone(value, timezone)`, `adjust-dateTime-to-timezone(value, timezone)`, `adjust-time-to-timezone(value, timezone)` | Adjusts to `timezone` (`xs:dayTimeDuration?`, within ±14:00); `()` removes the timezone; converts the instant when `value` already had one, attaches directly when it didn't |
 
 ## Durations and date arithmetic
 
@@ -519,7 +536,6 @@ time. None of them silently does something else.
 |---|---|
 | Schema-aware types — `element(name, type)`, `schema-element()` | Needs a schema processor, which is out of scope |
 | The general `xs:duration` | Only partially ordered; see above |
-| `adjust-date-to-timezone()` and its companions | Needs a timezone-bearing cast |
 | `for-each()` | Not actually XPath 2.0: it takes a function item, an XPath 3.0 feature this crate has no representation for. Unlike its five neighbours in the table above, this one isn't a matter of writing the function. |
 | `trace()` | Its destination is implementation-defined; returning the value unchanged with no actual trace output would satisfy the signature while doing nothing useful. A real one needs a debug-output channel this otherwise-pure evaluator doesn't have — an architecture decision, not a one-function addition |
 | `xslt3`, `xpath3`, `xpath31` bindings | Still refused; use `allow_unknown_query_binding` |
