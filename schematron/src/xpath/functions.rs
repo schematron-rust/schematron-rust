@@ -70,6 +70,11 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("tokenize", 2, Some(3)),
     ("distinct-values", 1, Some(1)),
     ("index-of", 2, Some(2)),
+    ("reverse", 1, Some(1)),
+    ("subsequence", 2, Some(3)),
+    ("insert-before", 3, Some(3)),
+    ("remove", 2, Some(2)),
+    ("unordered", 1, Some(1)),
     ("current-date", 0, Some(0)),
     ("current-dateTime", 0, Some(0)),
     ("current-time", 0, Some(0)),
@@ -102,25 +107,6 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("implicit-timezone", 0, Some(0)),
 ];
 
-/// XPath 2.0 functions this crate does **not** implement, and why.
-///
-/// Naming them turns "unknown function" into a message that says what is
-/// actually wrong, and what it would take to support them.
-///
-/// The sequence type itself has been implemented since phase 2a — sequence
-/// construction, ranges, `for`/`some`/`every`, `tokenize()`,
-/// `distinct-values()`, `index-of()` — so these are not blocked on a missing
-/// type; they are specific sequence-manipulating functions nobody has added
-/// yet.
-const V2_FUNCTIONS_NEEDING_SEQUENCES: &[&str] = &[
-    "subsequence",
-    "insert-before",
-    "remove",
-    "reverse",
-    "unordered",
-    "for-each",
-];
-
 /// XPath 2.0 date/time-related functions this crate does not implement yet.
 ///
 /// Not blocked on the date and time types, which shipped in phase 2b:
@@ -136,7 +122,18 @@ const V2_FUNCTIONS_NEEDING_DATES: &[&str] = &[
 ];
 
 /// Other XPath 2.0 functions that are simply not implemented yet.
-const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] = &["data", "deep-equal", "trace", "resolve-uri"];
+///
+/// `for-each` looks like a sequence function and was filed as one until this
+/// list was audited: it is not part of XPath 2.0 at all. `fn:for-each` takes
+/// a **function item** as its second argument, and function items — inline
+/// function expressions, named function references, dynamic calls — are an
+/// XPath 3.0 feature this crate does not have. Its neighbours here
+/// (`subsequence`, `insert-before`, `remove`, `reverse`, `unordered`) needed
+/// only the sequence type, which phase 2a already shipped, and are
+/// implemented; `for-each` needs a type this crate has no representation
+/// for.
+const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] =
+    &["data", "deep-equal", "trace", "resolve-uri", "for-each"];
 
 /// Checks that a function exists and accepts this many arguments.
 ///
@@ -190,12 +187,6 @@ pub fn check_function(name: &str, arity: usize, version: XPathVersion) -> Result
         return Err(format!(
             "{name}() is an XPath 2.0 function, and this schema's query binding is \
              XPath 1.0. Set queryBinding=\"xslt2\" to use it; see spec/xpath2/."
-        ));
-    }
-    if V2_FUNCTIONS_NEEDING_SEQUENCES.contains(&name) {
-        return Err(format!(
-            "{name}() is a sequence-manipulating XPath 2.0 function this crate \
-             does not implement yet; see spec/xpath2/"
         ));
     }
     if V2_FUNCTIONS_NEEDING_DATES.contains(&name) {
@@ -531,8 +522,95 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
             Ok(Value::Sequence(positions))
         }
 
+        "reverse" => {
+            let mut items = items_of(name, args, 0, context.version)?;
+            items.reverse();
+            Ok(Value::Sequence(items))
+        }
+
+        // The result order is implementation-defined by the spec — the
+        // point of the name is that a caller may not rely on it. Returning
+        // the input unchanged is a conformant choice, and a deterministic
+        // one is easier to write a test against than any other.
+        "unordered" => Ok(Value::Sequence(items_of(name, args, 0, context.version)?)),
+
+        "subsequence" => Ok(Value::Sequence(subsequence(name, args, context)?)),
+
+        "insert-before" => {
+            let mut items = items_of(name, args, 0, context.version)?;
+            let inserts = items_of(name, args, 2, context.version)?;
+            // Per the F&O definition: a position before the start clamps to
+            // the front, and one past the end appends. `round_half_up`
+            // mirrors `fn:round`'s own tie-breaking, so this agrees with
+            // `subsequence()` on where a fractional position lands.
+            let position = round_half_up(args[1].to_number(document));
+            #[allow(
+                clippy::cast_precision_loss,
+                clippy::cast_sign_loss,
+                clippy::cast_possible_truncation
+            )]
+            let index = if position < 1.0 {
+                0
+            } else if position > items.len() as f64 {
+                items.len()
+            } else {
+                (position - 1.0) as usize
+            };
+            items.splice(index..index, inserts);
+            Ok(Value::Sequence(items))
+        }
+
+        "remove" => {
+            let mut items = items_of(name, args, 0, context.version)?;
+            let position = round_half_up(args[1].to_number(document));
+            // Out of range — including NaN, for which every comparison
+            // below is false — leaves the sequence unchanged, per the F&O
+            // definition, rather than an error.
+            #[allow(clippy::cast_precision_loss)]
+            if position >= 1.0 && position <= items.len() as f64 {
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                items.remove(position as usize - 1);
+            }
+            Ok(Value::Sequence(items))
+        }
+
         _ => Err(EvalError::new(format!("unknown function {name}()"))),
     }
+}
+
+/// `subsequence($sequence, $start)` and `subsequence($sequence, $start,
+/// $length)`.
+///
+/// Both position arguments are rounded with `fn:round`'s own rule
+/// (`round_half_up`) before use, exactly as the F&O definition specifies, so
+/// `subsequence($s, 1.5)` starts at position 2. Comparing the unrounded
+/// arithmetic directly against each item's plain `f64` position — rather
+/// than building an explicit range — gets the edge cases right for free: a
+/// `NaN` start or length excludes every item, because every comparison
+/// against `NaN` is false, and a `-INF` start includes everything from
+/// position 1, because every finite position is greater.
+fn subsequence(
+    name: &str,
+    args: &[Value],
+    context: &EvalContext<'_>,
+) -> Result<Vec<Item>, EvalError> {
+    let document = context.document;
+    let items = items_of(name, args, 0, context.version)?;
+    let start = round_half_up(args[1].to_number(document));
+    let end = match args.get(2) {
+        Some(length) => start + round_half_up(length.to_number(document)),
+        None => f64::INFINITY,
+    };
+    Ok(items
+        .into_iter()
+        .enumerate()
+        .filter(|(index, _)| {
+            #[allow(clippy::cast_precision_loss)]
+            let position = (*index + 1) as f64;
+            position >= start && position < end
+        })
+        .map(|(_, item)| item)
+        .collect())
 }
 
 /// Converts a count to `f64` for XPath, which has only one numeric type.
@@ -1177,11 +1255,13 @@ mod tests {
 
     #[test]
     fn unimplemented_two_point_zero_functions_say_what_they_need() {
-        let sequences = check_function("subsequence", 2, XPathVersion::V2).unwrap_err();
-        assert!(sequences.contains("sequence"), "{sequences}");
-
         let dates = check_function("adjust-date-to-timezone", 2, XPathVersion::V2).unwrap_err();
         assert!(dates.contains("date and time"), "{dates}");
+
+        // Looks like a sequence function, but needs function items instead
+        // (see the comment on `V2_FUNCTIONS_NOT_IMPLEMENTED`).
+        let for_each = check_function("for-each", 2, XPathVersion::V2).unwrap_err();
+        assert!(for_each.contains("does not implement"), "{for_each}");
     }
 
     #[test]
@@ -1227,6 +1307,19 @@ mod tests {
                 "{name}() should be available"
             );
         }
+        // These moved out of it in phase 5.
+        for (name, arity) in [
+            ("reverse", 1),
+            ("subsequence", 2),
+            ("insert-before", 3),
+            ("remove", 2),
+            ("unordered", 1),
+        ] {
+            assert!(
+                check_function(name, arity, XPathVersion::V2).is_ok(),
+                "{name}() should be available"
+            );
+        }
     }
 
     #[test]
@@ -1236,7 +1329,7 @@ mod tests {
         // list and the documentation move together, which
         // `tests/docs.rs::the_xpath_two_function_list_in_the_spec_matches_the_engine`
         // enforces.
-        assert_eq!(names.len(), 45, "{names:?}");
+        assert_eq!(names.len(), 50, "{names:?}");
         for expected in [
             "matches",
             "replace",
@@ -1246,6 +1339,11 @@ mod tests {
             "tokenize",
             "distinct-values",
             "index-of",
+            "reverse",
+            "subsequence",
+            "insert-before",
+            "remove",
+            "unordered",
             "current-date",
             "year-from-date",
             "xs:date",

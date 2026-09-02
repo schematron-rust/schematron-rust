@@ -143,9 +143,11 @@ fn a_conditional_requires_both_branches() {
 
 #[test]
 fn constructs_still_needing_phase_two_b_say_so() {
-    // What phase 2a did not add still names itself rather than misbehaving.
+    // What no phase has added yet still names itself rather than
+    // misbehaving. `for-each` looks like its neighbour `subsequence` (now
+    // implemented, phase 5) but needs function items, an XPath 3.0 feature.
     for (test, expected) in [
-        ("count(subsequence(b, 2))", "sequence"),
+        ("count(for-each(b, 1))", "does not implement"),
         ("deep-equal(b, c)", "does not implement"),
     ] {
         let message = compile_error("xslt2", test);
@@ -332,6 +334,70 @@ fn index_of_reports_one_based_positions() {
     assert!(check("index-of(('a', 'b', 'c'), 'b') = 2", "<a/>"));
     assert!(check("count(index-of(('a', 'b', 'a'), 'a')) = 2", "<a/>"));
     assert!(check("count(index-of(('a', 'b'), 'z')) = 0", "<a/>"));
+}
+
+#[test]
+fn reverse_reverses_a_sequence() {
+    assert!(check("string-join(reverse((1, 2, 3)), ',') = '3,2,1'", "<a/>"));
+    assert!(check("count(reverse(())) = 0", "<a/>"));
+}
+
+#[test]
+fn unordered_returns_every_item_unchanged() {
+    // The result order is implementation-defined; this crate's choice is to
+    // leave it as-is, so the count and membership are what's guaranteed.
+    assert!(check("count(unordered((3, 1, 2))) = 3", "<a/>"));
+    assert!(check("string-join(unordered((3, 1, 2)), ',') = '3,1,2'", "<a/>"));
+}
+
+#[test]
+fn subsequence_selects_by_one_based_position() {
+    assert!(check(
+        "string-join(subsequence(('a', 'b', 'c', 'd', 'e'), 3), ',') = 'c,d,e'",
+        "<a/>"
+    ));
+    assert!(check(
+        "string-join(subsequence(('a', 'b', 'c', 'd', 'e'), 2, 3), ',') = 'b,c,d'",
+        "<a/>"
+    ));
+    // A fractional start rounds like `round()` does: halves go up.
+    assert!(check(
+        "string-join(subsequence(('a', 'b', 'c', 'd', 'e'), 1.5), ',') = 'b,c,d,e'",
+        "<a/>"
+    ));
+    assert!(check("count(subsequence(('a', 'b'), 5)) = 0", "<a/>"));
+}
+
+#[test]
+fn insert_before_splices_in_a_sequence() {
+    assert!(check(
+        "string-join(insert-before(('a', 'b', 'c'), 2, ('x', 'y')), ',') = 'a,x,y,b,c'",
+        "<a/>"
+    ));
+    // A position before the start clamps to the front.
+    assert!(check(
+        "string-join(insert-before(('a', 'b'), -3, 'x'), ',') = 'x,a,b'",
+        "<a/>"
+    ));
+    // A position past the end appends.
+    assert!(check(
+        "string-join(insert-before(('a', 'b'), 99, 'x'), ',') = 'a,b,x'",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn remove_drops_one_item_by_position() {
+    assert!(check(
+        "string-join(remove(('a', 'b', 'c'), 2), ',') = 'a,c'",
+        "<a/>"
+    ));
+    // Out of range leaves the sequence unchanged.
+    assert!(check(
+        "string-join(remove(('a', 'b', 'c'), 99), ',') = 'a,b,c'",
+        "<a/>"
+    ));
+    assert!(check("count(remove((), 1)) = 0", "<a/>"));
 }
 
 #[test]

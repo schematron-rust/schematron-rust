@@ -31,6 +31,13 @@ git history; this file starts where the first output-affecting change did.
   recorded `1 instance of xs:double` as agreeing with real XPath 2.0. It
   does not — `1` is an `xs:integer`, which does not derive from `xs:double`
   — and both the documentation and the crate's behavior now say `false`.
+- **XPath 2.0 phase 5: the remaining sequence-manipulating functions** —
+  `reverse()`, `subsequence()`, `insert-before()`, `remove()`, and
+  `unordered()`. See [spec/xpath2/](spec/xpath2/index.md).
+- This also **corrects a misclassification**: `for-each()` was listed
+  alongside these as merely unwritten, but it is not part of XPath 2.0 at
+  all — it needs a function item, an XPath 3.0 feature this crate does not
+  implement. It now reports that instead of "needs a sequence."
 
 ## 0.5.1
 

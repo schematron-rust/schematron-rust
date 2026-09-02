@@ -88,6 +88,13 @@
   `1 instance of xs:double` was recorded as agreeing with real XPath 2.0;
   it does not, since `1` is an `xs:integer` and does not derive from
   `xs:double`.
+- XPath 2.0 phase 5: the remaining sequence-manipulating functions —
+  `reverse()`, `subsequence()`, `insert-before()`, `remove()`, and
+  `unordered()`. None were blocked on the sequence type, which phase 2a
+  already shipped; they were simply unwritten. Auditing the list turned up
+  one that had been filed alongside them by mistake: `for-each()` needs a
+  function item, an XPath 3.0 feature this crate does not have, not merely a
+  sequence — it moved to the "not implemented" table instead.
 
 ## Next
 
