@@ -50,6 +50,23 @@ pub enum Expr {
         /// Evaluated once per item; its results concatenate.
         body: Box<Expr>,
     },
+    /// `let $v := E return E` — an XPath 3.0 let expression.
+    ///
+    /// Unlike `for`, this binds `value` to `variable` as one whole value —
+    /// no iteration, no multiplication of `body`'s evaluation count, and
+    /// nothing for the shared nested-construct budget to charge. `let $v
+    /// := (1, 2, 3) return count($v)` is `3`; `for $v in (1, 2, 3) return
+    /// count($v)` is `(1, 1, 1)` — the difference is exactly this: `for`
+    /// rebinds `$v` to each item in turn, `let` binds it once to the
+    /// sequence as a whole.
+    Let {
+        /// The variable `value` is bound to for `body`.
+        variable: NameTest,
+        /// Evaluated once, before `body`.
+        value: Box<Expr>,
+        /// Evaluated once, with `variable` bound.
+        body: Box<Expr>,
+    },
     /// `some $v in E satisfies E` and `every $v in E satisfies E`.
     Quantified {
         /// Which quantifier.
@@ -337,6 +354,14 @@ pub enum BinaryOp {
     NodeAfter,
     /// `||` — XPath 3.0's string concatenation operator.
     Concat,
+    /// `!` — XPath 3.0's simple map operator: evaluates the right operand
+    /// once per item of the left, with that item as the context item, and
+    /// concatenates the results.
+    ///
+    /// Evaluated specially rather than through the generic "evaluate both
+    /// sides, then combine" path every other `BinaryOp` takes — see
+    /// `evaluate_binary`'s `And`/`Or` short-circuit, which this joins.
+    SimpleMap,
 }
 
 impl BinaryOp {
@@ -369,6 +394,12 @@ impl BinaryOp {
         matches!(self, BinaryOp::Concat)
     }
 
+    /// Whether this is XPath 3.0's simple map operator, `!`.
+    #[must_use]
+    pub const fn is_simple_map(self) -> bool {
+        matches!(self, BinaryOp::SimpleMap)
+    }
+
     /// The operator as written, for error messages.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -397,6 +428,7 @@ impl BinaryOp {
             BinaryOp::NodeBefore => "<<",
             BinaryOp::NodeAfter => ">>",
             BinaryOp::Concat => "||",
+            BinaryOp::SimpleMap => "!",
         }
     }
 }

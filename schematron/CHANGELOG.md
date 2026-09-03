@@ -3,6 +3,40 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.14.0
+
+### Added
+
+- **XPath 3.0 phase 4: the simple map operator, plus `let`.**
+  - `E1 ! E2`: evaluates `E2` once per item of `E1`, with that item as the
+    context item, and concatenates the results. `EvalContext` gained an
+    optional `context_item` field for the one case a node can't represent
+    — an atomic value or a function item — read in exactly one place, to
+    resolve a bare `.`; anything wanting a real axis from a non-node item
+    is a dynamic error naming what the item actually is. `EvalContext`
+    gave up `Copy` for `Clone` to hold this, a cost paid only when `!` is
+    mapping over a non-node item, not on the ordinary node-based path.
+  - `let $v := E return E`: binds `E`'s whole value to `$v` — no
+    iteration, unlike `for`. Found as a real gap while writing this
+    release's own documentation (new to XPath 3.0's grammar, not its
+    function library), not part of the original plan for this release,
+    and fixed in the same sitting since it needed nothing `for` had not
+    already built.
+  - Two further gaps are now named rather than left implicit:
+    `Q{uri}local` names (EQNames) and union types in casts and function
+    signatures are real XPath 3.0 additions this crate does not implement.
+
+`!` joins the eight repeating binary operators already sharing
+`parse_binary_chain` (0.12.0's fix for a stack overflow), so its own chain
+(`a ! b ! c`) is bounded the same way theirs are, with no new parser work
+needed.
+
+See [spec/xpath3/](spec/xpath3/index.md) for both additions in full, and
+[spec/testing/](spec/testing/index.md#what-fuzzing-found) for a
+real-looking OOM that fuzzing `!` turned up and that investigation showed
+was legal, bounded work under the existing per-expression budget — not a
+defect, and not fixed.
+
 ## 0.13.0
 
 ### Added

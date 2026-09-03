@@ -21,7 +21,7 @@ use super::resolver::{FileResolver, SharedResolver};
 use crate::error::{Error, Result};
 use crate::xml::Document;
 use crate::xpath::{
-    check_function, Axis, Expr, NameTest, Namespaces, NodeTest, PathStart, XPathVersion,
+    check_function, Axis, BinaryOp, Expr, NameTest, Namespaces, NodeTest, PathStart, XPathVersion,
 };
 
 /// How to load a schema.
@@ -410,18 +410,22 @@ impl Schema {
                 Schema::check_variables(else_branch, source, location, bindable, enclosing)?;
             }
 
-            // These bind a variable for the rest of the expression, so the
-            // input is checked outside the binding and the body inside it.
+            // These each bind one variable for part of themselves — `for`'s
+            // `body`, `let`'s `body`, a quantifier's `test` — so share the
+            // push/check/pop shape via `check_binding`.
             Expr::For {
                 variable,
                 input,
                 body,
             } => {
-                Schema::check_variables(input, source, location, bindable, enclosing)?;
-                enclosing.push(variable.to_string());
-                let checked = Schema::check_variables(body, source, location, bindable, enclosing);
-                enclosing.pop();
-                checked?;
+                Schema::check_binding(input, variable, body, source, location, bindable, enclosing)?;
+            }
+            Expr::Let {
+                variable,
+                value,
+                body,
+            } => {
+                Schema::check_binding(value, variable, body, source, location, bindable, enclosing)?;
             }
             Expr::Quantified {
                 variable,
@@ -429,11 +433,7 @@ impl Schema {
                 test,
                 ..
             } => {
-                Schema::check_variables(input, source, location, bindable, enclosing)?;
-                enclosing.push(variable.to_string());
-                let checked = Schema::check_variables(test, source, location, bindable, enclosing);
-                enclosing.pop();
-                checked?;
+                Schema::check_binding(input, variable, test, source, location, bindable, enclosing)?;
             }
 
             Expr::InlineFunction { .. } | Expr::DynamicCall { .. } | Expr::Arrow(_) => {
@@ -495,6 +495,29 @@ impl Schema {
         }
     }
 
+    /// Checks a construct that binds one variable for part of itself:
+    /// `for`'s `body`, `let`'s `body`, and a quantifier's `test` — `outer`
+    /// is checked without the binding in scope, `inner` with `variable`
+    /// pushed onto `enclosing`, popped again whatever `inner`'s check
+    /// returns. Split out of `check_variables` to keep it under the
+    /// line-count lint; three call sites share it instead of each
+    /// duplicating the push/check/pop.
+    fn check_binding(
+        outer: &Expr,
+        variable: &NameTest,
+        inner: &Expr,
+        source: &str,
+        location: &str,
+        bindable: &std::collections::HashSet<String>,
+        enclosing: &mut Vec<String>,
+    ) -> Result<()> {
+        Schema::check_variables(outer, source, location, bindable, enclosing)?;
+        enclosing.push(variable.to_string());
+        let checked = Schema::check_variables(inner, source, location, bindable, enclosing);
+        enclosing.pop();
+        checked
+    }
+
     fn compile_one(&self, source: &str, location: &str) -> Result<Expr> {
         let expr = crate::xpath::parse(source).map_err(|error| {
             Error::xpath_syntax(location, source, error.position, error.message)
@@ -513,23 +536,7 @@ impl Schema {
             Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) => {}
             Expr::Negate(inner) => self.check_expression(inner, source, location)?,
             Expr::Binary(op, left, right) => {
-                if op.is_value_comparison() {
-                    self.require_v2(
-                        &format!("the `{}` value comparison", op.as_str()),
-                        source,
-                        location,
-                    )?;
-                }
-                if op.is_node_comparison() {
-                    self.require_v2(
-                        &format!("the `{}` node comparison", op.as_str()),
-                        source,
-                        location,
-                    )?;
-                }
-                if op.is_string_concat() {
-                    self.require_v3("the `||` string concatenation operator", source, location)?;
-                }
+                self.check_binary_op_version(*op, source, location)?;
                 self.check_expression(left, source, location)?;
                 self.check_expression(right, source, location)?;
             }
@@ -570,6 +577,11 @@ impl Schema {
             Expr::For { input, body, .. } => {
                 self.require_v2("`for … in … return …`", source, location)?;
                 self.check_expression(input, source, location)?;
+                self.check_expression(body, source, location)?;
+            }
+            Expr::Let { value, body, .. } => {
+                self.require_v3("`let $v := … return …`", source, location)?;
+                self.check_expression(value, source, location)?;
                 self.check_expression(body, source, location)?;
             }
             Expr::Quantified {
@@ -712,6 +724,35 @@ impl Schema {
                 self.version.as_str()
             ),
         ))
+    }
+
+    /// The version gate for one [`Expr::Binary`] operator, split out of
+    /// `check_expression` to keep that function under the line-count lint.
+    /// Every operator with a version requirement is a single `require_v2`
+    /// or `require_v3` call; the ordinary 1.0 operators (`+`, `=`, `|`, …)
+    /// need none and fall through.
+    fn check_binary_op_version(&self, op: BinaryOp, source: &str, location: &str) -> Result<()> {
+        if op.is_value_comparison() {
+            self.require_v2(
+                &format!("the `{}` value comparison", op.as_str()),
+                source,
+                location,
+            )?;
+        }
+        if op.is_node_comparison() {
+            self.require_v2(
+                &format!("the `{}` node comparison", op.as_str()),
+                source,
+                location,
+            )?;
+        }
+        if op.is_string_concat() {
+            self.require_v3("the `||` string concatenation operator", source, location)?;
+        }
+        if op.is_simple_map() {
+            self.require_v3("the `!` simple map operator", source, location)?;
+        }
+        Ok(())
     }
 
     fn check_prefix(&self, prefix: &str, source: &str, location: &str) -> Result<()> {
@@ -1056,6 +1097,9 @@ fn calls_document_function(expr: &Expr) -> bool {
         }
         Expr::For { input, body, .. } => {
             calls_document_function(input) || calls_document_function(body)
+        }
+        Expr::Let { value, body, .. } => {
+            calls_document_function(value) || calls_document_function(body)
         }
         Expr::Quantified { input, test, .. } => {
             calls_document_function(input) || calls_document_function(test)

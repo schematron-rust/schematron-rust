@@ -186,6 +186,33 @@
   unwritten XPath 3.0 function, but real F&O 3.0 has no `fn:sort` at all
   — it is new in 3.1, alongside maps and arrays, so it was never a gap in
   this phase to begin with. See `spec/xpath3/`.
+- **XPath 3.0 phase 4: the simple map operator, and the foundation it
+  needed.** `E1 ! E2` evaluates `E2` once per item of `E1`, with that item
+  as the context item — `EvalContext` gained an optional `context_item`
+  field beside `node` for the case a node can't represent: an atomic value
+  or a function item, resolved only for a bare `.`, read in exactly one
+  place (`Expr::Path`'s evaluation). A node item still moves `EvalContext::node`
+  exactly the way it always did, via `focus`, which now also clears
+  `context_item` so a stale one from an *enclosing* `!` can't leak into
+  ordinary node evaluation. `EvalContext` had to give up `Copy` for
+  `Clone` to hold it — a small, deliberate cost, paid only when `!` is
+  actually mapping over a non-node item, not on the ordinary node-based
+  hot path. Fuzzing `!` itself, immediately after writing it, found a real
+  OOM: eight nested `!`s compounding roughly 7× per level over a
+  seven-node document reached 5.76 million items, comfortably inside
+  `MAX_SEQUENCE_WORK`'s budget but with several million-item `Vec`s alive
+  at once across the nesting depth — legal and bounded (confirmed by
+  raising the fuzzer's own memory ceiling and letting it run to
+  completion), not a defect; see `spec/testing/`. Writing up phase 4's own
+  documentation then found `let $v := E return E` — new to XPath 3.0's
+  *grammar*, not merely its function library the way `sort` was — entirely
+  missing from every earlier phase's accounting, and fixed in the same
+  sitting: one more branch in the same "name directly followed by `$`"
+  dispatch `for`/`some`/`every` already used, needing nothing `for` had
+  not already built. The same check also turned up two gaps this crate
+  still has, named rather than left implicit: `Q{uri}local` names
+  (EQNames) and union types in casts and function signatures. See
+  `spec/xpath3/`.
 
 ## Next
 

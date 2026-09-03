@@ -102,7 +102,7 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
             functions::call(name, &values, context)
         }
 
-        Expr::Path(path) => Ok(Value::NodeSet(evaluate_path(path, context)?)),
+        Expr::Path(path) => evaluate_path_or_context_item(path, context),
 
         Expr::TypeOp {
             op,
@@ -132,6 +132,24 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
             input,
             body,
         } => evaluate_for(variable, input, body, context),
+
+        // No iteration, no budget: `value` is bound to `variable` once, as
+        // a whole `Value`, not per-item the way `for`'s binding is — see
+        // `Expr::Let`'s doc comment.
+        Expr::Let {
+            variable,
+            value,
+            body,
+        } => {
+            let bound = evaluate(value, context)?;
+            let mut scope = context.variables.clone();
+            scope.bind(variable.to_string(), bound);
+            let inner = EvalContext {
+                variables: &scope,
+                ..context.clone()
+            };
+            evaluate(body, &inner)
+        }
 
         Expr::Quantified {
             quantifier,
@@ -275,7 +293,7 @@ pub(crate) fn call_function_item(
             }
             let inner = EvalContext {
                 variables: &scope,
-                ..*context
+                ..context.clone()
             };
             evaluate(body, &inner)
         }
@@ -396,6 +414,46 @@ pub(crate) fn for_each_pair(
     Ok(Value::Sequence(flatten_into_sequence(out)))
 }
 
+/// `E1 ! E2` — XPath 3.0's simple map operator: evaluates `E2` once for
+/// each item of `E1`, with that item as the context item, and concatenates
+/// the results.
+///
+/// A multiplying construct exactly like `for-each`, so it shares the same
+/// budget — see [`SequenceScope`]. Per F&O, the context *position* and
+/// *size* are reset to 1 for every evaluation of `E2`; unlike an axis
+/// step's predicates, which see the step's own position and size among
+/// its siblings, `!` always presents a singleton.
+///
+/// The interesting part is what "the context item" means for `.` when the
+/// item isn't a node. A node moves `context.node` exactly the way `for`'s
+/// per-iteration binding would if `for` rebound the context item instead
+/// of a variable — ordinary, and every axis and predicate already knows
+/// how to read it. An atomic value or a function item has no node to
+/// become, so it goes into [`EvalContext::context_item`] instead, which
+/// only the `Expr::Path` arm of `evaluate` reads, and only to resolve a
+/// bare `.` — a step needing a real axis (`child::x`, `@a`, even `..`) is
+/// a dynamic error there, precisely because there is no node to walk from,
+/// the same way it would be in real XPath 3.0.
+fn evaluate_simple_map(left: &Expr, right: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalError> {
+    let _scope = SequenceScope::enter();
+    let items = evaluate(left, context)?.into_items();
+    spend(items.len() as u64)?;
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        let inner = match item {
+            Item::Node(node) => context.focus(node, 1, 1),
+            other => EvalContext {
+                context_item: Some(other),
+                position: 1,
+                size: 1,
+                ..context.clone()
+            },
+        };
+        out.push(evaluate(right, &inner)?);
+    }
+    Ok(Value::Sequence(flatten_into_sequence(out)))
+}
+
 fn evaluate_binary(
     op: BinaryOp,
     left: &Expr,
@@ -417,6 +475,11 @@ fn evaluate_binary(
             }
             return Ok(Value::Boolean(evaluate(right, context)?.to_boolean()));
         }
+        // `!` evaluates `right` once per item of `left`, each with its own
+        // shifted context, rather than evaluating both sides once against
+        // the shared one — genuinely different from every operator below,
+        // not just short-circuited the way `and`/`or` are.
+        BinaryOp::SimpleMap => return evaluate_simple_map(left, right, context),
         _ => {}
     }
 
@@ -425,7 +488,7 @@ fn evaluate_binary(
     let document = context.document;
 
     match op {
-        BinaryOp::And | BinaryOp::Or => unreachable!("handled above"),
+        BinaryOp::And | BinaryOp::Or | BinaryOp::SimpleMap => unreachable!("handled above"),
 
         BinaryOp::Union => match (left, right) {
             (Value::NodeSet(a), Value::NodeSet(b)) => {
@@ -444,19 +507,7 @@ fn evaluate_binary(
             compare_by_node(op, &left, &right, document)
         }
 
-        // XPath 3.0's `||`. Atomizes both operands to their string value —
-        // the same conversion `concat()` applies to each of its arguments —
-        // and rejects a function item explicitly rather than silently
-        // stringifying it to nothing, same as every other operator that
-        // atomizes.
-        BinaryOp::Concat => {
-            reject_function_item(op.as_str(), &left, &right)?;
-            Ok(Value::String(format!(
-                "{}{}",
-                left.to_xpath_string(document),
-                right.to_xpath_string(document)
-            )))
-        }
+        BinaryOp::Concat => evaluate_concat(op, &left, &right, document),
 
         BinaryOp::ValueEqual
         | BinaryOp::ValueNotEqual
@@ -528,6 +579,26 @@ fn evaluate_binary(
             ))
         }
     }
+}
+
+/// `||`, split out to keep `evaluate_binary` under the line-count lint.
+///
+/// Atomizes both operands to their string value — the same conversion
+/// `concat()` applies to each of its arguments — and rejects a function
+/// item explicitly rather than silently stringifying it to nothing, same
+/// as every other operator that atomizes.
+fn evaluate_concat(
+    op: BinaryOp,
+    left: &Value,
+    right: &Value,
+    document: &Document,
+) -> Result<Value, EvalError> {
+    reject_function_item(op.as_str(), left, right)?;
+    Ok(Value::String(format!(
+        "{}{}",
+        left.to_xpath_string(document),
+        right.to_xpath_string(document)
+    )))
 }
 
 /// Rejects a function item as either operand of a general comparison.
@@ -680,7 +751,7 @@ fn evaluate_for(
         scope.bind(name.clone(), item_to_value(item));
         let inner = EvalContext {
             variables: &scope,
-            ..*context
+            ..context.clone()
         };
         out.push(evaluate(body, &inner)?);
     }
@@ -709,7 +780,7 @@ fn evaluate_quantified(
         scope.bind(name.clone(), item_to_value(item));
         let inner = EvalContext {
             variables: &scope,
-            ..*context
+            ..context.clone()
         };
         let holds = evaluate(test, &inner)?
             .effective_boolean_value()
@@ -1585,6 +1656,56 @@ fn sort_and_deduplicate(mut nodes: Vec<NodeId>, document: &Document) -> Vec<Node
     nodes.sort_unstable_by_key(|&n| document.order(n));
     nodes.dedup();
     nodes
+}
+
+/// `Expr::Path`'s evaluation, split from the ordinary node-based
+/// [`evaluate_path`] so that a non-node [`EvalContext::context_item`] — set
+/// only while `!` is mapping over an item that isn't a node — is checked
+/// exactly once, in exactly one place.
+///
+/// Only [`PathStart::Context`] depends on the context item at all: an
+/// absolute path (`PathStart::Root`) starts from the document regardless
+/// of it, and a path continuing from another expression
+/// (`PathStart::Expr`) starts from that expression's own result — so both
+/// fall through to [`evaluate_path`] unchanged even while an atomic
+/// context item is active. A relative path does depend on it, and admits
+/// exactly one shape when the context item isn't a node: a bare `.`
+/// (`self::node()`, unpredicated, with no further steps) — anything
+/// wanting an axis to walk is an error, because there is no node to walk
+/// it from.
+fn evaluate_path_or_context_item(
+    path: &PathExpr,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    if let Some(item) = &context.context_item {
+        if matches!(path.start, PathStart::Context) {
+            return if is_bare_context_item_step(&path.steps) {
+                Ok(item_to_value(item.clone()))
+            } else {
+                Err(EvalError::new(format!(
+                    "this step needs the context item to be a node, but it is a {} \
+                     — the simple map operator `!` is mapping over a sequence that \
+                     is not all nodes",
+                    item.type_name()
+                )))
+            };
+        }
+    }
+    Ok(Value::NodeSet(evaluate_path(path, context)?))
+}
+
+/// Whether `steps` is exactly what a bare `.` parses to: `self::node()`,
+/// once, with no predicates. The only shape a relative path may take when
+/// the context item is not a node — see [`evaluate_path_or_context_item`].
+fn is_bare_context_item_step(steps: &[Step]) -> bool {
+    matches!(
+        steps,
+        [Step {
+            axis: Axis::SelfAxis,
+            node_test: NodeTest::AnyNode,
+            predicates,
+        }] if predicates.is_empty()
+    )
 }
 
 fn evaluate_path(path: &PathExpr, context: &EvalContext<'_>) -> Result<Vec<NodeId>, EvalError> {

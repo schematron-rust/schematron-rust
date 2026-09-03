@@ -1,16 +1,19 @@
 //! Integration tests for the XPath 3.0 subset this crate implements:
 //! function items (inline function expressions, named function references,
 //! dynamic calls, and `for-each()`, phase 1), the arrow operator `=>` and
-//! the string concatenation operator `||` (phase 2), and the rest of the
+//! the string concatenation operator `||` (phase 2), the rest of the
 //! higher-order sequence function library plus function-item introspection
 //! (`filter`, `fold-left`, `fold-right`, `for-each-pair`,
-//! `function-lookup`, `function-arity`, `function-name`, phase 3).
+//! `function-lookup`, `function-arity`, `function-name`, phase 3), the
+//! simple map operator `!` (phase 4), and the `let` expression (found —
+//! and fixed in the same sitting — as an accounting gap while writing
+//! phase 4's own documentation, so it has no phase number of its own).
 //!
 //! Same two properties as `xpath2.rs`, one level up: the additions must
 //! **work** under an `xslt3`/`xpath3` binding, and everything outside the
-//! implemented subset — the simple map operator `!`, `sort` (which is
-//! XPath 3.1, not 3.0), maps and arrays — must be a **hard error naming
-//! the construct**. See `spec/xpath3/`.
+//! implemented subset — `sort` (which is XPath 3.1, not 3.0), maps and
+//! arrays — must be a **hard error naming the construct**. See
+//! `spec/xpath3/`.
 
 use assertables::*;
 use schematron::{Document, Schema};
@@ -256,14 +259,6 @@ fn string_concatenation_rejects_a_function_item() {
     assert_contains!(message, "function item");
 }
 
-#[test]
-fn the_simple_map_operator_is_still_not_implemented() {
-    // `!` remains a hard error naming the construct — see `spec/xpath3/`
-    // for why it needs more than phase 2 built.
-    let message = compile_error("xslt3", "(1, 2, 3) ! (. * 2)");
-    assert_contains!(message, "simple map operator");
-}
-
 // Phase 3: the rest of the higher-order sequence function library, and
 // introspection over function items.
 
@@ -400,4 +395,104 @@ fn higher_order_functions_share_the_nested_construct_budget() {
         "<a/>",
     );
     assert_contains!(message, "nested");
+}
+
+// Phase 4: the simple map operator `!`.
+
+#[test]
+fn simple_map_over_atomic_items_binds_dot_to_each_one() {
+    assert!(check("sum((1, 2, 3) ! (. * 2)) = 12", "<a/>"));
+    assert!(check("(('a', 'bb', 'ccc') ! string-length(.)) = (1, 2, 3)", "<a/>"));
+}
+
+#[test]
+fn simple_map_over_a_node_set_binds_dot_to_each_node() {
+    assert!(check(
+        "sum(b ! string-length(.)) = 3",
+        "<a><b>x</b><b>yy</b></a>"
+    ));
+    // `.` is a genuine node here, so ordinary axis steps from it work too,
+    // exactly as they would in a predicate.
+    assert!(check(
+        "(b ! local-name(.)) = ('b', 'b')",
+        "<a><b>x</b><b>yy</b></a>"
+    ));
+}
+
+#[test]
+fn simple_map_chains() {
+    // Each `!` feeds the next: `((1 to 3) ! (. * 2)) ! (. + 1)`.
+    //
+    // The parentheses around `1 to 3` matter: `to` binds looser than `!` in
+    // this grammar, exactly as real XPath 3.0's does (`RangeExpr` sits
+    // above `SimpleMapExpr`), so the unparenthesised `1 to 3 ! (. * 2)`
+    // would mean `1 to (3 ! (. * 2))` instead.
+    assert!(check("sum((1 to 3) ! (. * 2) ! (. + 1)) = 15", "<a/>"));
+}
+
+#[test]
+fn simple_map_resets_context_position_and_size_to_one_each_time() {
+    // Unlike an axis step, `!` always presents a singleton to its right
+    // side — `position()` is 1 for every item, never the item's index in
+    // the sequence being mapped.
+    assert!(check("sum((10, 20, 30) ! position()) = 3", "<a/>"));
+    assert!(check("sum((10, 20, 30) ! last()) = 3", "<a/>"));
+}
+
+#[test]
+fn simple_map_over_a_non_node_item_rejects_a_real_axis_step() {
+    // `.` alone resolves to the atomic item, but a step wanting an axis to
+    // walk has no node to walk it from.
+    let message = eval_error("(1, 2, 3) ! (child::x)", "<a/>");
+    assert_contains!(message, "node");
+}
+
+#[test]
+fn the_simple_map_operator_is_refused_under_xpath_two() {
+    let message = compile_error("xslt2", "(1, 2, 3) ! (. * 2)");
+    assert_contains!(message, "XPath 3.0");
+    assert_contains!(message, "simple map operator");
+}
+
+#[test]
+fn simple_map_shares_the_nested_construct_budget() {
+    let message = eval_error(
+        "count(for-each(1 to 999, function($i) { \
+           (1 to 999) ! for-each(1 to 999, function($k) { $k }) \
+         }))",
+        "<a/>",
+    );
+    assert_contains!(message, "nested");
+}
+
+// `let` — found as a documentation gap while writing up phase 4, not a
+// phase of its own; see the file-level doc comment.
+
+#[test]
+fn let_binds_a_name_to_a_value() {
+    assert!(check("let $x := 5 return $x + 1 = 6", "<a/>"));
+}
+
+#[test]
+fn let_binds_the_whole_sequence_not_one_item_at_a_time() {
+    // The defining difference from `for`: `for $x in (1,2,3) return
+    // count($x)` is `(1, 1, 1)`, because `for` rebinds `$x` to each item;
+    // `let` binds it once, to the sequence as a whole.
+    assert!(check("let $x := (1, 2, 3) return count($x) = 3", "<a/>"));
+}
+
+#[test]
+fn nested_let_expressions_shadow_and_can_reference_the_outer_binding() {
+    assert!(check("(let $x := 1 return let $x := 2 return $x) = 2", "<a/>"));
+    assert!(check(
+        "(let $x := 1 return let $y := $x + 1 return $y) = 2",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn let_is_refused_under_xpath_two() {
+    let message = compile_error("xslt2", "let $x := 1 return $x");
+    assert_contains!(message, "XPath 3.0");
+    assert_contains!(message, "let");
 }

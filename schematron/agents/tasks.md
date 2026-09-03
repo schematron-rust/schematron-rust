@@ -156,6 +156,16 @@ Not every artifact is a defect, and the two false ones cost real time:
   corpus and coverage are most of it — 437 MB before a single iteration for
   `fuzz_validate`. A ceiling near that files OOMs that reproduce in a
   millisecond using 44 MB. Leave the default, or measure the baseline first.
+  A second, slower-to-spot shape is legal work that is genuinely large but
+  still *within* the documented per-expression budget
+  (`MAX_SEQUENCE_WORK` in `src/xpath/eval.rs`) — nested `!`/`for-each`/
+  `filter`/… hold more than one sizeable `Vec` alive at once across their
+  nesting depth, unlike a flat range, so the same item count costs more
+  memory. Reproduce it outside the fuzzer (a `#[test]` calling `evaluate`
+  directly) with `-rss_limit_mb` raised well past the baseline, in both a
+  plain release build and, if it still reports OOM, the fuzz build itself
+  with the limit raised — if it *completes* either way, however slowly,
+  that is the tell it was within budget, not unbounded.
 
 A genuine resource defect looks different: the nested-range denial of service
 was found *as* a slow unit, and the tell was that the input was 79 bytes and
