@@ -35,6 +35,67 @@ approximate it. Add it to `V2_FUNCTIONS_NEEDING_SEQUENCES` or
 `V2_FUNCTIONS_NEEDING_DATES` so the error names the gap instead of saying
 "unknown function".
 
+## Add a new XPath syntax construct (not a function)
+
+A new operator or expression form — `=>` and `||` were the last two of
+these — touches more places than a function does, and some of them the
+compiler will not catch for you if you miss one. Work through in this
+order:
+
+1. `src/xpath/lexer.rs` — a new `TokenKind` for any new punctuation, the
+   byte(s) that produce it, and a `Display` arm. If the new token can be
+   confused with an existing one by a shared leading character (`=` vs
+   `=>`, `|` vs `||`), disambiguate by peeking the next byte, the way
+   `<`/`<=`/`<<` already does. Add the new token to
+   `previous_allows_operator`'s exclusion list too — otherwise a `*` or a
+   keyword like `div` right after it misclassifies as multiply/operator
+   instead of a wildcard/name starting a fresh operand.
+2. `src/xpath/ast.rs` — a new `Expr` variant, or a new `BinaryOp` variant
+   if it is a binary operator. Prefer desugaring into an *existing* node
+   over inventing evaluation logic: `Expr::Arrow` carries no behavior of
+   its own, only the version gate — the parser builds an ordinary
+   `Expr::Function` or `Expr::DynamicCall` and evaluation just unwraps the
+   wrapper. Less surface area, fewer places to get wrong.
+3. `src/xpath/parser.rs` — a parse function at the right precedence. If it
+   is a **repeating** binary operator (`Operand (Op Operand)*`), use
+   `parse_binary_chain`, not a hand-rolled `while` loop — a loop that
+   builds a nested `Expr::Binary` tree without charging the shared
+   recursion budget for its own length parses instantly and then
+   overflows the stack in `evaluate` on a long-enough chain of the *same*
+   operator, found by fuzzing nothing more exotic than a few hundred `|`
+   in a row. `MAX_RECURSION_DEPTH`'s doc comment and
+   [`spec/testing/`](../spec/testing/index.md#what-fuzzing-found) have the
+   detail.
+4. `src/xpath/eval.rs` — the evaluation arm, if the node isn't pure sugar.
+5. `src/schema/compile.rs` — three places, easy to under-count:
+   - `check_expression`: the actual `require_v2`/`require_v3` gate, then
+     recurse into the children.
+   - `check_variables` (and `check_variables_v3` if the construct needs
+     its own split, to keep `check_variables` under the line-count lint):
+     recurse so a `$name` inside the new construct is still checked.
+   - `calls_document_function`: recurse so a `document()` nested inside it
+     is still found for the two-pass loading mechanism.
+6. `src/lint.rs` — three *exhaustive* matches over `Expr` need a new arm:
+   `looks_up_key`, `first_unprefixed_element_name`, `references_variable`.
+   The compiler enforces this — `Expr` is not `#[non_exhaustive]` inside
+   the crate — but check which kind of match you are editing before
+   trusting that: `constant_test` and `following_from_an_attribute`, also
+   in `src/lint.rs`, and `root_match_expression` in
+   `src/validate/engine.rs`, use a catch-all `_ => …` arm instead, which
+   compiles fine while silently *not* looking inside the new construct. A
+   catch-all is the right shape for some of these (a lint asking "can this
+   possibly be a constant test" should stay conservative), so decide on
+   purpose rather than by what the compiler happens to accept.
+7. Tests: a lexer unit test for the new token(s), a parser unit test for
+   the shape and precedence (see `respects_operator_precedence` and its
+   neighbors for the pattern), and integration tests in the matching
+   `tests/xpath2.rs`/`tests/xpath3.rs` proving both that it **works** under
+   its own binding and that it is a **hard error naming the construct**
+   under an earlier one.
+8. Document it: the version's own `spec/xpath2/` or `spec/xpath3/`, plus
+   whichever of `spec/conformance/`, `spec/roadmap/`, `README.md`, and
+   `llms.txt`/`llms.json` mention that version's feature list.
+
 ## Add a CLI flag
 
 1. `src/main.rs` — a field on `Cli` with its `#[arg(...)]` and a doc comment,
