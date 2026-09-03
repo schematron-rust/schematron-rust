@@ -155,7 +155,25 @@ const V2_FUNCTIONS_NOT_IMPLEMENTED: &[&str] = &["trace"];
 /// the audit that produced [`V2_FUNCTIONS_NOT_IMPLEMENTED`]'s current
 /// comment caught the mistake: it needs a **function item**, which XPath
 /// 2.0 does not have at all. It belongs here, now that function items do.
-const SIGNATURES_V3: &[(&str, usize, Option<usize>)] = &[("for-each", 2, Some(2))];
+///
+/// `filter`, `fold-left`, `fold-right`, and `for-each-pair` are `for-each`'s
+/// siblings — the rest of the higher-order sequence function library,
+/// phase 3. `function-lookup`, `function-arity`, and `function-name`
+/// introspect a function item itself rather than applying one. `sort` is
+/// deliberately **not** here: real XPath 3.0 F&O does not define it at
+/// all — it is new in 3.1, alongside maps and arrays, and so stays behind
+/// the still-refused `xpath31`/`xslt31` bindings like they do, not a gap
+/// in this phase. See `spec/xpath3/`.
+const SIGNATURES_V3: &[(&str, usize, Option<usize>)] = &[
+    ("for-each", 2, Some(2)),
+    ("filter", 2, Some(2)),
+    ("fold-left", 3, Some(3)),
+    ("fold-right", 3, Some(3)),
+    ("for-each-pair", 3, Some(3)),
+    ("function-lookup", 2, Some(2)),
+    ("function-arity", 1, Some(1)),
+    ("function-name", 1, Some(1)),
+];
 
 /// Checks that a function exists and accepts this many arguments.
 ///
@@ -755,13 +773,81 @@ fn call_v3(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             let action = single_function_argument(name, args, 1)?;
             super::eval::for_each(items, action, context)
         }
+        "filter" => {
+            let items = items_of(name, args, 0, context.version)?;
+            let predicate = single_function_argument(name, args, 1)?;
+            super::eval::filter(items, predicate, context)
+        }
+        "fold-left" => {
+            let items = items_of(name, args, 0, context.version)?;
+            let zero = args[1].clone();
+            let f = single_function_argument(name, args, 2)?;
+            super::eval::fold_left(items, zero, f, context)
+        }
+        "fold-right" => {
+            let items = items_of(name, args, 0, context.version)?;
+            let zero = args[1].clone();
+            let f = single_function_argument(name, args, 2)?;
+            super::eval::fold_right(items, zero, f, context)
+        }
+        "for-each-pair" => {
+            let a = items_of(name, args, 0, context.version)?;
+            let b = items_of(name, args, 1, context.version)?;
+            let f = single_function_argument(name, args, 2)?;
+            super::eval::for_each_pair(a, b, f, context)
+        }
+        "function-lookup" => function_lookup_call(args, context),
+        "function-arity" => {
+            let f = single_function_argument(name, args, 0)?;
+            #[allow(clippy::cast_precision_loss)] // No function item has anywhere near 2^52 parameters.
+            Ok(double(f.arity() as f64))
+        }
+        "function-name" => {
+            let f = single_function_argument(name, args, 0)?;
+            Ok(match f {
+                FunctionItem::Named { name, .. } => Value::String(name.clone()),
+                FunctionItem::Inline { .. } => Value::Sequence(Vec::new()),
+            })
+        }
         _ => Err(EvalError::new(format!("unknown function {name}()"))),
     }
 }
 
+/// `function-lookup($name, $arity)`: looks up one of this crate's own
+/// built-in functions by name and arity, returning it as a function item —
+/// or the empty sequence when no such function exists, exactly as F&O
+/// specifies.
+///
+/// The dynamic counterpart to `name#arity`: that syntax names a function
+/// literally, so a typo or a wrong arity is a compile-time error naming
+/// the construct. Here `$name` is computed, so there is nothing to check
+/// until the call actually runs — which is also why a lookup that finds
+/// nothing is *not* an error the way `name#arity` would be; F&O treats a
+/// dynamic lookup failing as an ordinary, expected outcome to test for.
+fn function_lookup_call(args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
+    reject_function_item("function-lookup()", &args[0])?;
+    reject_function_item("function-lookup()", &args[1])?;
+    let name = args[0].to_xpath_string(context.document);
+    let arity = args[1].to_number(context.document);
+    if !arity.is_finite() || arity < 0.0 || arity.fract() != 0.0 {
+        return Err(EvalError::new(format!(
+            "function-lookup()'s arity must be a non-negative integer, but {arity} was given"
+        )));
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let arity = arity as usize;
+    if check_function(&name, arity, context.version).is_err() {
+        return Ok(Value::Sequence(Vec::new()));
+    }
+    Ok(Value::Sequence(vec![Item::Function(FunctionItem::Named {
+        name,
+        arity,
+    })]))
+}
+
 /// Extracts the one function item at `args[index]`, for a function whose
-/// signature takes a function item directly — `for-each()`'s `$action`, and
-/// nothing else in this phase.
+/// signature takes a function item directly — `for-each()`'s `$action` and
+/// its higher-order siblings' own function arguments.
 fn single_function_argument<'a>(
     name: &str,
     args: &'a [Value],

@@ -306,6 +306,96 @@ pub(crate) fn for_each(
     Ok(Value::Sequence(flatten_into_sequence(out)))
 }
 
+/// `filter($sequence, $predicate)`: keeps the items for which `predicate`'s
+/// effective boolean value holds, in order.
+///
+/// A multiplying construct exactly like `for-each`, so it shares the same
+/// budget — see [`SequenceScope`] and `for_each`'s doc comment, which this
+/// mirrors.
+pub(crate) fn filter(
+    items: Vec<Item>,
+    predicate: &FunctionItem,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let _scope = SequenceScope::enter();
+    spend(items.len() as u64)?;
+    let mut kept = Vec::new();
+    for item in items {
+        let holds = call_function_item(predicate, vec![item_to_value(item.clone())], context)?
+            .effective_boolean_value()
+            .map_err(EvalError::new)?;
+        if holds {
+            kept.push(item);
+        }
+    }
+    Ok(Value::Sequence(kept))
+}
+
+/// `fold-left($sequence, $zero, $f)`: combines the sequence from the left,
+/// `f(f(f(zero, i1), i2), i3)…` — `$zero` need not be a single item, so it
+/// is threaded through as a whole [`Value`] rather than an [`Item`].
+///
+/// Shares [`SequenceScope`]'s budget the same way `for_each` does.
+pub(crate) fn fold_left(
+    items: Vec<Item>,
+    zero: Value,
+    f: &FunctionItem,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let _scope = SequenceScope::enter();
+    spend(items.len() as u64)?;
+    let mut accumulator = zero;
+    for item in items {
+        accumulator = call_function_item(f, vec![accumulator, item_to_value(item)], context)?;
+    }
+    Ok(accumulator)
+}
+
+/// `fold-right($sequence, $zero, $f)`: combines the sequence from the
+/// right, `f(i1, f(i2, f(i3, zero)))` — the mirror image of `fold_left`,
+/// including which argument is the running accumulator.
+///
+/// Shares [`SequenceScope`]'s budget the same way `for_each` does.
+pub(crate) fn fold_right(
+    items: Vec<Item>,
+    zero: Value,
+    f: &FunctionItem,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let _scope = SequenceScope::enter();
+    spend(items.len() as u64)?;
+    let mut accumulator = zero;
+    for item in items.into_iter().rev() {
+        accumulator = call_function_item(f, vec![item_to_value(item), accumulator], context)?;
+    }
+    Ok(accumulator)
+}
+
+/// `for-each-pair($sequence1, $sequence2, $f)`: applies `f` to
+/// corresponding items of both sequences and concatenates the results,
+/// stopping at the shorter sequence — F&O does not treat the length
+/// mismatch as an error.
+///
+/// Shares [`SequenceScope`]'s budget the same way `for_each` does, charged
+/// by the number of pairs actually formed, not by either input's own
+/// length.
+pub(crate) fn for_each_pair(
+    a: Vec<Item>,
+    b: Vec<Item>,
+    f: &FunctionItem,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let _scope = SequenceScope::enter();
+    let pairs = a.len().min(b.len());
+    spend(pairs as u64)?;
+    let mut out = Vec::with_capacity(pairs);
+    for (x, y) in a.into_iter().zip(b) {
+        let result = call_function_item(f, vec![item_to_value(x), item_to_value(y)], context)?;
+        out.push(result);
+    }
+    Ok(Value::Sequence(flatten_into_sequence(out)))
+}
+
 fn evaluate_binary(
     op: BinaryOp,
     left: &Expr,
