@@ -23,9 +23,11 @@
     { area: 'document(uri, base)', status: 'Full', note: "Resolves against the second argument's first node." },
     { area: 'XPath 2.0 kind tests as node tests — element(), attribute(id), document-node()', status: 'Full', note: 'Under an xslt2 binding.' },
     { area: 'XPath 2.0 sequences, dates, durations, type operators, value and node comparisons, for, some, every, ranges, regular expressions', status: 'Subset', note: 'See spec/xpath2/.' },
+    { area: 'XPath 3.0 function items, =>, ||, !, let, the higher-order sequence functions', status: 'Subset', note: 'See spec/xpath3/.' },
     { area: 'queryBinding="xslt", "xpath", or absent', status: 'Full' },
     { area: 'queryBinding="xslt2", "xpath2"', status: 'Subset', note: 'See spec/xpath2/.' },
-    { area: 'queryBinding="xslt3" and later', status: 'Refused', note: 'By default.' },
+    { area: 'queryBinding="xslt3", "xpath3"', status: 'Subset', note: 'See spec/xpath3/.' },
+    { area: 'queryBinding="xslt31" and later', status: 'Refused', note: 'By default.' },
     { area: 'extends rule and extends href, with #fragment identifiers', status: 'Full' }
   ];
 </script>
@@ -99,6 +101,34 @@
       <a href={specUrl('xpath2/index.md')}>spec/xpath2/</a> is explicit about what is
       in, what is out, and the handful of places where that happens. Read it
       before depending on an <code>xslt2</code> binding.
+    </p>
+  </Alert>
+</section>
+
+<section class="section prose">
+  <SectionHeading class="section-heading-start" eyebrow="XPath 3.0" heading="Function items and the operators built on them" level={2} />
+
+  <p>
+    An <code>xslt3</code>/<code>xpath3</code> schema gets everything XPath 1.0
+    and 2.0 already provide, plus XPath 3.0's own additions: inline function
+    expressions, named function references, and dynamic calls — the machinery
+    a real <code>for-each()</code> needed — the arrow operator
+    <code>=&gt;</code>, string concatenation <code>||</code>, the simple map
+    operator <code>!</code>, the <code>let</code> expression, and the rest of
+    the higher-order sequence function library (<code>filter</code>,
+    <code>fold-left</code>, <code>fold-right</code>, <code>for-each-pair</code>,
+    <code>function-lookup</code>, <code>function-arity</code>,
+    <code>function-name</code>). As with XPath 2.0, everything outside the
+    documented subset is a hard error naming the construct.
+  </p>
+
+  <Alert type="warning" role="status" heading="Maps, arrays, and sort are XPath 3.1, not 3.0 — and stay refused.">
+    <p>
+      <a href={specUrl('xpath3/index.md')}>spec/xpath3/</a> states exactly what
+      is implemented, what two further gaps remain (<code>Q&#123;uri&#125;local</code>
+      names and union types in casts and function signatures), and why
+      <code>fn:sort</code> was never actually a 3.0 gap to begin with — it does
+      not exist until 3.1.
     </p>
   </Alert>
 </section>

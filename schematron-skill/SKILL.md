@@ -94,6 +94,21 @@ coerces an untyped value to the other operand's type; `eq` compares
 attribute to a number with `eq` is a type error — that's `eq` telling you
 `=` or `number(@n) eq 1` is what you meant).
 
+`queryBinding="xslt3"` or `"xpath3"` gets everything XPath 2.0 provides,
+plus a subset of XPath 3.0 layered on top: **function items** — inline
+function expressions (`function($x) { … }`, genuine closures), named
+function references (`name#arity`), and dynamic calls (`$f(1, 2)`) — the
+arrow operator (`$x => f()`, sugar for piping a value in as a function's
+first argument), string concatenation (`||`), the simple map operator
+(`E1 ! E2`, evaluating `E2` once per item of `E1` with that item as the
+context item), the `let $v := E return E` expression, and the higher-order
+sequence functions (`for-each`, `filter`, `fold-left`, `fold-right`,
+`for-each-pair`, `function-lookup`, `function-arity`, `function-name`).
+Same discipline as 2.0: anything outside the documented subset is a hard
+error naming the construct. `sort`, maps, and arrays are XPath 3.1, not
+3.0, and stay unsupported (`xpath31`/`xslt31` bindings are refused by
+default). See `schematron/spec/xpath3/index.md`.
+
 ## Using it
 
 Library:
@@ -150,6 +165,7 @@ This skill is a map, not the territory — the crate's `schematron/spec/` direct
 | The validation algorithm, exactly | `schematron/spec/validation/index.md` |
 | The XPath 1.0 engine | `schematron/spec/xpath/index.md` |
 | The XPath 2.0 subset and its limits | `schematron/spec/xpath2/index.md` |
+| The XPath 3.0 subset and its limits | `schematron/spec/xpath3/index.md` |
 | SVRL, read and written | `schematron/spec/svrl/index.md` |
 | Keys and cross-references | `schematron/spec/keys/index.md` |
 | Why a schema does nothing | `schematron/spec/linting/index.md` |

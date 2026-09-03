@@ -1,7 +1,7 @@
 {
   "name": "schematron-rust",
   "summary": "Pure Rust ISO/IEC 19757-3 Schematron: rule-based XML validation, with no libxml2, no XSLT processor, no C toolchain, no FFI, and no unsafe.",
-  "description": "Schematron describes the conditions a document must satisfy — co-occurrence rules, cross-references between distant parts of a document, value relationships, cardinality that depends on content rather than position — written as XPath expressions, layered on top of a grammar (DTD, XML Schema, RELAX NG) rather than used instead of one. This crate contains its own XML parser, its own XPath engine (a complete XPath 1.0 implementation plus a documented XPath 2.0 subset), and its own validator; it interprets a schema directly rather than transpiling it to XSLT. This repository is a monorepo holding the `schematron` crate and its companion website. `schematron/spec/` is normative for the crate's behavior; `spec/` at the repository root is normative for the repository instead — governance, funding, publishing policy — not XPath semantics.",
+  "description": "Schematron describes the conditions a document must satisfy — co-occurrence rules, cross-references between distant parts of a document, value relationships, cardinality that depends on content rather than position — written as XPath expressions, layered on top of a grammar (DTD, XML Schema, RELAX NG) rather than used instead of one. This crate contains its own XML parser, its own XPath engine (a complete XPath 1.0 implementation plus documented XPath 2.0 and 3.0 subsets), and its own validator; it interprets a schema directly rather than transpiling it to XSLT. This repository is a monorepo holding the `schematron` crate and its companion website. `schematron/spec/` is normative for the crate's behavior; `spec/` at the repository root is normative for the repository instead — governance, funding, publishing policy — not XPath semantics.",
   "homepage": "https://schematron-rust.github.io",
   "repository": "https://github.com/schematron-rust/schematron-rust",
   "license": "MIT OR Apache-2.0 OR GPL-2.0-only OR GPL-3.0-only",
@@ -32,6 +32,7 @@
         { "title": "spec/validation/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/validation/index.md", "description": "The validation algorithm, exactly." },
         { "title": "spec/xpath/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xpath/index.md", "description": "The XPath 1.0 engine — axes, functions, conversions." },
         { "title": "spec/xpath2/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xpath2/index.md", "description": "The XPath 2.0 subset, and where it still behaves like 1.0." },
+        { "title": "spec/xpath3/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xpath3/index.md", "description": "The XPath 3.0 subset: function items, =>, ||, !, let, the higher-order sequence functions." },
         { "title": "spec/xml/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xml/index.md", "description": "The XML parser and its data model." },
         { "title": "spec/parsing/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/parsing/index.md", "description": "The five schema compilation passes." },
         { "title": "spec/svrl/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/svrl/index.md", "description": "The SVRL report format, read and written." },
@@ -68,7 +69,8 @@
       "links": [
         { "title": "CHANGELOG", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/CHANGELOG.md", "description": "Crate release notes." },
         { "title": "CONTRIBUTING", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/CONTRIBUTING.md", "description": "How to propose a change, and the gate every change must pass." },
-        { "title": "NEWS", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/NEWS.md", "description": "Repository-level news, separate from crate releases." }
+        { "title": "NEWS", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/NEWS.md", "description": "Repository-level news, separate from crate releases." },
+        { "title": "AI_STATEMENT.md", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/AI_STATEMENT.md", "description": "How AI tools are used to build this, and who is accountable." }
       ]
     },
     {

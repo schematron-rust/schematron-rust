@@ -18,8 +18,9 @@ the [conformance table](https://schematron-rust.github.io/conformance/).
 Every other route to Schematron in Rust goes through C: bind to `libxml2`, or
 shell out to Saxon, or compile the schema into XSLT and find an XSLT engine to
 run it. This crate does none of that. It contains its own XML parser, its own
-XPath 1.0 engine, and its own validator, and it *interprets* a schema directly
-rather than transpiling it.
+XPath engine — a complete XPath 1.0 implementation plus documented XPath 2.0
+and 3.0 subsets — and its own validator, and it *interprets* a schema
+directly rather than transpiling it.
 
 ---
 

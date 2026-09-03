@@ -119,12 +119,13 @@
     </p>
   </Details>
 
-  <Details summary="My schema uses an XPath 2.0 construct and the crate refuses it.">
+  <Details summary="My schema uses an XPath 2.0 or 3.0 construct and the crate refuses it.">
     <p>
       By design: outside the implemented subset you get a hard error naming the
       construct, rather than a plausible wrong answer.
-      <a href={specUrl('xpath2/index.md')}>spec/xpath2/</a> lists what is in and what
-      is out.
+      <a href={specUrl('xpath2/index.md')}>spec/xpath2/</a> and
+      <a href={specUrl('xpath3/index.md')}>spec/xpath3/</a> list what is in and
+      what is out for each.
     </p>
   </Details>
 

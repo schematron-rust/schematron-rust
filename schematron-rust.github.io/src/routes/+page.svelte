@@ -276,13 +276,16 @@ cat data.xml | schematron -s rules.sch -`}</code></pre>
     </p>
   </Details>
 
-  <Details summary="Is XPath 2.0 supported?">
+  <Details summary="Is XPath 2.0 or 3.0 supported?">
     <p>
-      A documented subset — regular expressions, conditionals, sequences, dates,
-      durations, type operators, <code>for</code>, <code>some</code>,
-      <code>every</code>, and ranges. Everything outside that subset is a
-      <strong>hard error naming the construct</strong>, never a wrong answer.
-      <a href="/conformance/">The exact boundary &rarr;</a>
+      Documented subsets of both. XPath 2.0: regular expressions, conditionals,
+      sequences, dates, durations, type operators, <code>for</code>,
+      <code>some</code>, <code>every</code>, and ranges. XPath 3.0: function
+      items, the arrow operator <code>=&gt;</code>, string concatenation
+      <code>||</code>, the simple map operator <code>!</code>, <code>let</code>,
+      and the higher-order sequence functions. Everything outside either
+      subset is a <strong>hard error naming the construct</strong>, never a
+      wrong answer. <a href="/conformance/">The exact boundary &rarr;</a>
     </p>
   </Details>
 

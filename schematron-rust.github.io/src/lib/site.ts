@@ -5,7 +5,7 @@
 // schematron-rust and must be kept in step with it. See AGENTS.md.
 
 export const CRATE = 'schematron';
-export const VERSION = '0.6.0';
+export const VERSION = '0.14.0';
 export const MSRV = '1.96';
 export const REPO = 'https://github.com/schematron-rust/schematron-rust';
 export const CRATES_IO = 'https://crates.io/crates/schematron';
@@ -25,6 +25,7 @@ export const SPEC_DOCS: SpecDoc[] = [
   { file: 'xml/index.md', title: 'XML', covers: 'The XML parser and its data model.' },
   { file: 'xpath/index.md', title: 'XPath 1.0', covers: 'The XPath 1.0 engine: axes, functions, conversions.' },
   { file: 'xpath2/index.md', title: 'XPath 2.0 subset', covers: 'What is in, what is out, and where 1.0 semantics still apply.' },
+  { file: 'xpath3/index.md', title: 'XPath 3.0 subset', covers: 'Function items, =>, ||, !, let, and the higher-order sequence functions.' },
   { file: 'data-model/index.md', title: 'Data model', covers: 'Every Schematron element and its Rust type.' },
   { file: 'parsing/index.md', title: 'Parsing', covers: 'The five schema compilation passes.' },
   { file: 'validation/index.md', title: 'Validation', covers: 'The validation algorithm, exactly.' },

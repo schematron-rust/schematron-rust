@@ -23,7 +23,17 @@
     'XPath 2.0 kind tests as path node tests — element(), attribute(id), document-node()',
     'XPath 2.0 phase 4: the numeric type hierarchy — instance of recognizes xs:integer, xs:decimal and xs:float as well as xs:double, tracked for literals and explicit casts',
     'Differential and generated testing against the ISO reference implementation',
-    'Fuzz targets, criterion benchmarks, clippy pedantic, corpus test suite, runnable examples, and the specification'
+    'Fuzz targets, criterion benchmarks, clippy pedantic, corpus test suite, runnable examples, and the specification',
+    'Five more lints — unused variables, empty rules, empty patterns, duplicate assertion tests, phases that activate nothing — and rule shadowing generalised from three special cases to pairwise subsumption',
+    'extends href, with fragment identifiers on both it and include',
+    'A denial of service in nested ranges and for loops, found by fuzzing, closed with a budget shared across every nested construct in one expression',
+    'Three optimisations found by profiling: linear location building, rule claims in a vector rather than a hash map, and a fused walk for the common rule context',
+    'XPath 2.0 phases 5 through 9: the remaining sequence functions, cardinality assertions and atomization, deep-equal(), resolve-uri(), and the adjust-*-to-timezone() family',
+    'XPath 3.0 phase 1: function items — inline function expressions, named function references, dynamic calls — and a real for-each(), the one function they exist for',
+    'XPath 3.0 phase 2: the arrow operator => and string concatenation ||',
+    'A stack overflow in eight repeating binary operators, found by fuzzing, closed with a shared parse_binary_chain helper',
+    'XPath 3.0 phase 3: the rest of the higher-order sequence functions — filter, fold-left, fold-right, for-each-pair — and function-item introspection',
+    'XPath 3.0 phase 4: the simple map operator !, plus the let expression found while documenting it'
   ];
 </script>
 
