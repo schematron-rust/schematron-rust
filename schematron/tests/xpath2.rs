@@ -158,16 +158,19 @@ fn a_conditional_requires_both_branches() {
 #[test]
 fn constructs_still_needing_phase_two_b_say_so() {
     // What no phase has added yet still names itself rather than
-    // misbehaving. `for-each` looks like its neighbour `subsequence` (now
-    // implemented, phase 5) but needs function items, an XPath 3.0 feature.
-    for (test, expected) in [
-        ("count(for-each(b, 1))", "does not implement"),
-        ("trace(b, 'x')", "does not implement"),
-    ] {
-        let message = compile_error("xslt2", test);
-        assert_contains!(message, expected);
-        assert_contains!(message, "spec/xpath2/");
-    }
+    // misbehaving.
+    let message = compile_error("xslt2", "trace(b, 'x')");
+    assert_contains!(message, "does not implement");
+    assert_contains!(message, "spec/xpath2/");
+}
+
+#[test]
+fn for_each_is_implemented_but_needs_the_xpath_three_binding() {
+    // `for-each` looks like its XPath 2.0 neighbour `subsequence` (phase 5)
+    // but needs a function item, which only a 3.0 binding admits.
+    let message = compile_error("xslt2", "count(for-each(b, string-length#1))");
+    assert_contains!(message, "XPath 3.0");
+    assert_contains!(message, "xslt3");
 }
 
 #[test]
@@ -220,8 +223,10 @@ fn xpath_one_point_zero_still_works_under_a_two_point_zero_binding() {
 }
 
 #[test]
-fn bindings_above_two_point_zero_are_still_refused() {
-    for binding in ["xslt3", "xpath3", "xpath31"] {
+fn bindings_above_three_point_zero_are_still_refused() {
+    // xslt3/xpath3 are supported as of phase 1 (see spec/xpath3/); only
+    // 3.1 and later remain refused.
+    for binding in ["xpath31", "xslt31"] {
         let message = compile_error(binding, "true()");
         assert_contains!(message, "unsupported query binding");
     }

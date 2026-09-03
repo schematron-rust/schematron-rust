@@ -85,6 +85,13 @@ pub(crate) enum TokenKind {
     NodeAfter,
     /// `?` — the zero-or-one occurrence indicator of a sequence type.
     QuestionMark,
+    /// `#` — separates a name from its arity in a named function reference,
+    /// XPath 3.0's `string-length#1`.
+    Hash,
+    /// `{` — opens an inline function expression's body.
+    LeftBrace,
+    /// `}` — closes it.
+    RightBrace,
 }
 
 impl fmt::Display for TokenKind {
@@ -132,6 +139,9 @@ impl fmt::Display for TokenKind {
             TokenKind::NodeBefore => f.write_str("<<"),
             TokenKind::NodeAfter => f.write_str(">>"),
             TokenKind::QuestionMark => f.write_str("?"),
+            TokenKind::Hash => f.write_str("#"),
+            TokenKind::LeftBrace => f.write_str("{"),
+            TokenKind::RightBrace => f.write_str("}"),
         }
     }
 }
@@ -207,7 +217,9 @@ impl<'a> Lexer<'a> {
     ///
     /// XPath 1.0 section 3.7: if there is a preceding token and it is not one
     /// of `@`, `::`, `(`, `[`, `,` or an operator, then `*` is the multiply
-    /// operator and an `NCName` is an operator name.
+    /// operator and an `NCName` is an operator name. `{`, which opens an
+    /// XPath 3.0 inline function body, is added for the same reason: it
+    /// starts a fresh expression, so a `*` right after it is a wildcard.
     fn previous_allows_operator(&self) -> bool {
         match self.tokens.last().map(|t| &t.kind) {
             None => false,
@@ -217,6 +229,7 @@ impl<'a> Lexer<'a> {
                     | TokenKind::ColonColon
                     | TokenKind::LeftParen
                     | TokenKind::LeftBracket
+                    | TokenKind::LeftBrace
                     | TokenKind::Comma
                     | TokenKind::Slash
                     | TokenKind::DoubleSlash
@@ -313,6 +326,18 @@ impl<'a> Lexer<'a> {
                 b'?' => {
                     self.position += 1;
                     self.push(TokenKind::QuestionMark, start);
+                }
+                b'#' => {
+                    self.position += 1;
+                    self.push(TokenKind::Hash, start);
+                }
+                b'{' => {
+                    self.position += 1;
+                    self.push(TokenKind::LeftBrace, start);
+                }
+                b'}' => {
+                    self.position += 1;
+                    self.push(TokenKind::RightBrace, start);
                 }
                 b'+' => {
                     self.position += 1;
@@ -600,6 +625,37 @@ mod tests {
             TokenKind::Slash,
             TokenKind::Star
         ]);
+    }
+
+    #[test]
+    fn lexes_the_xpath_three_tokens() {
+        assert_eq!(
+            kinds("string-length#1"),
+            vec![
+                TokenKind::Name("string-length".into()),
+                TokenKind::Hash,
+                TokenKind::Number(1.0, NumericType::Integer),
+            ]
+        );
+        assert_eq!(
+            kinds("{}"),
+            vec![TokenKind::LeftBrace, TokenKind::RightBrace]
+        );
+    }
+
+    #[test]
+    fn star_is_a_wildcard_after_a_left_brace() {
+        assert_eq!(
+            kinds("function() { * }"),
+            vec![
+                TokenKind::FunctionName("function".into()),
+                TokenKind::LeftParen,
+                TokenKind::RightParen,
+                TokenKind::LeftBrace,
+                TokenKind::Star,
+                TokenKind::RightBrace,
+            ]
+        );
     }
 
     #[test]

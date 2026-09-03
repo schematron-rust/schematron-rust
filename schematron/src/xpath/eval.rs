@@ -14,7 +14,7 @@ use super::functions;
 use super::temporal::{
     add_months, add_seconds, Duration, DurationKind, Temporal, TemporalKind,
 };
-use super::value::{flatten_into_sequence, Item, NumericType, Value};
+use super::value::{flatten_into_sequence, FunctionItem, Item, NumericType, Value};
 use crate::xml::{Document, NodeId, NodeKind};
 
 /// A failure during evaluation.
@@ -156,7 +156,150 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
                 evaluate(else_branch, context)
             }
         }
+
+        Expr::InlineFunction { params, body } => {
+            Ok(inline_function_value(params, body, context))
+        }
+        Expr::NamedFunctionRef { name, arity } => Ok(named_function_value(name, *arity)),
+        Expr::DynamicCall { function, args } => evaluate_dynamic_call(function, args, context),
     }
+}
+
+/// Builds the closure an [`Expr::InlineFunction`] evaluates to.
+///
+/// `body`'s `Arc` is cloned, not the tree it points to — see the field's
+/// doc comment in `ast.rs`. `captured` is the lexical environment now, by
+/// value, so the closure is good for as long as it is held, independent of
+/// how long this evaluation lasts.
+fn inline_function_value(
+    params: &[String],
+    body: &std::sync::Arc<Expr>,
+    context: &EvalContext<'_>,
+) -> Value {
+    Value::Sequence(vec![Item::Function(FunctionItem::Inline {
+        params: params.to_vec(),
+        body: body.clone(),
+        captured: context.variables.clone(),
+    })])
+}
+
+/// Builds the reference an [`Expr::NamedFunctionRef`] evaluates to.
+fn named_function_value(name: &str, arity: usize) -> Value {
+    Value::Sequence(vec![Item::Function(FunctionItem::Named {
+        name: name.to_string(),
+        arity,
+    })])
+}
+
+/// Evaluates an [`Expr::DynamicCall`]: the target to a function item, each
+/// argument, and then the call itself.
+fn evaluate_dynamic_call(
+    function: &Expr,
+    args: &[Expr],
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let function_value = evaluate(function, context)?;
+    let item = single_function_item(&function_value)?;
+    let mut values = Vec::with_capacity(args.len());
+    for arg in args {
+        values.push(evaluate(arg, context)?);
+    }
+    call_function_item(item, values, context)
+}
+
+/// Extracts the one function item a dynamic call's target must evaluate to.
+///
+/// Anything else — zero items, more than one, or an item that is not a
+/// function — is an error naming what was found instead, the same
+/// discipline [`compare_items`] applies to a mismatched comparison operand.
+fn single_function_item(value: &Value) -> Result<&FunctionItem, EvalError> {
+    match value.as_sequence() {
+        Some([Item::Function(function)]) => Ok(function),
+        Some([other]) => Err(EvalError::new(format!(
+            "a dynamic call's target must be a function item, not a {}",
+            other.type_name()
+        ))),
+        Some(items) => Err(EvalError::new(format!(
+            "a dynamic call's target must be exactly one function item, but there \
+             are {}",
+            items.len()
+        ))),
+        None => Err(EvalError::new(format!(
+            "a dynamic call's target must be a function item, not a {}",
+            value.type_name()
+        ))),
+    }
+}
+
+/// Invokes a function item with already-evaluated arguments.
+///
+/// A [`FunctionItem::Named`] dispatches through the ordinary built-in
+/// function table — the reference does not close over anything, so there is
+/// nothing to restore afterward. A [`FunctionItem::Inline`] evaluates its
+/// body against the environment it captured when written, extended with the
+/// arguments bound to its parameters — lexical scoping, not the dynamic
+/// scoping every other construct in this engine uses, because a closure
+/// that saw its *caller's* variables would not be a closure.
+///
+/// Every field of `context` other than `variables` — the document, the
+/// current node, the clock, the version — comes from the *caller's*
+/// context, not from wherever the function item was written. XPath has no
+/// notion of a function item outliving the run that created it, so this is
+/// never observable: only `variables` is genuinely lexical here.
+pub(crate) fn call_function_item(
+    function: &FunctionItem,
+    args: Vec<Value>,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    if args.len() != function.arity() {
+        return Err(EvalError::new(format!(
+            "a function item declared with {} parameter(s) was called with {}",
+            function.arity(),
+            args.len()
+        )));
+    }
+    match function {
+        FunctionItem::Named { name, .. } => functions::call(name, &args, context),
+        FunctionItem::Inline {
+            params,
+            body,
+            captured,
+        } => {
+            let mut scope = captured.clone();
+            for (param, value) in params.iter().zip(args) {
+                scope.bind(param.clone(), value);
+            }
+            let inner = EvalContext {
+                variables: &scope,
+                ..*context
+            };
+            evaluate(body, &inner)
+        }
+    }
+}
+
+/// `for-each($sequence, $action)`: applies `action` to each item and
+/// concatenates the results.
+///
+/// A multiplying construct exactly like `for`, so it shares the same
+/// budget: `action` runs once per item, and if `action` itself contains a
+/// nested `for-each`, a range, or a `for`, the product is what the shared
+/// budget bounds — see [`SequenceScope`]. Kept in `eval.rs` rather than
+/// `functions.rs`, where the rest of the XPath 2.0/3.0 function library
+/// lives, because it needs that machinery directly.
+pub(crate) fn for_each(
+    items: Vec<Item>,
+    action: &FunctionItem,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let _scope = SequenceScope::enter();
+    spend(items.len() as u64)?;
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        let result = call_function_item(action, vec![item_to_value(item)], context)?;
+        out.push(result);
+    }
+    Ok(Value::Sequence(flatten_into_sequence(out)))
 }
 
 fn evaluate_binary(
@@ -217,6 +360,7 @@ fn evaluate_binary(
         }
 
         BinaryOp::Equal | BinaryOp::NotEqual => {
+            reject_function_item(op.as_str(), &left, &right)?;
             let want_equal = op == BinaryOp::Equal;
             // XPath 2.0: a comparison involving a date compares instants, not
             // strings, so an offset is honoured and an untyped operand is
@@ -230,6 +374,7 @@ fn evaluate_binary(
         }
 
         BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
+            reject_function_item(op.as_str(), &left, &right)?;
             if has_temporal(&left) || has_temporal(&right) {
                 return compare_temporals(op, &left, &right, context);
             }
@@ -275,6 +420,23 @@ fn evaluate_binary(
             ))
         }
     }
+}
+
+/// Rejects a function item as either operand of a general comparison.
+///
+/// `=`, `!=`, `<`, `<=`, `>`, `>=` all atomize their operands, and `eq` and
+/// its family already get this for free from [`compare_items`]'s exhaustive
+/// match — a function item simply matches no arm, and the catch-all names
+/// both types. General comparison's own path (`compare_equality`,
+/// `compare_relational`) returns a plain `bool` with no error path of its
+/// own, so it needs the check made explicit here instead.
+fn reject_function_item(op: &str, left: &Value, right: &Value) -> Result<(), EvalError> {
+    if left.contains_function_item() || right.contains_function_item() {
+        return Err(EvalError::new(format!(
+            "`{op}` cannot compare a function item; it has no value to compare"
+        )));
+    }
+    Ok(())
 }
 
 /// `=` and `!=`, with XPath 1.0's existential node-set semantics.
@@ -465,10 +627,10 @@ fn item_to_value(item: Item) -> Value {
         // Preserves the tag: a `for`-bound integer literal is still one.
         Item::Number(number, ty) => Value::Number(number, ty),
         Item::Boolean(boolean) => Value::Boolean(boolean),
-        // Neither a temporal nor a duration has a scalar `Value` of its own;
-        // XPath 2.0 treats every value as a sequence, and these are one-item
-        // ones.
-        Item::Temporal(_) | Item::Duration(_) => Value::Sequence(vec![item]),
+        // Neither a temporal, a duration, nor a function item has a scalar
+        // `Value` of its own; XPath 2.0 treats every value as a sequence,
+        // and these are one-item ones.
+        Item::Temporal(_) | Item::Duration(_) | Item::Function(_) => Value::Sequence(vec![item]),
     }
 }
 
@@ -732,8 +894,13 @@ fn matches_item_type(item: &Item, item_type: &ItemType, context: &EvalContext<'_
             let local = name.rsplit(':').next().unwrap_or(name);
             match item {
                 // A node is not an atomic value; it would have to be
-                // atomized first, which `instance of` does not do.
-                Item::Node(_) => false,
+                // atomized first, which `instance of` does not do. A
+                // function item is not atomic either, for the same reason a
+                // node isn't: it has no typed value. Real XPath 3.0 tests
+                // one with its own item type, `function(*)`, which this
+                // phase does not implement, so no `instance of` target
+                // matches a function item at all.
+                Item::Node(_) | Item::Function(_) => false,
                 Item::String(_) => matches!(local, "string" | "anyAtomicType" | "untypedAtomic"),
                 Item::Boolean(_) => matches!(local, "boolean" | "anyAtomicType"),
                 Item::Number(_, ty) => numeric_type_matches(*ty, local),

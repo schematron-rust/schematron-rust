@@ -350,7 +350,7 @@ impl Schema {
         enclosing: &mut Vec<String>,
     ) -> Result<()> {
         match expr {
-            Expr::Literal(_) | Expr::Number(_, _) => {}
+            Expr::Literal(_) | Expr::Number(_, _) | Expr::NamedFunctionRef { .. } => {}
 
             Expr::Variable(name) => {
                 let name = name.to_string();
@@ -436,6 +436,10 @@ impl Schema {
                 checked?;
             }
 
+            Expr::InlineFunction { .. } | Expr::DynamicCall { .. } => {
+                Schema::check_variables_v3(expr, source, location, bindable, enclosing)?;
+            }
+
             Expr::Path(path) => {
                 if let PathStart::Expr(start, predicates) = &path.start {
                     Schema::check_variables(start, source, location, bindable, enclosing)?;
@@ -451,6 +455,37 @@ impl Schema {
             }
         }
         Ok(())
+    }
+
+    /// `Expr::InlineFunction` and `Expr::DynamicCall`'s own check, split out
+    /// of `check_variables` to keep that function under the line-count
+    /// lint. An inline function's parameters bind new variables for its
+    /// body, same as `for`'s and the quantifiers' bound variable above; a
+    /// dynamic call's target and arguments are ordinary sub-expressions.
+    fn check_variables_v3(
+        expr: &Expr,
+        source: &str,
+        location: &str,
+        bindable: &std::collections::HashSet<String>,
+        enclosing: &mut Vec<String>,
+    ) -> Result<()> {
+        match expr {
+            Expr::InlineFunction { params, body } => {
+                let pushed = params.len();
+                enclosing.extend(params.iter().cloned());
+                let checked = Schema::check_variables(body, source, location, bindable, enclosing);
+                enclosing.truncate(enclosing.len() - pushed);
+                checked
+            }
+            Expr::DynamicCall { function, args } => {
+                Schema::check_variables(function, source, location, bindable, enclosing)?;
+                for arg in args {
+                    Schema::check_variables(arg, source, location, bindable, enclosing)?;
+                }
+                Ok(())
+            }
+            _ => unreachable!("caller matches only these two XPath 3.0 variants"),
+        }
     }
 
     fn compile_one(&self, source: &str, location: &str) -> Result<Expr> {
@@ -541,6 +576,10 @@ impl Schema {
                 self.check_expression(input, source, location)?;
                 self.check_expression(test, source, location)?;
             }
+            Expr::InlineFunction { .. } | Expr::NamedFunctionRef { .. } | Expr::DynamicCall { .. } => {
+                self.check_v3_expression(expr, source, location)?;
+            }
+
             Expr::Path(path) => {
                 if let PathStart::Expr(start, predicates) = &path.start {
                     self.check_expression(start, source, location)?;
@@ -555,6 +594,33 @@ impl Schema {
                     }
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// The XPath 3.0 constructs' own check, split out of `check_expression`
+    /// to keep that function under the line-count lint — each still needs a
+    /// 3.0 binding, and a named function reference additionally needs to
+    /// name a real function at the arity written.
+    fn check_v3_expression(&self, expr: &Expr, source: &str, location: &str) -> Result<()> {
+        match expr {
+            Expr::InlineFunction { body, .. } => {
+                self.require_v3("an inline function expression", source, location)?;
+                self.check_expression(body, source, location)?;
+            }
+            Expr::NamedFunctionRef { name, arity } => {
+                self.require_v3("a named function reference", source, location)?;
+                check_function(name, *arity, self.version)
+                    .map_err(|message| Error::xpath_syntax(location, source, 0, message))?;
+            }
+            Expr::DynamicCall { function, args } => {
+                self.require_v3("a dynamic function call", source, location)?;
+                self.check_expression(function, source, location)?;
+                for arg in args {
+                    self.check_expression(arg, source, location)?;
+                }
+            }
+            _ => unreachable!("caller matches only the three XPath 3.0 variants"),
         }
         Ok(())
     }
@@ -607,6 +673,25 @@ impl Schema {
                 "{construct} is XPath 2.0 syntax; this schema's query binding is \
                  XPath 1.0. Set queryBinding=\"xslt2\" to use it, and see \
                  spec/xpath2/ for what that enables."
+            ),
+        ))
+    }
+
+    /// Rejects an XPath 3.0 construct under an XPath 1.0 or 2.0 query
+    /// binding. See [`Schema::require_v2`], which this mirrors.
+    fn require_v3(&self, construct: &str, source: &str, location: &str) -> Result<()> {
+        if self.version.is_v3() {
+            return Ok(());
+        }
+        Err(Error::xpath_syntax(
+            location,
+            source,
+            0,
+            format!(
+                "{construct} is XPath 3.0 syntax; this schema's query binding is \
+                 {}. Set queryBinding=\"xslt3\" to use it, and see spec/xpath3/ \
+                 for what that enables.",
+                self.version.as_str()
             ),
         ))
     }
@@ -957,6 +1042,11 @@ fn calls_document_function(expr: &Expr) -> bool {
         Expr::Quantified { input, test, .. } => {
             calls_document_function(input) || calls_document_function(test)
         }
+        Expr::InlineFunction { body, .. } => calls_document_function(body),
+        Expr::NamedFunctionRef { name, .. } => name == "document",
+        Expr::DynamicCall { function, args } => {
+            calls_document_function(function) || args.iter().any(calls_document_function)
+        }
         Expr::Path(path) => {
             let start = match &path.start {
                 PathStart::Expr(expr, predicates) => {
@@ -1094,8 +1184,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_query_bindings_above_xpath_two() {
-        let source = r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt3">
+    fn rejects_query_bindings_above_xpath_three() {
+        let source = r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath31">
                           <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>
                         </schema>"#;
         assert!(matches!(
@@ -1122,9 +1212,24 @@ mod tests {
     }
 
     #[test]
+    fn accepts_the_xpath_three_bindings() {
+        for binding in ["xslt3", "xpath3"] {
+            let source = format!(
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="{binding}">
+                     <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>
+                   </schema>"#
+            );
+            let schema = Schema::from_str(&source)
+                .unwrap_or_else(|e| panic!("{binding} should compile: {e}"));
+            assert_eq!(schema.version(), crate::xpath::XPathVersion::V3);
+        }
+    }
+
+    #[test]
     fn a_forced_unknown_binding_is_treated_as_xpath_one() {
-        // `allow_unknown_query_binding` must not quietly grant 2.0 features.
-        let source = r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt3">
+        // `allow_unknown_query_binding` must not quietly grant later-version
+        // features.
+        let source = r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath31">
                           <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>
                         </schema>"#;
         let options = SchemaOptions::new().with_allow_unknown_query_binding(true);

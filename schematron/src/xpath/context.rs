@@ -301,7 +301,7 @@ impl Keys {
 /// vars.truncate(mark);
 /// assert_eq!(vars.lookup("x"), Some(&Value::Number(1.0, NumericType::default())));
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Variables {
     entries: Vec<(String, Value)>,
 }

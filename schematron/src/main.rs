@@ -102,8 +102,9 @@ struct Cli {
 
     /// Compile a schema whose queryBinding this crate does not implement.
     ///
-    /// `XPath` 2.0 and later are a different language, so this is best effort:
-    /// any construct that really is `XPath` 2.0 will still fail to compile.
+    /// `XPath` 3.1 and later are a different language, so this is best
+    /// effort: any construct that really needs one of them will still fail
+    /// to compile.
     #[arg(long)]
     allow_unknown_query_binding: bool,
 

@@ -64,7 +64,7 @@ impl Document {
 | `base_uri` | derived from the path | Base for resolving `include` hrefs |
 | `resolver` | `FileResolver` | How `include` and `pattern/@documents` fetch a URI |
 | `max_include_depth` | 64 | Cycle and blow-up guard |
-| `allow_unknown_query_binding` | `false` | Compile an `xslt2`/`xslt3` schema anyway, best effort |
+| `allow_unknown_query_binding` | `false` | Compile an unsupported binding (`xpath31` and later) anyway, best effort |
 
 Each has a builder: `SchemaOptions::new().with_resolver(…).with_base_uri(…)`.
 

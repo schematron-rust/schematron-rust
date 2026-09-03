@@ -13,7 +13,8 @@ XML data model, its own XPath 1.0 engine, and its own Schematron validator.
 |---|---|---|
 | XML data model and parser | [xml/](xml/index.md) | Implemented |
 | XPath 1.0 engine | [xpath/](xpath/index.md) | Implemented |
-| XPath 2.0 support | [xpath2/](xpath2/index.md) | Phases 1–4, and kind tests |
+| XPath 2.0 support | [xpath2/](xpath2/index.md) | Phases 1–9, and kind tests |
+| XPath 3.0 support | [xpath3/](xpath3/index.md) | Phase 1: function items and `for-each()` |
 | Schematron data model | [data-model/](data-model/index.md) | Implemented |
 | Schema parsing, include, abstract expansion | [parsing/](parsing/index.md) | Implemented |
 | Validation semantics | [validation/](validation/index.md) | Implemented |
@@ -31,8 +32,8 @@ XML data model, its own XPath 1.0 engine, and its own Schematron validator.
 | Roadmap | [roadmap/](roadmap/index.md) | — |
 
 Remaining gaps are recorded in [conformance/](conformance/index.md) rather than
-left to be discovered. Query bindings above XPath 1.0 are refused rather than
-approximated.
+left to be discovered. A query binding beyond what's implemented — `xpath31`
+and later, today — is refused rather than approximated.
 
 ## What Schematron is
 

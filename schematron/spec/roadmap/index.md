@@ -130,6 +130,25 @@
   those two forms. Verified against the F&O reference material's own
   worked examples, including the one where converting a date's timezone
   rolls it to the adjacent day.
+- **XPath 3.0 phase 1: function items.** The `xslt3`/`xpath3` bindings, a
+  new `XPathVersion::V3`, and the machinery a real `for-each()` needed all
+  along: inline function expressions (`function($x) { … }`, closures —
+  genuinely lexical, capturing the environment where written, not where
+  called), named function references (`name#arity`), and dynamic calls
+  (`$f(1, 2)`, chainable). `for-each()` — misfiled for years as an
+  unwritten XPath 2.0 sequence function, corrected in phase 5 — is now
+  actually implemented, built on the same primitive a dynamic call uses.
+  Function items are not atomizable: `string()`, `number()`, `concat()`,
+  and every comparison operator reject one explicitly, naming it, rather
+  than silently falling through to an empty string or `NaN`. A closure's
+  captured environment is genuinely owned (`Item::Function`'s `Arc<Expr>`
+  and cloned `Variables`, not a borrow), so a function item survives being
+  passed to `for-each()`, bound to a variable, or crossing the thread
+  boundary opt-in parallel pattern evaluation already uses — `Arc`, not
+  `Rc`, is why. Not in this phase: `=>`, `||`, `!`, the rest of the
+  higher-order function library (`filter`, `fold-left`, `fold-right`,
+  `sort`, …), and maps and arrays, which are XPath 3.1 and stay behind the
+  still-refused `xpath31`/`xslt31` bindings. See `spec/xpath3/`.
 
 ## Next
 

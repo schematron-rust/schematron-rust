@@ -3,6 +3,37 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.11.0
+
+### Added
+
+- **XPath 3.0 phase 1: function items.** New `xslt3`/`xpath3` query
+  bindings (`XPathVersion::V3`, a superset of `V2` the way `V2` is of
+  `V1`). Adds inline function expressions (`function($x) { … }` —
+  genuine closures, capturing the environment where written, not where
+  called), named function references (`name#arity`), dynamic calls
+  (`$f(1, 2)`, chainable), and `for-each($sequence, $action)` — the
+  function all of the above exists for, previously misfiled as an
+  unwritten XPath 2.0 sequence function.
+  - A function item (`Item::Function`, publicly `FunctionItem`) is not
+    atomizable: `string()`, `number()`, `concat()`, and every comparison
+    operator (`=`, `eq`, `<`, …) reject one explicitly, naming it — not a
+    silent empty string or `NaN`.
+  - A closure's captured environment is owned, not borrowed
+    (`FunctionItem::Inline`'s `Arc<Expr>` body and cloned `Variables`), so
+    a function item survives being passed to `for-each()`, bound to a
+    variable, or crossing opt-in parallel pattern evaluation's thread
+    boundary — `Arc` rather than `Rc` is why.
+  - `for-each()` is a genuine multiplying construct and shares the same
+    budget nested `for`/`to`-ranges already do, so `for-each` inside
+    `for-each` inside `for-each` is bounded the same way.
+  - Not in this phase: the arrow operator `=>`, string concatenation
+    `||`, the simple map operator `!`, the rest of the higher-order
+    function library (`filter`, `fold-left`, `fold-right`, `sort`, …),
+    and maps and arrays — XPath 3.1, which stays behind the still-refused
+    `xpath31`/`xslt31` bindings. Each is a hard error naming the
+    construct. See [spec/xpath3/](spec/xpath3/index.md).
+
 ## 0.10.0
 
 ### Added

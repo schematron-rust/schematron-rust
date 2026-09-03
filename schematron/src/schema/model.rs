@@ -39,7 +39,11 @@ pub enum QueryBinding {
     Xslt2,
     /// `queryBinding="xpath2"` — XPath 2.0, phase 1.
     Xpath2,
-    /// A binding this crate does not implement, such as `xslt3`.
+    /// `queryBinding="xslt3"` — XPath 3.0, phase 1; see `spec/xpath3/`.
+    Xslt3,
+    /// `queryBinding="xpath3"` — XPath 3.0, phase 1.
+    Xpath3,
+    /// A binding this crate does not implement, such as `xpath31`.
     Other(String),
 }
 
@@ -52,20 +56,23 @@ impl QueryBinding {
             "xpath" => QueryBinding::Xpath,
             "xslt2" => QueryBinding::Xslt2,
             "xpath2" => QueryBinding::Xpath2,
+            "xslt3" => QueryBinding::Xslt3,
+            "xpath3" => QueryBinding::Xpath3,
             other => QueryBinding::Other(other.to_string()),
         }
     }
 
     /// The XPath version this binding selects.
     ///
-    /// `xslt3` and later are not implemented and never reach this: they are
-    /// refused at compile time unless the caller forces them, in which case
-    /// they are treated as XPath 1.0 and every 2.0 construct in them is an
-    /// error naming itself.
+    /// `xpath31` and later are not implemented and never reach this: they
+    /// are refused at compile time unless the caller forces them, in which
+    /// case they are treated as XPath 1.0 and every later-version construct
+    /// in them is an error naming itself.
     #[must_use]
     pub const fn version(&self) -> XPathVersion {
         match self {
             QueryBinding::Xslt2 | QueryBinding::Xpath2 => XPathVersion::V2,
+            QueryBinding::Xslt3 | QueryBinding::Xpath3 => XPathVersion::V3,
             _ => XPathVersion::V1,
         }
     }
@@ -80,6 +87,8 @@ impl QueryBinding {
                 | QueryBinding::Xpath
                 | QueryBinding::Xslt2
                 | QueryBinding::Xpath2
+                | QueryBinding::Xslt3
+                | QueryBinding::Xpath3
         )
     }
 
@@ -92,6 +101,8 @@ impl QueryBinding {
             QueryBinding::Xpath => Some("xpath"),
             QueryBinding::Xslt2 => Some("xslt2"),
             QueryBinding::Xpath2 => Some("xpath2"),
+            QueryBinding::Xslt3 => Some("xslt3"),
+            QueryBinding::Xpath3 => Some("xpath3"),
             QueryBinding::Other(name) => Some(name),
         }
     }
@@ -474,7 +485,7 @@ mod tests {
 
     #[test]
     fn query_binding_recognises_the_supported_bindings() {
-        for binding in ["xslt", "xpath", "xslt2", "xpath2"] {
+        for binding in ["xslt", "xpath", "xslt2", "xpath2", "xslt3", "xpath3"] {
             assert!(
                 QueryBinding::parse(binding).is_supported(),
                 "{binding} should be supported"
@@ -484,10 +495,10 @@ mod tests {
     }
 
     #[test]
-    fn bindings_above_xpath_two_are_still_refused() {
-        // Accepting them would overclaim: XPath 3.0 adds more than this
+    fn bindings_above_xpath_three_are_still_refused() {
+        // Accepting them would overclaim: XPath 3.1 adds more than this
         // crate implements, and a wrong answer is worse than a refusal.
-        for binding in ["xslt3", "xpath3", "xpath31"] {
+        for binding in ["xpath31", "xslt31"] {
             assert!(
                 !QueryBinding::parse(binding).is_supported(),
                 "{binding} should be refused"
@@ -502,6 +513,8 @@ mod tests {
         assert_eq!(QueryBinding::parse("xpath").version(), XPathVersion::V1);
         assert_eq!(QueryBinding::parse("xslt2").version(), XPathVersion::V2);
         assert_eq!(QueryBinding::parse("xpath2").version(), XPathVersion::V2);
+        assert_eq!(QueryBinding::parse("xslt3").version(), XPathVersion::V3);
+        assert_eq!(QueryBinding::parse("xpath3").version(), XPathVersion::V3);
     }
 
     #[test]

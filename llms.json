@@ -31,6 +31,7 @@
         { "title": "spec/validation/", "url": "schematron/spec/validation/index.md", "description": "The validation algorithm, exactly." },
         { "title": "spec/xpath/", "url": "schematron/spec/xpath/index.md", "description": "The XPath 1.0 engine — axes, functions, conversions." },
         { "title": "spec/xpath2/", "url": "schematron/spec/xpath2/index.md", "description": "The XPath 2.0 subset, and where it still behaves like 1.0." },
+        { "title": "spec/xpath3/", "url": "schematron/spec/xpath3/index.md", "description": "The XPath 3.0 subset: function items and for-each()." },
         { "title": "spec/xml/", "url": "schematron/spec/xml/index.md", "description": "The XML parser and its data model." },
         { "title": "spec/parsing/", "url": "schematron/spec/parsing/index.md", "description": "The five schema compilation passes." },
         { "title": "spec/svrl/", "url": "schematron/spec/svrl/index.md", "description": "The SVRL report format, read and written." },
