@@ -100,7 +100,9 @@ Not on `AGENTS.md`'s "Non-negotiables" list itself, but stated elsewhere in
 
 `schematron/agents/tasks.md` has step-by-step recipes for: adding a
 Schematron semantics test (almost always a corpus case, not Rust — see
-below), adding an XPath function, adding a CLI flag, adding a Schematron
+below), adding an XPath function, adding a new XPath *syntax* construct — an
+operator or expression form, not a function, which touches more of the
+codebase and has its own recipe — adding a CLI flag, adding a Schematron
 element/attribute, changing validation behavior, fixing a fuzz crash, adding
 a lint, investigating "this schema does nothing," bumping the MSRV, adding a
 dependency, and the release checklist. Use them rather than improvising the
@@ -126,7 +128,7 @@ are:
 | MSRV | `Cargo.toml` | `the_msrv_spec_agrees_with_cargo_toml` |
 | CLI flags | `src/main.rs` | `every_cli_flag_is_documented_and_every_documented_flag_exists` |
 | Exit codes | `src/main.rs` | `every_documented_exit_code_is_described_consistently` |
-| XPath functions | `src/xpath/functions.rs` | `the_xpath_function_list_in_the_spec_matches_the_engine` |
+| XPath functions (1.0/2.0/3.0) | `src/xpath/functions.rs` | `the_xpath_function_list_in_the_spec_matches_the_engine` and its `_two_`/`_three_` counterparts |
 | Schema examples | the `.sch`/Markdown files | `every_documented_schema_compiles` |
 | Conformance | `schematron/spec/conformance/` | reviewed by hand |
 

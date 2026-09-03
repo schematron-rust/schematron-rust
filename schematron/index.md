@@ -34,6 +34,7 @@ that is a defect in one of them.
 | [spec/validation/](spec/validation/index.md) | The validation algorithm, exactly |
 | [spec/xpath/](spec/xpath/index.md) | The XPath 1.0 engine |
 | [spec/xpath2/](spec/xpath2/index.md) | The XPath 2.0 subset, and its limits |
+| [spec/xpath3/](spec/xpath3/index.md) | The XPath 3.0 subset: function items, `=>`, `\|\|`, `!`, `let`, the higher-order sequence functions |
 | [spec/xml/](spec/xml/index.md) | The XML parser and data model |
 | [spec/parsing/](spec/parsing/index.md) | The five schema compilation passes |
 | [spec/svrl/](spec/svrl/index.md) | The SVRL report format, read and written |
@@ -45,6 +46,7 @@ that is a defect in one of them.
 | [spec/conformance/](spec/conformance/index.md) | Limits and divergences, stated up front |
 | [spec/testing/](spec/testing/index.md) | Tests, fuzzing, benchmarks, lints |
 | [spec/rust-msrv-n-minus-2/](spec/rust-msrv-n-minus-2/index.md) | MSRV policy: current stable minus two |
+| [spec/agents-directory-name-is-lowercase/](spec/agents-directory-name-is-lowercase/index.md) | Why the agent documentation directory is lowercase |
 | [spec/roadmap/](spec/roadmap/index.md) | What is shipped, what is next, what is not planned |
 
 ## Contributor and agent documentation

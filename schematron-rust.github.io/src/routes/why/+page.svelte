@@ -156,8 +156,8 @@ let report = schema.validate_with(&document, &options)?;`}</code></pre>
     </li>
     <li>
       <strong>Unsupported constructs error by name.</strong> Outside the
-      implemented XPath 2.0 subset you get a hard error naming the construct,
-      never a plausible wrong answer.
+      implemented XPath 2.0 and 3.0 subsets you get a hard error naming the
+      construct, never a plausible wrong answer.
     </li>
   </ul>
 

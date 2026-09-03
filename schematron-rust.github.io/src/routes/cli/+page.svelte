@@ -17,7 +17,7 @@
     { flag: '--max-failures <N>', description: 'Stop after N findings.' },
     { flag: '--parallel', description: 'Evaluate patterns on separate threads.' },
     { flag: '--svrl-findings-only', description: 'Omit fired-rule events from SVRL.' },
-    { flag: '--allow-unknown-query-binding', description: 'Compile an xslt2/xslt3 schema anyway, best effort.' },
+    { flag: '--allow-unknown-query-binding', description: 'Compile an unsupported binding (xpath31 and later) anyway, best effort.' },
     { flag: '--list-phases', description: "Print the schema's phases and exit." },
     { flag: '--explain', description: 'Print the compiled schema: patterns, rules, contexts, tests.' },
     { flag: '--lint', description: 'Check the schema for likely mistakes and exit.' },

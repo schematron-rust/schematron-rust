@@ -10,7 +10,7 @@
   <title>{data.title}</title>
   <meta
     name="description"
-    content={`The normative specification for the schematron crate: ${SPEC_DOCS.length} documents covering the data model, the validation algorithm, both XPath engines, SVRL, linting, errors, and conformance.`}
+    content={`The normative specification for the schematron crate: ${SPEC_DOCS.length} documents covering the data model, the validation algorithm, the XPath 1.0/2.0/3.0 engine, SVRL, linting, errors, and conformance.`}
   />
 </svelte:head>
 

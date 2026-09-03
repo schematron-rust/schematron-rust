@@ -10,9 +10,9 @@ rules, cross-references between distant parts of a document, value
 relationships, cardinality that depends on content rather than position —
 written as XPath expressions, layered on top of a grammar (DTD, XML Schema,
 RELAX NG) rather than used instead of one. This crate contains its own XML
-parser, its own XPath engine (a complete XPath 1.0 implementation plus a
-documented XPath 2.0 subset), and its own validator; it interprets a schema
-directly rather than transpiling it to XSLT.
+parser, its own XPath engine (a complete XPath 1.0 implementation plus
+documented XPath 2.0 and 3.0 subsets), and its own validator; it interprets a
+schema directly rather than transpiling it to XSLT.
 
 `schematron/spec/` is normative for the crate's behavior: if code and spec
 disagree, that is a defect in one of them. `spec/` at the repository root is
