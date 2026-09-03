@@ -33,12 +33,10 @@ pub enum XPathVersion {
     V2,
     /// XPath 3.0: the `xslt3` and `xpath3` query bindings.
     ///
-    /// Only the phase-1 subset in `spec/xpath3/` is implemented — function
-    /// items, inline function expressions, named function references,
-    /// dynamic function calls, and `for-each()`. Everything XPath 2.0
-    /// implements is available too, since 3.0 is a superset. Anything
-    /// outside the 3.0 subset is an error naming the construct, exactly as
-    /// for 2.0.
+    /// Only the phased subset in `spec/xpath3/` is implemented. Everything
+    /// XPath 2.0 implements is available too, since 3.0 is a superset.
+    /// Anything outside the 3.0 subset is an error naming the construct,
+    /// exactly as for 2.0.
     V3,
 }
 

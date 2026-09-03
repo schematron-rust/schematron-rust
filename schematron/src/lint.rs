@@ -646,6 +646,7 @@ fn looks_up_key(expr: &Expr, name: &str) -> bool {
         Expr::DynamicCall { function, args } => {
             looks_up_key(function, name) || args.iter().any(|a| looks_up_key(a, name))
         }
+        Expr::Arrow(called) => looks_up_key(called, name),
         Expr::Path(path) => {
             let start = match &path.start {
                 PathStart::Expr(expr, predicates) => {
@@ -782,6 +783,7 @@ fn first_unprefixed_element_name(expr: &Expr) -> Option<String> {
         Expr::InlineFunction { body, .. } => first_unprefixed_element_name(body),
         Expr::DynamicCall { function, args } => first_unprefixed_element_name(function)
             .or_else(|| args.iter().find_map(first_unprefixed_element_name)),
+        Expr::Arrow(called) => first_unprefixed_element_name(called),
         Expr::Path(path) => {
             if let PathStart::Expr(start, predicates) = &path.start {
                 if let Some(found) = first_unprefixed_element_name(start) {
@@ -1023,6 +1025,7 @@ fn references_variable(expr: &Expr, name: &str) -> bool {
         Expr::DynamicCall { function, args } => {
             references_variable(function, name) || args.iter().any(|a| references_variable(a, name))
         }
+        Expr::Arrow(called) => references_variable(called, name),
         Expr::Path(path) => {
             let start = match &path.start {
                 PathStart::Expr(expr, predicates) => {

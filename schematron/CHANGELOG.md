@@ -3,6 +3,45 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.12.0
+
+### Added
+
+- **XPath 3.0 phase 2: the arrow operator and string concatenation.**
+  - `E => f(…)`: pipes `E` in as `f`'s first argument, ahead of whatever
+    arguments are written — `'a-b-c' => tokenize('-')` means
+    `tokenize('a-b-c', '-')`. Chainable (`E => f() => g()` means
+    `g(f(E))`). The target can be a named function, a variable holding a
+    function item (`E => $f(…)`), or a parenthesized expression
+    evaluating to one (`E => (expr)(…)`).
+  - `E || E`: string concatenation, atomizing each side the way
+    `concat()`'s arguments already do, and rejecting a function item
+    explicitly rather than silently stringifying it to nothing.
+  - Both are pure syntax: `=>` desugars at parse time into an ordinary
+    function call or dynamic call (a new `Expr::Arrow` exists only so a
+    1.0/2.0 binding can reject the operator by name), and `||` is an
+    ordinary `BinaryOp`. Neither needed new evaluation machinery.
+  - Not in this phase: the simple map operator `!`. Unlike `for-each()`,
+    whose action binds the mapped-over item to a named parameter, `!`'s
+    right side can only see its item through `.` — and this crate's
+    `EvalContext` holds a context *node*, not a context *item*, so
+    implementing it needs that foundation to change first, not one more
+    operator. See [spec/xpath3/](spec/xpath3/index.md).
+
+### Fixed
+
+- **A stack overflow in eight repeating binary operators.** `or`, `and`,
+  the comparisons, `+`/`-`, `*`/`div`/`mod`, and `|` are each parsed by a
+  loop, so a long chain of the same operator — `a|a|a|…` — cost the
+  parser's own recursion budget nothing, but still built a left-degenerate
+  `Expr::Binary` tree that `evaluate` walks recursively, one stack frame
+  per repetition. Found by fuzzing `fuzz_xpath`: a few hundred `|` in a row
+  crashed. Every one of the eight now shares a `parse_binary_chain` helper
+  that counts a chain the same way a dynamic call's or the new arrow
+  operator's own chaining already did, so this is a clean "nested deeper
+  than the limit" parse error instead — see
+  [spec/testing/](spec/testing/index.md#what-fuzzing-found).
+
 ## 0.11.0
 
 ### Added

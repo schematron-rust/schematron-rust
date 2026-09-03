@@ -274,67 +274,100 @@ impl Parser {
         self.error("expected a variable, written `$name`")
     }
 
-    /// `OrExpr := AndExpr ('or' AndExpr)*`
-    fn parse_or(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_and()?;
-        while self.eat(&TokenKind::Or) {
-            let right = self.parse_and()?;
-            left = Expr::Binary(BinaryOp::Or, Box::new(left), Box::new(right));
+    /// A left-associative chain of one precedence level: `Operand (Op
+    /// Operand)*`.
+    ///
+    /// Shared by every repeating binary-operator production in this
+    /// grammar (`or`, `and`, the comparisons, `||`, `+`/`-`, `*`/`div`/
+    /// `mod`, and `|`), so each counts its chain length against the same
+    /// recursion budget a dynamic call's or arrow's `(args)(args)…` chain
+    /// already does — see `parse_path_expr`'s and `parse_arrow`'s doc
+    /// comments. It has to: each repetition nests one more `Expr::Binary`
+    /// inside the last, and `evaluate_binary` unwraps that recursively, so
+    /// — unlike a location path's steps, which `evaluate_path` walks in a
+    /// plain loop and are therefore exempt — an unbounded chain here is a
+    /// stack-overflow risk at evaluation time, not merely a parse-time
+    /// one. Found by fuzzing `fuzz_xpath` on nothing more exotic than a
+    /// few hundred `|`s in a row.
+    fn parse_binary_chain(
+        &mut self,
+        operand: fn(&mut Self) -> Result<Expr, ParseError>,
+        op_of: fn(&TokenKind) -> Option<BinaryOp>,
+    ) -> Result<Expr, ParseError> {
+        let mut left = operand(self)?;
+        let mut chained = 0usize;
+        while let Some(op) = self.peek().and_then(op_of) {
+            self.index += 1;
+            self.enter()?;
+            chained += 1;
+            match operand(self) {
+                Ok(right) => left = Expr::Binary(op, Box::new(left), Box::new(right)),
+                Err(error) => {
+                    for _ in 0..chained {
+                        self.leave();
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        for _ in 0..chained {
+            self.leave();
         }
         Ok(left)
+    }
+
+    /// `OrExpr := AndExpr ('or' AndExpr)*`
+    fn parse_or(&mut self) -> Result<Expr, ParseError> {
+        self.parse_binary_chain(Self::parse_and, |kind| {
+            matches!(kind, TokenKind::Or).then_some(BinaryOp::Or)
+        })
     }
 
     /// `AndExpr := EqualityExpr ('and' EqualityExpr)*`
     fn parse_and(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_equality()?;
-        while self.eat(&TokenKind::And) {
-            let right = self.parse_equality()?;
-            left = Expr::Binary(BinaryOp::And, Box::new(left), Box::new(right));
-        }
-        Ok(left)
+        self.parse_binary_chain(Self::parse_equality, |kind| {
+            matches!(kind, TokenKind::And).then_some(BinaryOp::And)
+        })
     }
 
     /// `EqualityExpr := RelationalExpr (('=' | '!=') RelationalExpr)*`
     fn parse_equality(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_relational()?;
-        loop {
-            let op = match self.peek() {
-                Some(TokenKind::Equal) => BinaryOp::Equal,
-                Some(TokenKind::NotEqual) => BinaryOp::NotEqual,
-                Some(TokenKind::ValueEqual) => BinaryOp::ValueEqual,
-                Some(TokenKind::ValueNotEqual) => BinaryOp::ValueNotEqual,
-                Some(TokenKind::NodeIs) => BinaryOp::NodeIs,
-                Some(TokenKind::NodeBefore) => BinaryOp::NodeBefore,
-                Some(TokenKind::NodeAfter) => BinaryOp::NodeAfter,
-                _ => break,
-            };
-            self.index += 1;
-            let right = self.parse_relational()?;
-            left = Expr::Binary(op, Box::new(left), Box::new(right));
-        }
-        Ok(left)
+        self.parse_binary_chain(Self::parse_relational, |kind| match kind {
+            TokenKind::Equal => Some(BinaryOp::Equal),
+            TokenKind::NotEqual => Some(BinaryOp::NotEqual),
+            TokenKind::ValueEqual => Some(BinaryOp::ValueEqual),
+            TokenKind::ValueNotEqual => Some(BinaryOp::ValueNotEqual),
+            TokenKind::NodeIs => Some(BinaryOp::NodeIs),
+            TokenKind::NodeBefore => Some(BinaryOp::NodeBefore),
+            TokenKind::NodeAfter => Some(BinaryOp::NodeAfter),
+            _ => None,
+        })
     }
 
-    /// `RelationalExpr := RangeExpr (('<'|'>'|'<='|'>=') RangeExpr)*`
+    /// `RelationalExpr := StringConcatExpr (('<'|'>'|'<='|'>=') StringConcatExpr)*`
     fn parse_relational(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_range()?;
-        loop {
-            let op = match self.peek() {
-                Some(TokenKind::Less) => BinaryOp::Less,
-                Some(TokenKind::LessEqual) => BinaryOp::LessEqual,
-                Some(TokenKind::Greater) => BinaryOp::Greater,
-                Some(TokenKind::GreaterEqual) => BinaryOp::GreaterEqual,
-                Some(TokenKind::ValueLess) => BinaryOp::ValueLess,
-                Some(TokenKind::ValueLessEqual) => BinaryOp::ValueLessEqual,
-                Some(TokenKind::ValueGreater) => BinaryOp::ValueGreater,
-                Some(TokenKind::ValueGreaterEqual) => BinaryOp::ValueGreaterEqual,
-                _ => break,
-            };
-            self.index += 1;
-            let right = self.parse_range()?;
-            left = Expr::Binary(op, Box::new(left), Box::new(right));
-        }
-        Ok(left)
+        self.parse_binary_chain(Self::parse_concat, |kind| match kind {
+            TokenKind::Less => Some(BinaryOp::Less),
+            TokenKind::LessEqual => Some(BinaryOp::LessEqual),
+            TokenKind::Greater => Some(BinaryOp::Greater),
+            TokenKind::GreaterEqual => Some(BinaryOp::GreaterEqual),
+            TokenKind::ValueLess => Some(BinaryOp::ValueLess),
+            TokenKind::ValueLessEqual => Some(BinaryOp::ValueLessEqual),
+            TokenKind::ValueGreater => Some(BinaryOp::ValueGreater),
+            TokenKind::ValueGreaterEqual => Some(BinaryOp::ValueGreaterEqual),
+            _ => None,
+        })
+    }
+
+    /// `StringConcatExpr := RangeExpr ("||" RangeExpr)*`
+    ///
+    /// XPath 3.0 only; a 1.0/2.0 binding rejects the resulting
+    /// `BinaryOp::Concat` at compile time, same as every other 3.0-only
+    /// construct.
+    fn parse_concat(&mut self) -> Result<Expr, ParseError> {
+        self.parse_binary_chain(Self::parse_range, |kind| {
+            matches!(kind, TokenKind::DoublePipe).then_some(BinaryOp::Concat)
+        })
     }
 
     /// `RangeExpr := AdditiveExpr ("to" AdditiveExpr)?`
@@ -353,35 +386,21 @@ impl Parser {
 
     /// `AdditiveExpr := MultiplicativeExpr (('+'|'-') MultiplicativeExpr)*`
     fn parse_additive(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_multiplicative()?;
-        loop {
-            let op = match self.peek() {
-                Some(TokenKind::Plus) => BinaryOp::Add,
-                Some(TokenKind::Minus) => BinaryOp::Subtract,
-                _ => break,
-            };
-            self.index += 1;
-            let right = self.parse_multiplicative()?;
-            left = Expr::Binary(op, Box::new(left), Box::new(right));
-        }
-        Ok(left)
+        self.parse_binary_chain(Self::parse_multiplicative, |kind| match kind {
+            TokenKind::Plus => Some(BinaryOp::Add),
+            TokenKind::Minus => Some(BinaryOp::Subtract),
+            _ => None,
+        })
     }
 
     /// `MultiplicativeExpr := UnaryExpr (('*'|'div'|'mod') UnaryExpr)*`
     fn parse_multiplicative(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_unary()?;
-        loop {
-            let op = match self.peek() {
-                Some(TokenKind::Multiply) => BinaryOp::Multiply,
-                Some(TokenKind::Div) => BinaryOp::Divide,
-                Some(TokenKind::Mod) => BinaryOp::Modulo,
-                _ => break,
-            };
-            self.index += 1;
-            let right = self.parse_unary()?;
-            left = Expr::Binary(op, Box::new(left), Box::new(right));
-        }
-        Ok(left)
+        self.parse_binary_chain(Self::parse_unary, |kind| match kind {
+            TokenKind::Multiply => Some(BinaryOp::Multiply),
+            TokenKind::Div => Some(BinaryOp::Divide),
+            TokenKind::Mod => Some(BinaryOp::Modulo),
+            _ => None,
+        })
     }
 
     /// `UnaryExpr := '-'* TypeExpr`
@@ -401,7 +420,7 @@ impl Parser {
     /// XPath 2.0 gives them, so `$x cast as xs:string instance of xs:string`
     /// means what it reads as.
     fn parse_type_operators(&mut self) -> Result<Expr, ParseError> {
-        let mut value = self.parse_union()?;
+        let mut value = self.parse_arrow()?;
 
         // `cast as` and `castable as` take a single type; the other two take
         // a sequence type.
@@ -528,14 +547,94 @@ impl Parser {
         }
     }
 
+    /// `ArrowExpr := UnionExpr ("=>" ArrowFunctionSpecifier ArgumentList)*`
+    ///
+    /// XPath 3.0 only; a 1.0/2.0 binding rejects the resulting `Expr::Arrow`
+    /// at compile time. Each `=>` pipes the value built so far in as the
+    /// call's first argument, ahead of whatever `ArgumentList` supplies —
+    /// see `parse_arrow_call`.
+    ///
+    /// Chained the same way a dynamic call's trailing `(args)(args)…` is
+    /// (see `parse_path_expr`): each link is charged against the shared
+    /// recursion depth, released only once the whole chain is done, so an
+    /// unbounded chain of `=>` is a parse error rather than a risk at
+    /// evaluation time.
+    fn parse_arrow(&mut self) -> Result<Expr, ParseError> {
+        let mut value = self.parse_union()?;
+        let mut chained = 0usize;
+        while self.peek() == Some(&TokenKind::Arrow) {
+            self.index += 1; // `=>`
+            self.enter()?;
+            chained += 1;
+            match self.parse_arrow_call(value) {
+                Ok(called) => value = Expr::Arrow(Box::new(called)),
+                Err(error) => {
+                    for _ in 0..chained {
+                        self.leave();
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        for _ in 0..chained {
+            self.leave();
+        }
+        Ok(value)
+    }
+
+    /// `ArrowFunctionSpecifier ArgumentList`, with `input` prepended as the
+    /// call's first argument.
+    ///
+    /// `ArrowFunctionSpecifier := EQName | VarRef | ParenthesizedExpr`. A
+    /// bare `EQName` always arrives as a `FunctionName` token here, never a
+    /// plain `Name` — the lexer classifies any name immediately followed by
+    /// `(` that way, and an `ArrowFunctionSpecifier` is always followed by
+    /// one.
+    fn parse_arrow_call(&mut self, input: Expr) -> Result<Expr, ParseError> {
+        match self.advance() {
+            Some(TokenKind::FunctionName(name)) => {
+                let mut args = vec![input];
+                args.extend(self.parse_arguments()?);
+                Ok(Expr::Function { name, args })
+            }
+            Some(TokenKind::Variable(name)) => {
+                let target = Expr::Variable(NameTest::parse(&name));
+                let mut args = vec![input];
+                args.extend(self.parse_arguments()?);
+                Ok(Expr::DynamicCall {
+                    function: Box::new(target),
+                    args,
+                })
+            }
+            Some(TokenKind::LeftParen) => {
+                let target = self.parse_expr()?;
+                self.expect(&TokenKind::RightParen)?;
+                let mut args = vec![input];
+                args.extend(self.parse_arguments()?);
+                Ok(Expr::DynamicCall {
+                    function: Box::new(target),
+                    args,
+                })
+            }
+            other => {
+                self.index = self.index.saturating_sub(1);
+                let found = other.map_or_else(
+                    || "end of expression".to_string(),
+                    |kind| kind.to_string(),
+                );
+                self.error(format!(
+                    "expected a function name, a variable, or a parenthesized \
+                     expression after '=>', but found {found}"
+                ))
+            }
+        }
+    }
+
     /// `UnionExpr := PathExpr ('|' PathExpr)*`
     fn parse_union(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_path_expr()?;
-        while self.eat(&TokenKind::Pipe) {
-            let right = self.parse_path_expr()?;
-            left = Expr::Binary(BinaryOp::Union, Box::new(left), Box::new(right));
-        }
-        Ok(left)
+        self.parse_binary_chain(Self::parse_path_expr, |kind| {
+            matches!(kind, TokenKind::Pipe).then_some(BinaryOp::Union)
+        })
     }
 
     /// Whether the next token can begin a location path step.
@@ -1154,6 +1253,131 @@ mod tests {
         assert!(error.message.contains("nested deeper"), "{}", error.message);
 
         let shallow = format!("a{}", "()".repeat(MAX_RECURSION_DEPTH / 2));
+        assert!(parse(&shallow).is_ok());
+    }
+
+    #[test]
+    fn a_long_chain_of_any_repeating_binary_operator_is_bounded() {
+        // Found by fuzzing `fuzz_xpath`: a few hundred `|` in a row parsed
+        // fine (the loop in `parse_union` counted no depth at all) and then
+        // overflowed the stack in `evaluate`, which unwraps the resulting
+        // left-degenerate `Expr::Binary` tree recursively — the same risk
+        // `a_long_chain_of_dynamic_calls_is_bounded_unlike_a_path` above
+        // already guards for `(args)(args)…`, just not yet extended to
+        // `or`, `and`, the comparisons, `||`, `+`/`-`, `*`/`div`/`mod`, and
+        // `|` themselves. Every one of them shares `parse_binary_chain`, so
+        // one fix (and one test) covers all eight.
+        for operator in ["or", "and", "=", "<", "||", "+", "*", "|"] {
+            let chain = format!("a{}", format!(" {operator} a").repeat(5000));
+            let error = parse(&chain).unwrap_err();
+            assert!(
+                error.message.contains("nested deeper"),
+                "operator {operator:?}: {}",
+                error.message
+            );
+
+            let shallow = format!("a{}", format!(" {operator} a").repeat(MAX_RECURSION_DEPTH / 2));
+            assert!(parse(&shallow).is_ok(), "operator {operator:?}");
+        }
+    }
+
+    #[test]
+    fn parses_string_concatenation() {
+        assert!(matches!(
+            parse("'a' || 'b'").unwrap(),
+            Expr::Binary(BinaryOp::Concat, _, _)
+        ));
+    }
+
+    #[test]
+    fn string_concat_binds_tighter_than_equality_but_looser_than_additive() {
+        // `'a' || 'b' = 'ab'` must group as `('a' || 'b') = 'ab'` — `||`
+        // binds inside `=`.
+        let expr = parse("'a' || 'b' = 'ab'").unwrap();
+        match expr {
+            Expr::Binary(BinaryOp::Equal, left, _) => {
+                assert!(matches!(*left, Expr::Binary(BinaryOp::Concat, _, _)));
+            }
+            other => panic!("unexpected shape: {other:?}"),
+        }
+
+        // `1 || 2 + 3` must group as `1 || (2 + 3)` — additive binds inside
+        // `||`.
+        let expr = parse("1 || 2 + 3").unwrap();
+        match expr {
+            Expr::Binary(BinaryOp::Concat, _, right) => {
+                assert!(matches!(*right, Expr::Binary(BinaryOp::Add, _, _)));
+            }
+            other => panic!("unexpected shape: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_an_arrow_call_to_a_named_function() {
+        // `$x => f(1)` is sugar for `f($x, 1)`.
+        let expr = parse("$x => f(1)").unwrap();
+        match expr {
+            Expr::Arrow(called) => match *called {
+                Expr::Function { name, args } => {
+                    assert_eq!(name, "f");
+                    assert_eq!(args.len(), 2);
+                    assert!(matches!(args[0], Expr::Variable(_)));
+                }
+                other => panic!("unexpected call shape: {other:?}"),
+            },
+            other => panic!("unexpected shape: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_an_arrow_call_to_a_dynamic_target() {
+        for source in ["$x => $f(1)", "$x => (g#1)(1)"] {
+            let expr = parse(source).unwrap();
+            match expr {
+                Expr::Arrow(called) => {
+                    assert!(matches!(*called, Expr::DynamicCall { .. }), "{source}");
+                }
+                other => panic!("unexpected shape for {source}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn arrow_calls_chain() {
+        // `$x => f() => g()` is sugar for `g(f($x))`.
+        let expr = parse("$x => f() => g()").unwrap();
+        match expr {
+            Expr::Arrow(outer) => match *outer {
+                Expr::Function { name, args } => {
+                    assert_eq!(name, "g");
+                    assert!(matches!(args[0], Expr::Arrow(_)));
+                }
+                other => panic!("unexpected shape: {other:?}"),
+            },
+            other => panic!("unexpected shape: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cast_as_binds_looser_than_arrow() {
+        // `$x => f() cast as xs:string` must group as
+        // `($x => f()) cast as xs:string`.
+        let expr = parse("$x => f() cast as xs:string").unwrap();
+        match expr {
+            Expr::TypeOp { value, .. } => {
+                assert!(matches!(*value, Expr::Arrow(_)));
+            }
+            other => panic!("unexpected shape: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_long_chain_of_arrow_calls_is_bounded() {
+        let chain = format!("a{}", " => f()".repeat(5000));
+        let error = parse(&chain).unwrap_err();
+        assert!(error.message.contains("nested deeper"), "{}", error.message);
+
+        let shallow = format!("a{}", " => f()".repeat(MAX_RECURSION_DEPTH / 2));
         assert!(parse(&shallow).is_ok());
     }
 }

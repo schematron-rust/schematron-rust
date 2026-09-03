@@ -162,6 +162,10 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
         }
         Expr::NamedFunctionRef { name, arity } => Ok(named_function_value(name, *arity)),
         Expr::DynamicCall { function, args } => evaluate_dynamic_call(function, args, context),
+        // Pure sugar — see the doc comment on `Expr::Arrow`. Whatever call
+        // the parser built (`Expr::Function` or `Expr::DynamicCall`)
+        // evaluates exactly as it would if written directly.
+        Expr::Arrow(called) => evaluate(called, context),
     }
 }
 
@@ -348,6 +352,20 @@ fn evaluate_binary(
 
         BinaryOp::NodeIs | BinaryOp::NodeBefore | BinaryOp::NodeAfter => {
             compare_by_node(op, &left, &right, document)
+        }
+
+        // XPath 3.0's `||`. Atomizes both operands to their string value —
+        // the same conversion `concat()` applies to each of its arguments —
+        // and rejects a function item explicitly rather than silently
+        // stringifying it to nothing, same as every other operator that
+        // atomizes.
+        BinaryOp::Concat => {
+            reject_function_item(op.as_str(), &left, &right)?;
+            Ok(Value::String(format!(
+                "{}{}",
+                left.to_xpath_string(document),
+                right.to_xpath_string(document)
+            )))
         }
 
         BinaryOp::ValueEqual
