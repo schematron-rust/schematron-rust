@@ -3,7 +3,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Mutex;
 
-use super::value::Value;
+use super::value::{Item, Value};
 #[cfg(test)]
 use super::value::NumericType;
 use super::version::XPathVersion;
@@ -353,7 +353,7 @@ impl Variables {
 // Marking it non-exhaustive now means that will not be a breaking change.
 // `new`, `focus`, and the `with_*` builders cover every field.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct EvalContext<'a> {
     /// The document the context node lives in.
     pub document: &'a Document,
@@ -403,6 +403,27 @@ pub struct EvalContext<'a> {
     /// error rather than an empty node-set, because silently returning
     /// nothing would turn a misconfigured lookup into a passing assertion.
     pub documents: Option<&'a Documents>,
+    /// The context item, when it is **not** a node.
+    ///
+    /// `None` in every context this crate builds except one: XPath 3.0's
+    /// simple map operator, `E1 ! E2`, evaluating `E2` for an item of `E1`
+    /// that isn't a node. [`EvalContext::node`] can't represent that — it
+    /// is always a real node in the document arena — so this field carries
+    /// the item instead, and [`EvalContext::focus`] is what clears it: any
+    /// genuine node-based context (an axis step, a predicate, `!` mapping
+    /// over a node) goes through `focus`, which sets this back to `None`
+    /// so a stale atomic item from an *enclosing* `!` can never leak into
+    /// ordinary node evaluation. The one place this field is read is the
+    /// `Expr::Path` arm of `evaluate` in `eval.rs`; see `spec/xpath3/` for
+    /// why the field has to exist at all rather than `!` being written
+    /// like `for-each()`.
+    ///
+    /// Present in `EvalContext` — the type every expression evaluates
+    /// against — rather than threaded through as a separate parameter,
+    /// the same way `node` itself is: adding a parameter to `evaluate`
+    /// would touch every call site in the crate, while this is read in
+    /// exactly one.
+    pub context_item: Option<Item>,
 }
 
 impl<'a> EvalContext<'a> {
@@ -427,6 +448,7 @@ impl<'a> EvalContext<'a> {
             implicit_timezone: 0,
             keys: None,
             documents: None,
+            context_item: None,
         }
     }
 
@@ -467,13 +489,18 @@ impl<'a> EvalContext<'a> {
     }
 
     /// The same context, focused on a different node with a new position.
+    ///
+    /// Always clears [`EvalContext::context_item`] — this is a genuine node
+    /// context, so any atomic item an *enclosing* `!` left active is stale
+    /// here and must not be read instead of `node`.
     #[must_use]
     pub fn focus(&self, node: NodeId, position: usize, size: usize) -> Self {
         Self {
             node,
             position,
             size,
-            ..*self
+            context_item: None,
+            ..self.clone()
         }
     }
 }

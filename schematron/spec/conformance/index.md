@@ -11,7 +11,7 @@ has to discover a gap by hitting it in production.
 | `xslt` | Yes — XPath 1.0 plus `document()` and `current()` |
 | `xpath` | Yes — XPath 1.0 |
 | `xslt2`, `xpath2` | Partly — phases 1 through 9 of the subset in [xpath2/](../xpath2/index.md) |
-| `xslt3`, `xpath3` | Partly — phases 1 through 3 of the subset in [xpath3/](../xpath3/index.md) |
+| `xslt3`, `xpath3` | Partly — phases 1 through 4 of the subset in [xpath3/](../xpath3/index.md), plus `let` |
 | `xpath31`, `xslt31` | No — rejected, unless `allow_unknown_query_binding` |
 
 **Read [xpath2/](../xpath2/index.md) before declaring `xslt2`.** The subset covers
@@ -33,8 +33,11 @@ them. Phase 2 adds the arrow operator `=>` and string concatenation `||`.
 Phase 3 finishes the higher-order sequence function library (`filter`,
 `fold-left`, `fold-right`, `for-each-pair`) and adds function-item
 introspection (`function-lookup`, `function-arity`, `function-name`).
-Everything XPath 1.0 and 2.0 implement is available too, at exactly their
-own semantics; the simple map operator `!` and maps and arrays (XPath 3.1)
+Phase 4 adds the simple map operator `!`, and alongside it the `let`
+expression — found while writing phase 4's own documentation, not part of
+any phase's original plan. Everything XPath 1.0 and 2.0 implement is
+available too, at exactly their own semantics; `Q{uri}local` names, union
+types in casts and function signatures, and maps and arrays (XPath 3.1)
 are not implemented.
 
 XPath 3.1 adds more than this crate implements, so it stays refused:

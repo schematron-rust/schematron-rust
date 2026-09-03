@@ -96,6 +96,10 @@ pub(crate) enum TokenKind {
     DoublePipe,
     /// `=>` — XPath 3.0's arrow operator.
     Arrow,
+    /// `!` — XPath 3.0's simple map operator.
+    Bang,
+    /// `:=` — separates a `let` expression's variable from its value.
+    Assign,
 }
 
 impl fmt::Display for TokenKind {
@@ -148,6 +152,8 @@ impl fmt::Display for TokenKind {
             TokenKind::RightBrace => f.write_str("}"),
             TokenKind::DoublePipe => f.write_str("||"),
             TokenKind::Arrow => f.write_str("=>"),
+            TokenKind::Bang => f.write_str("!"),
+            TokenKind::Assign => f.write_str(":="),
         }
     }
 }
@@ -265,6 +271,8 @@ impl<'a> Lexer<'a> {
                     | TokenKind::NodeAfter
                     | TokenKind::DoublePipe
                     | TokenKind::Arrow
+                    | TokenKind::Bang
+                    | TokenKind::Assign
             ),
         }
     }
@@ -374,12 +382,8 @@ impl<'a> Lexer<'a> {
                         self.position += 2;
                         self.push(TokenKind::NotEqual, start);
                     } else {
-                        return Err(Lexer::error(
-                            start,
-                            "'!' alone is XPath 3.0's simple map operator, which this \
-                             crate does not implement; see spec/xpath3/. Otherwise '!' \
-                             must be part of '!='",
-                        ));
+                        self.position += 1;
+                        self.push(TokenKind::Bang, start);
                     }
                 }
                 b'<' => {
@@ -420,8 +424,14 @@ impl<'a> Lexer<'a> {
                     if self.peek_at(1) == Some(b':') {
                         self.position += 2;
                         self.push(TokenKind::ColonColon, start);
+                    } else if self.peek_at(1) == Some(b'=') {
+                        self.position += 2;
+                        self.push(TokenKind::Assign, start);
                     } else {
-                        return Err(Lexer::error(start, "':' must be part of '::' or a prefixed name"));
+                        return Err(Lexer::error(
+                            start,
+                            "':' must be part of '::', ':=', or a prefixed name",
+                        ));
                     }
                 }
                 b'*' => {
@@ -817,6 +827,31 @@ mod tests {
     #[test]
     fn stray_characters_are_errors() {
         assert!(tokenize("a ; b").is_err());
-        assert!(tokenize("a ! b").is_err());
+    }
+
+    #[test]
+    fn bang_is_the_simple_map_operator_and_bang_equal_is_still_not_equal() {
+        assert_eq!(
+            kinds("a ! b"),
+            vec![
+                TokenKind::Name("a".into()),
+                TokenKind::Bang,
+                TokenKind::Name("b".into()),
+            ]
+        );
+        assert_eq!(kinds("a!=b")[1], TokenKind::NotEqual);
+    }
+
+    #[test]
+    fn colon_equal_is_assign_and_colon_colon_still_works() {
+        assert_eq!(
+            kinds("$x := 1"),
+            vec![
+                TokenKind::Variable("x".into()),
+                TokenKind::Assign,
+                TokenKind::Number(1.0, NumericType::Integer),
+            ]
+        );
+        assert_eq!(kinds("child::a")[1], TokenKind::ColonColon);
     }
 }

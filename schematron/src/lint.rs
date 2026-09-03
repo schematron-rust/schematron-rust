@@ -630,6 +630,9 @@ fn looks_up_key(expr: &Expr, name: &str) -> bool {
         Expr::For { input, body, .. } => {
             looks_up_key(input, name) || looks_up_key(body, name)
         }
+        Expr::Let { value, body, .. } => {
+            looks_up_key(value, name) || looks_up_key(body, name)
+        }
         Expr::Quantified { input, test, .. } => {
             looks_up_key(input, name) || looks_up_key(test, name)
         }
@@ -775,6 +778,9 @@ fn first_unprefixed_element_name(expr: &Expr) -> Option<String> {
             .into_iter()
             .find_map(|part| first_unprefixed_element_name(part)),
         Expr::For { input, body, .. } => [input, body]
+            .into_iter()
+            .find_map(|part| first_unprefixed_element_name(part)),
+        Expr::Let { value, body, .. } => [value, body]
             .into_iter()
             .find_map(|part| first_unprefixed_element_name(part)),
         Expr::Quantified { input, test, .. } => [input, test]
@@ -1004,6 +1010,9 @@ fn references_variable(expr: &Expr, name: &str) -> bool {
         }
         Expr::For { input, body, .. } => {
             references_variable(input, name) || references_variable(body, name)
+        }
+        Expr::Let { value, body, .. } => {
+            references_variable(value, name) || references_variable(body, name)
         }
         Expr::Quantified { input, test, .. } => {
             references_variable(input, name) || references_variable(test, name)

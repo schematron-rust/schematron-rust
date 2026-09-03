@@ -204,14 +204,16 @@ impl Parser {
     }
 
     fn parse_expr_single_inner(&mut self) -> Result<Expr, ParseError> {
-        // `for` and `some`/`every` are ordinary names until a `$` follows
-        // them, which is what tells them apart from an element called `for`.
+        // `for`, `let`, and `some`/`every` are ordinary names until a `$`
+        // follows them, which is what tells them apart from an element
+        // called `for`.
         if let Some(TokenKind::Name(name) | TokenKind::FunctionName(name)) = self.peek().cloned() {
             let binds_a_variable =
                 matches!(self.tokens.get(self.index + 1).map(|t| &t.kind), Some(TokenKind::Variable(_)));
             if binds_a_variable {
                 match name.as_str() {
                     "for" => return self.parse_for(),
+                    "let" => return self.parse_let(),
                     "some" => return self.parse_quantified(Quantifier::Some),
                     "every" => return self.parse_quantified(Quantifier::Every),
                     _ => {}
@@ -219,6 +221,29 @@ impl Parser {
             }
         }
         self.parse_or()
+    }
+
+    /// `let $v := ExprSingle return ExprSingle`
+    ///
+    /// XPath 3.0 only; a 1.0/2.0 binding rejects the resulting `Expr::Let`
+    /// at compile time. See `Expr::Let`'s doc comment for how this differs
+    /// from `for`.
+    fn parse_let(&mut self) -> Result<Expr, ParseError> {
+        self.index += 1; // `let`
+        let variable = self.expect_variable()?;
+        if !self.eat(&TokenKind::Assign) {
+            return self.error("expected `:=` after the variable of a `let` expression");
+        }
+        let value = self.parse_expr_single()?;
+        if !self.eat_name("return") {
+            return self.error("expected `return` after the value of a `let` expression");
+        }
+        let body = self.parse_expr_single()?;
+        Ok(Expr::Let {
+            variable,
+            value: Box::new(value),
+            body: Box::new(body),
+        })
     }
 
     /// `for $v in ExprSingle return ExprSingle`
@@ -632,8 +657,21 @@ impl Parser {
 
     /// `UnionExpr := PathExpr ('|' PathExpr)*`
     fn parse_union(&mut self) -> Result<Expr, ParseError> {
-        self.parse_binary_chain(Self::parse_path_expr, |kind| {
+        self.parse_binary_chain(Self::parse_simple_map, |kind| {
             matches!(kind, TokenKind::Pipe).then_some(BinaryOp::Union)
+        })
+    }
+
+    /// `SimpleMapExpr := PathExpr ("!" PathExpr)*`
+    ///
+    /// XPath 3.0 only; a 1.0/2.0 binding rejects the resulting
+    /// `BinaryOp::SimpleMap` at compile time, same as every other 3.0-only
+    /// construct. Binds tighter than `|` — real XPath 3.0's grammar nests
+    /// `UnionExpr` around `SimpleMapExpr`, not the other way round, so
+    /// `a ! b | c` groups as `(a ! b) | c`.
+    fn parse_simple_map(&mut self) -> Result<Expr, ParseError> {
+        self.parse_binary_chain(Self::parse_path_expr, |kind| {
+            matches!(kind, TokenKind::Bang).then_some(BinaryOp::SimpleMap)
         })
     }
 
@@ -1264,10 +1302,10 @@ mod tests {
         // left-degenerate `Expr::Binary` tree recursively — the same risk
         // `a_long_chain_of_dynamic_calls_is_bounded_unlike_a_path` above
         // already guards for `(args)(args)…`, just not yet extended to
-        // `or`, `and`, the comparisons, `||`, `+`/`-`, `*`/`div`/`mod`, and
-        // `|` themselves. Every one of them shares `parse_binary_chain`, so
-        // one fix (and one test) covers all eight.
-        for operator in ["or", "and", "=", "<", "||", "+", "*", "|"] {
+        // `or`, `and`, the comparisons, `||`, `+`/`-`, `*`/`div`/`mod`, `|`,
+        // and (added when `!` itself was written, sharing the same
+        // `parse_binary_chain`) `!`. One fix covers all nine.
+        for operator in ["or", "and", "=", "<", "||", "+", "*", "|", "!"] {
             let chain = format!("a{}", format!(" {operator} a").repeat(5000));
             let error = parse(&chain).unwrap_err();
             assert!(
@@ -1379,5 +1417,100 @@ mod tests {
 
         let shallow = format!("a{}", " => f()".repeat(MAX_RECURSION_DEPTH / 2));
         assert!(parse(&shallow).is_ok());
+    }
+
+    #[test]
+    fn parses_the_simple_map_operator() {
+        assert!(matches!(
+            parse("a ! b").unwrap(),
+            Expr::Binary(BinaryOp::SimpleMap, _, _)
+        ));
+    }
+
+    #[test]
+    fn simple_map_chains_left_associatively() {
+        // `a ! b ! c` is `(a ! b) ! c`.
+        let expr = parse("a ! b ! c").unwrap();
+        match expr {
+            Expr::Binary(BinaryOp::SimpleMap, left, _) => {
+                assert!(matches!(*left, Expr::Binary(BinaryOp::SimpleMap, _, _)));
+            }
+            other => panic!("unexpected shape: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn simple_map_binds_tighter_than_union() {
+        // `a ! b | c` must group as `(a ! b) | c` — real XPath 3.0's grammar
+        // nests `UnionExpr` around `SimpleMapExpr`, not the other way round.
+        let expr = parse("a ! b | c").unwrap();
+        match expr {
+            Expr::Binary(BinaryOp::Union, left, _) => {
+                assert!(matches!(*left, Expr::Binary(BinaryOp::SimpleMap, _, _)));
+            }
+            other => panic!("unexpected shape: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn range_binds_looser_than_simple_map() {
+        // `1 to 2 ! f()` must group as `1 to (2 ! f())` — `to` sits above
+        // `!` in this grammar exactly as `RangeExpr` sits above
+        // `SimpleMapExpr` in real XPath 3.0's.
+        let expr = parse("1 to 2 ! f()").unwrap();
+        match expr {
+            Expr::Range(_, right) => {
+                assert!(matches!(*right, Expr::Binary(BinaryOp::SimpleMap, _, _)));
+            }
+            other => panic!("unexpected shape: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_long_chain_of_simple_maps_is_bounded() {
+        // Shares `parse_binary_chain` with the other repeating binary
+        // operators — see `a_long_chain_of_any_repeating_binary_operator_is_bounded`
+        // — but kept as its own test too, since `!` is the one of the nine
+        // whose right operand is evaluated with a shifted context rather
+        // than the shared one, which is a different enough evaluation path
+        // to be worth its own coverage of the same parse-time bound.
+        let chain = format!("a{}", " ! a".repeat(5000));
+        let error = parse(&chain).unwrap_err();
+        assert!(error.message.contains("nested deeper"), "{}", error.message);
+
+        let shallow = format!("a{}", " ! a".repeat(MAX_RECURSION_DEPTH / 2));
+        assert!(parse(&shallow).is_ok());
+    }
+
+    #[test]
+    fn parses_a_let_expression() {
+        let expr = parse("let $x := 1 return $x").unwrap();
+        match expr {
+            Expr::Let {
+                variable,
+                value,
+                body,
+            } => {
+                assert_eq!(variable.to_string(), "x");
+                assert!(matches!(*value, Expr::Number(1.0, _)));
+                assert!(matches!(*body, Expr::Variable(_)));
+            }
+            other => panic!("unexpected shape: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn let_is_still_a_name_without_a_following_variable() {
+        // Same disambiguation `for`/`some`/`every` already use: `let` is
+        // only a keyword directly before `$`, so an element named `let`
+        // parses as an ordinary step.
+        let p = path("let");
+        assert_eq!(p.steps[0].node_test, NodeTest::Name(NameTest::parse("let")));
+    }
+
+    #[test]
+    fn a_let_expression_needs_colon_equal() {
+        let error = parse("let $x 1 return $x").unwrap_err();
+        assert!(error.message.contains(":="), "{}", error.message);
     }
 }

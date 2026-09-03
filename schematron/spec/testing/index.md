@@ -296,6 +296,20 @@ will be reported as slow every time, and that is not a defect. Read the input
 before acting on it: what matters is whether the work is *bounded*, not
 whether it is fast.
 
+The same reasoning applies to memory, and turned up a real-looking **OOM**
+while `!` was being written: a chain of eight nested `!`s, each mapping over
+a `descendant-or-self`/`parent` path on a seven-node fixture document,
+compounds roughly 7× per level — 1, 7, 49, …, 5,764,801 — comfortably inside
+`MAX_SEQUENCE_WORK`'s ten-million-item budget, but with several
+million-item `Vec`s alive at once across the nesting depth, unlike a flat
+range's one. Reproducing it directly (not through the fuzzer) confirmed it:
+0.16 s for a comparable single-level fan-out via `for-each`, 4.5 s for the
+full eight-level chain in an ordinary release build, and — with
+`-rss_limit_mb` raised well past the fuzzer's default — 55 s in the fuzz
+build itself, completing every time rather than exhausting memory outright.
+Legal, bounded, and slower under composition than any one construct alone
+would suggest; not a defect, by the same test as the slow-unit case above.
+
 ## Benchmarks
 
 `criterion` benches in `benches/`:

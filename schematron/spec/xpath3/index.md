@@ -10,7 +10,7 @@ This document states exactly how much of XPath 3.0 itself the crate
 implements. `xpath31` and `xslt31` remain refused: XPath 3.1 adds maps and
 arrays, which this crate does not have.
 
-## Status: phase 3
+## Status: phase 4
 
 XPath 3.0's headline addition is the **function item** — a value that is
 itself a function, which a *dynamic call* can invoke. Phase 1 implemented
@@ -46,10 +46,21 @@ had not already built:
 - **`function-lookup(name, arity)`**, **`function-arity(f)`**,
   **`function-name(f)`** — see "Introspecting a function item" below.
 
-Not in this phase: the simple map operator `!`. It is a hard error naming
-the construct, same as everything this crate does not implement — see
-"What is not implemented" below, and "Why `!` needs more than syntax" for
-why it did not land alongside everything else.
+Phase 4 adds the simple map operator `!` itself, and with it the
+foundation phases 2 and 3 had both recorded as blocking it: `EvalContext`
+can now carry a context item that isn't a node. See "The simple map
+operator" below for what that took and where it still stops short.
+
+Writing up phase 4's own documentation turned up one more gap the earlier
+phases had missed entirely, not merely mis-scoped the way `sort` was:
+**`let $v := E return E`**, XPath 3.0's `let` expression — new to the
+*grammar* in 3.0 (`ExprSingle` gains `LetExpr`; XPath 2.0's `ExprSingle`
+has no such alternative), the same way `!` and `=>` are, and unrelated to
+Schematron's own `<let>` element. It needed nothing beyond what `for` and
+`some`/`every` already use — one more branch in the same "is this name
+followed by `$`" dispatch — so it is fixed in the same commit as phase 4
+rather than deferred to a phase of its own. See "The `let` expression"
+below.
 
 ## What is implemented
 
@@ -66,6 +77,8 @@ schema cannot accidentally acquire 3.0 behavior.
 | `E(E, E, …)` | A dynamic call: `E` must evaluate to exactly one function item |
 | `E => f(…)` | The arrow operator: `E` piped in as `f`'s first argument. See below |
 | `E \|\| E` | String concatenation: the string value of each side, joined |
+| `E1 ! E2` | The simple map operator: `E2` evaluated once per item of `E1`, that item as the context item. See below |
+| `let $v := E return E` | Binds `E`'s value — the whole value, not iterated — to `$v` for the second `E`. See below |
 
 ### Functions
 
@@ -178,29 +191,65 @@ bounded by the same limit a triple-nested `for-each` is. See
   a dynamic lookup failing is an ordinary, expected outcome to test for
   (`exists(function-lookup(...))`), not a broken schema.
 
-## Why `!` needs more than syntax
+## The simple map operator
 
-The simple map operator, `E1 ! E2`, evaluates `E2` once per item of `E1`
-with that item as the **context item** — and `.` is how `E2` refers to it,
-the same way a path step's predicate refers to the node it is testing.
-That is where this crate's model runs out: `EvalContext` — the struct every
-expression evaluates against — holds a context **node** (`node: NodeId`),
-not a context **item**. Every axis, every `.`, every `self::` step reads
-that field, and it is always a real node in the document arena.
+`E1 ! E2` evaluates `E2` once for each item of `E1`, with that item as the
+**context item**, and concatenates the results. Chains left-associatively
+(`E1 ! E2 ! E3` is `(E1 ! E2) ! E3`) and binds tighter than every other
+operator except a path step itself — real XPath 3.0's grammar nests
+`UnionExpr` around `SimpleMapExpr`, so `a ! b | c` means `(a ! b) | c`, and
+`RangeExpr` around that in turn, so `1 to 2 ! f()` means `1 to (2 ! f())`.
+Per F&O, the context *position* and *size* are reset to `1` for every
+evaluation of `E2`, unlike an axis step's predicates, which see the step's
+own position among its siblings.
 
-`for-each()` sidesteps this entirely: its action is a function item with a
-named parameter, and the item it is mapping over is *bound to that name*,
-never routed through `.`. `!` has no such parameter to bind — `.` is the
-only way its right side can see the item at all. So implementing it needs
-`EvalContext` itself to carry an arbitrary item, not just a node, and every
-place `.` is resolved to fall back to that item when there is no node to
-be — a change to the evaluator's foundation, not one function or operator.
-Approximating it by leaving `.` pointing at whatever node was already in
-scope would be silently wrong whenever the mapped-over item is not a node
-— the same failure mode `AGENTS.md`'s "an evaluation error is never
-silently a false assertion" rules out for an assertion's overall result,
-applied to a single silently wrong `.`. Hence `!` stays a hard error,
-naming itself, until that foundation is built.
+`.` is how `E2` refers to the current item — the same way a path step's
+predicate refers to the node it is testing. When the item is a **node**,
+this is exactly `for`'s per-iteration binding, except shifting the context
+item instead of binding a variable: the context node moves to it, and
+every axis, kind test, and function that already reads `EvalContext::node`
+keeps working unchanged.
+
+When the item is **not** a node — an atomic value, or a function item —
+there is no node for `EvalContext::node` to become. That is where phases 2
+and 3 both stopped: this crate's evaluator had never needed to represent
+"the context item is not a node" before, because `for-each()`'s action
+binds its parameter by *name*, never through `.`, and `!` has no name to
+bind. `EvalContext` now carries an optional [`context_item`] beside `node`
+for exactly this case, read in exactly one place — the `Expr::Path` arm of
+`evaluate` — to resolve a bare `.`. Anything wanting a real axis from a
+non-node item (`child::x`, `@a`, even `..`) is a dynamic error naming what
+the context item actually is, because there is no node to walk it from —
+the same answer real XPath 3.0 gives a step over a non-node context item,
+not an approximation invented for this crate.
+
+[`context_item`]: https://docs.rs/schematron/latest/schematron/xpath/struct.EvalContext.html#structfield.context_item
+
+## The `let` expression
+
+`let $v := E1 return E2` evaluates `E1`, binds the result to `$v` as one
+whole value, and evaluates `E2` with that binding in scope. Distinct from
+`for`, which this crate already had: `for $v in E1 return E2` *iterates*
+`E1`, rebinding `$v` to each item in turn and evaluating `E2` once per
+item, so its results concatenate; `let` evaluates `E2` exactly once, with
+`$v` bound to the whole of `E1`'s value regardless of how many items that
+is. `let $v := (1, 2, 3) return count($v)` is `3`; `for $v in (1, 2, 3)
+return count($v)` is `(1, 1, 1)`.
+
+Also distinct from Schematron's own `<let name="..." value="..."/>`
+element, which declares a schema- or rule-scoped variable outside any
+single expression — this is the *XPath* `let`, written inside a test or
+value like any other expression, and scoped only to the `return` that
+follows it. Nesting shadows exactly the way a closure's parameter would:
+`let $x := 1 return let $x := 2 return $x` is `2`.
+
+Parsed the same way `for`, `some`, and `every` already are: `let` is an
+ordinary name until a `$` follows it directly, which is what tells it
+apart from an element or attribute actually named `let`. Not part of any
+earlier phase's own accounting — found by checking this crate's XPath 3.0
+subset against an authoritative feature list while writing up phase 4,
+not against what earlier phases here happened to already record — so it
+carries no phase number of its own; see the status section above.
 
 ## No parameter or return type annotations
 
@@ -220,10 +269,15 @@ None of them silently does something else.
 
 | Construct | Why not |
 |---|---|
-| `!` (the simple map operator) | Needs a context item that can be any value, not just a node; see "Why `!` needs more than syntax" above |
 | `sort` | Not actually XPath 3.0: real F&O 3.0 has no `fn:sort` at all — it was added in 3.1, alongside maps and arrays. Not a gap in this phase; see the next row |
 | Maps and arrays | XPath 3.1, not 3.0; needs the `xpath31`/`xslt31` bindings, which remain refused |
 | `xpath31`, `xslt31` bindings | Still refused; use `allow_unknown_query_binding` |
+| `Q{uri}local` (EQNames) | Not parsed anywhere a name is written — this crate resolves prefixes via `<ns>` declarations only |
+| Union types in casts and signatures (`(xs:integer \| xs:string)`) | No union item type exists in this crate's type model; `instance of`/`cast as`/`treat as` take one atomic type, and inline functions parse no type annotations at all — see below |
+
+Two real gaps remain, found the same way `let` was: checking this crate's
+XPath 3.0 subset against an authoritative list of what 3.0 actually added,
+not against what earlier phases here happened to already record.
 
 ## Using it
 
@@ -242,6 +296,12 @@ None of them silently does something else.
       </assert>
       <assert test="fold-left(line/@amount, 0, function($sum, $x) { $sum + number($x) }) = @total">
         The invoice total must be the sum of every line amount.
+      </assert>
+      <assert test="let $names := line/@sku return count($names) = count(distinct-values($names))">
+        Every line's SKU must be unique within the invoice.
+      </assert>
+      <assert test="every $amount in (line/@amount ! number(.)) satisfies $amount &gt; 0">
+        Every line amount must be positive.
       </assert>
     </rule>
   </pattern>
