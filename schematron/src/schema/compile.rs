@@ -436,7 +436,7 @@ impl Schema {
                 checked?;
             }
 
-            Expr::InlineFunction { .. } | Expr::DynamicCall { .. } => {
+            Expr::InlineFunction { .. } | Expr::DynamicCall { .. } | Expr::Arrow(_) => {
                 Schema::check_variables_v3(expr, source, location, bindable, enclosing)?;
             }
 
@@ -484,7 +484,14 @@ impl Schema {
                 }
                 Ok(())
             }
-            _ => unreachable!("caller matches only these two XPath 3.0 variants"),
+            // Pure sugar around the `Function` or `DynamicCall` above that
+            // the parser already built — see `Expr::Arrow`'s doc comment —
+            // so checking its variables is exactly checking the call it
+            // holds.
+            Expr::Arrow(called) => {
+                Schema::check_variables(called, source, location, bindable, enclosing)
+            }
+            _ => unreachable!("caller matches only these three XPath 3.0 variants"),
         }
     }
 
@@ -519,6 +526,9 @@ impl Schema {
                         source,
                         location,
                     )?;
+                }
+                if op.is_string_concat() {
+                    self.require_v3("the `||` string concatenation operator", source, location)?;
                 }
                 self.check_expression(left, source, location)?;
                 self.check_expression(right, source, location)?;
@@ -578,6 +588,14 @@ impl Schema {
             }
             Expr::InlineFunction { .. } | Expr::NamedFunctionRef { .. } | Expr::DynamicCall { .. } => {
                 self.check_v3_expression(expr, source, location)?;
+            }
+            // The wrapper's own gate, checked before recursing into the
+            // `Function` or `DynamicCall` it holds — so `X => f()` under a
+            // 1.0/2.0 binding is refused as the arrow operator, not
+            // whatever `f()` on its own would have been.
+            Expr::Arrow(called) => {
+                self.require_v3("the arrow operator `=>`", source, location)?;
+                self.check_expression(called, source, location)?;
             }
 
             Expr::Path(path) => {
@@ -1047,6 +1065,7 @@ fn calls_document_function(expr: &Expr) -> bool {
         Expr::DynamicCall { function, args } => {
             calls_document_function(function) || args.iter().any(calls_document_function)
         }
+        Expr::Arrow(called) => calls_document_function(called),
         Expr::Path(path) => {
             let start = match &path.start {
                 PathStart::Expr(expr, predicates) => {

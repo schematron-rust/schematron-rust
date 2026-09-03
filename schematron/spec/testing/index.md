@@ -274,6 +274,21 @@ to a billion items — from a 79-byte expression. The fix is a budget shared by
 every nested construct in one expression, so the product is what is bounded;
 see [conformance/](../conformance/index.md) for both limits.
 
+Later, a stack overflow: a few hundred `|` in a row parsed without error —
+`MAX_RECURSION_DEPTH` bounds the parser's own call stack, and none of the
+eight repeating binary-operator productions (`or`, `and`, the comparisons,
+`||`, `+`/`-`, `*`/`div`/`mod`, `|`) spent any of that budget on how long a
+chain of themselves ran, because each is parsed by a plain loop, not
+recursion. But `evaluate` still walks the `Expr::Binary` tree the loop built
+recursively, one nesting level per repetition — a location path's steps are
+exempt from the same limit for exactly the opposite reason, because
+`evaluate_path` walks those in a loop too. The fix, `parse_binary_chain` in
+`src/xpath/parser.rs`, is what all eight now share, so a chain long enough
+to reach `evaluate`'s actual stack limit — found empirically at a few
+hundred repetitions in an unoptimised build — is instead a clean parse error
+naming the depth, at exactly the threshold every other nested construct
+already used.
+
 libFuzzer reports a **slow unit** long before the crate's limits are reached,
 because its threshold is measured against a microsecond budget. A range of
 938,020 items is legal, documented, and takes about a third of a second — it

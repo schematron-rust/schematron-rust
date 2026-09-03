@@ -1,12 +1,13 @@
-//! Integration tests for the XPath 3.0 phase-1 subset: function items,
-//! inline function expressions, named function references, dynamic calls,
-//! and `for-each()` — the one function that needed all of the above.
+//! Integration tests for the XPath 3.0 subset this crate implements:
+//! function items (inline function expressions, named function references,
+//! dynamic calls, and `for-each()`, phase 1), plus the arrow operator `=>`
+//! and the string concatenation operator `||` (phase 2).
 //!
 //! Same two properties as `xpath2.rs`, one level up: the additions must
-//! **work** under an `xslt3`/`xpath3` binding, and everything outside this
-//! phase — `=>`, `||`, `filter`/`fold-left`/`fold-right`/`sort`, maps and
-//! arrays — must be a **hard error naming the construct**. See
-//! `spec/xpath3/`.
+//! **work** under an `xslt3`/`xpath3` binding, and everything outside the
+//! implemented subset — the simple map operator `!`,
+//! `filter`/`fold-left`/`fold-right`/`sort`, maps and arrays — must be a
+//! **hard error naming the construct**. See `spec/xpath3/`.
 
 use assertables::*;
 use schematron::{Document, Schema};
@@ -187,4 +188,75 @@ fn for_each_shares_the_nested_construct_budget() {
         "<a/>",
     );
     assert_contains!(message, "nested");
+}
+
+// Phase 2: the arrow operator `=>` and the string concatenation operator
+// `||`.
+
+#[test]
+fn the_arrow_operator_pipes_the_left_operand_in_as_the_first_argument() {
+    // `'abc' => string-length()` is sugar for `string-length('abc')`.
+    assert!(check("'abc' => string-length() = 3", "<a/>"));
+}
+
+#[test]
+fn arrow_calls_chain() {
+    // Each `=>` pipes in the result of the one before it.
+    assert!(check("'ABC' => lower-case() => string-length() = 3", "<a/>"));
+}
+
+#[test]
+fn the_arrow_operator_can_call_a_dynamic_target() {
+    assert!(check("for $f in string-length#1 return 'abcd' => $f() = 4", "<a/>"));
+    assert!(check("'abcd' => (string-length#1)() = 4", "<a/>"));
+}
+
+#[test]
+fn the_arrow_operator_passes_further_arguments_after_the_piped_in_one() {
+    // `'a-b-c' => tokenize('-')` is sugar for `tokenize('a-b-c', '-')`.
+    assert!(check("count('a-b-c' => tokenize('-')) = 3", "<a/>"));
+}
+
+#[test]
+fn the_arrow_operator_is_refused_under_xpath_two() {
+    let message = compile_error("xslt2", "'abc' => string-length()");
+    assert_contains!(message, "XPath 3.0");
+    assert_contains!(message, "arrow operator");
+}
+
+#[test]
+fn string_concatenation_joins_the_string_values_of_both_operands() {
+    assert!(check("('a' || 'b') = 'ab'", "<a/>"));
+    // Each operand is atomized like `concat()`'s arguments are, so a
+    // number and a node-set both convert.
+    assert!(check("(1 || 2) = '12'", "<a/>"));
+    assert!(check("(b || '!') = 'x!'", "<a><b>x</b></a>"));
+}
+
+#[test]
+fn string_concatenation_binds_tighter_than_a_surrounding_comparison() {
+    // `'a' || 'b' = 'ab'` groups as `('a' || 'b') = 'ab'`, not
+    // `'a' || ('b' = 'ab')` — see the parser precedence test alongside it.
+    assert!(check("'a' || 'b' = 'ab'", "<a/>"));
+}
+
+#[test]
+fn string_concatenation_is_refused_under_xpath_two() {
+    let message = compile_error("xslt2", "('a' || 'b') = 'ab'");
+    assert_contains!(message, "XPath 3.0");
+    assert_contains!(message, "||");
+}
+
+#[test]
+fn string_concatenation_rejects_a_function_item() {
+    let message = eval_error("(string-length#1 || 'x')", "<a/>");
+    assert_contains!(message, "function item");
+}
+
+#[test]
+fn the_simple_map_operator_is_still_not_implemented() {
+    // `!` remains a hard error naming the construct — see `spec/xpath3/`
+    // for why it needs more than phase 2 built.
+    let message = compile_error("xslt3", "(1, 2, 3) ! (. * 2)");
+    assert_contains!(message, "simple map operator");
 }

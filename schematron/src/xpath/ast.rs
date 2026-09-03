@@ -116,6 +116,17 @@ pub enum Expr {
         /// The argument expressions.
         args: Vec<Expr>,
     },
+    /// `E => f(…)` or `E => $f(…)` — XPath 3.0's arrow operator.
+    ///
+    /// Pure sugar: the parser prepends `E` as the call's first argument and
+    /// builds the call itself as an ordinary [`Expr::Function`] (a named
+    /// target) or [`Expr::DynamicCall`] (`$f`, or a parenthesized
+    /// expression) — so evaluation just unwraps this node and evaluates
+    /// what it holds; there is no separate evaluation logic for it. The
+    /// wrapper exists only so a 1.0 or 2.0 binding can reject the operator
+    /// by name, `=>`, rather than silently accepting whatever ordinary call
+    /// it desugars to.
+    Arrow(Box<Expr>),
 }
 
 /// Which of XPath 2.0's four type operators an [`Expr::TypeOp`] applies.
@@ -324,6 +335,8 @@ pub enum BinaryOp {
     NodeBefore,
     /// `>>` — whether it follows.
     NodeAfter,
+    /// `||` — XPath 3.0's string concatenation operator.
+    Concat,
 }
 
 impl BinaryOp {
@@ -348,6 +361,12 @@ impl BinaryOp {
                 | BinaryOp::ValueGreater
                 | BinaryOp::ValueGreaterEqual
         )
+    }
+
+    /// Whether this is XPath 3.0's string concatenation operator, `||`.
+    #[must_use]
+    pub const fn is_string_concat(self) -> bool {
+        matches!(self, BinaryOp::Concat)
     }
 
     /// The operator as written, for error messages.
@@ -377,6 +396,7 @@ impl BinaryOp {
             BinaryOp::NodeIs => "is",
             BinaryOp::NodeBefore => "<<",
             BinaryOp::NodeAfter => ">>",
+            BinaryOp::Concat => "||",
         }
     }
 }

@@ -11,7 +11,7 @@ has to discover a gap by hitting it in production.
 | `xslt` | Yes — XPath 1.0 plus `document()` and `current()` |
 | `xpath` | Yes — XPath 1.0 |
 | `xslt2`, `xpath2` | Partly — phases 1 through 9 of the subset in [xpath2/](../xpath2/index.md) |
-| `xslt3`, `xpath3` | Partly — phase 1 of the subset in [xpath3/](../xpath3/index.md) |
+| `xslt3`, `xpath3` | Partly — phases 1 and 2 of the subset in [xpath3/](../xpath3/index.md) |
 | `xpath31`, `xslt31` | No — rejected, unless `allow_unknown_query_binding` |
 
 **Read [xpath2/](../xpath2/index.md) before declaring `xslt2`.** The subset covers
@@ -29,9 +29,10 @@ genuinely disagree — chiefly, where XPath 2.0 raises a type error and XPath
 **Read [xpath3/](../xpath3/index.md) before declaring `xslt3`.** Phase 1
 covers function items — inline function expressions, named function
 references, dynamic calls — and `for-each()`, the one function that needed
-them. Everything XPath 1.0 and 2.0 implement is available too, at exactly
-their own semantics; `=>`, `||`, `!`, the rest of the higher-order function
-library, and maps and arrays (XPath 3.1) are not implemented.
+them. Phase 2 adds the arrow operator `=>` and string concatenation `||`.
+Everything XPath 1.0 and 2.0 implement is available too, at exactly their
+own semantics; the simple map operator `!`, the rest of the higher-order
+function library, and maps and arrays (XPath 3.1) are not implemented.
 
 XPath 3.1 adds more than this crate implements, so it stays refused:
 accepting it would overclaim. `allow_unknown_query_binding` compiles such a

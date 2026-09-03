@@ -92,6 +92,10 @@ pub(crate) enum TokenKind {
     LeftBrace,
     /// `}` — closes it.
     RightBrace,
+    /// `||` — XPath 3.0's string concatenation operator.
+    DoublePipe,
+    /// `=>` — XPath 3.0's arrow operator.
+    Arrow,
 }
 
 impl fmt::Display for TokenKind {
@@ -142,6 +146,8 @@ impl fmt::Display for TokenKind {
             TokenKind::Hash => f.write_str("#"),
             TokenKind::LeftBrace => f.write_str("{"),
             TokenKind::RightBrace => f.write_str("}"),
+            TokenKind::DoublePipe => f.write_str("||"),
+            TokenKind::Arrow => f.write_str("=>"),
         }
     }
 }
@@ -257,6 +263,8 @@ impl<'a> Lexer<'a> {
                     | TokenKind::NodeIs
                     | TokenKind::NodeBefore
                     | TokenKind::NodeAfter
+                    | TokenKind::DoublePipe
+                    | TokenKind::Arrow
             ),
         }
     }
@@ -320,8 +328,13 @@ impl<'a> Lexer<'a> {
                     self.push(TokenKind::At, start);
                 }
                 b'|' => {
-                    self.position += 1;
-                    self.push(TokenKind::Pipe, start);
+                    if self.peek_at(1) == Some(b'|') {
+                        self.position += 2;
+                        self.push(TokenKind::DoublePipe, start);
+                    } else {
+                        self.position += 1;
+                        self.push(TokenKind::Pipe, start);
+                    }
                 }
                 b'?' => {
                     self.position += 1;
@@ -348,15 +361,25 @@ impl<'a> Lexer<'a> {
                     self.push(TokenKind::Minus, start);
                 }
                 b'=' => {
-                    self.position += 1;
-                    self.push(TokenKind::Equal, start);
+                    if self.peek_at(1) == Some(b'>') {
+                        self.position += 2;
+                        self.push(TokenKind::Arrow, start);
+                    } else {
+                        self.position += 1;
+                        self.push(TokenKind::Equal, start);
+                    }
                 }
                 b'!' => {
                     if self.peek_at(1) == Some(b'=') {
                         self.position += 2;
                         self.push(TokenKind::NotEqual, start);
                     } else {
-                        return Err(Lexer::error(start, "'!' must be part of '!='"));
+                        return Err(Lexer::error(
+                            start,
+                            "'!' alone is XPath 3.0's simple map operator, which this \
+                             crate does not implement; see spec/xpath3/. Otherwise '!' \
+                             must be part of '!='",
+                        ));
                     }
                 }
                 b'<' => {
@@ -763,6 +786,32 @@ mod tests {
     #[test]
     fn unterminated_literal_is_an_error() {
         assert!(tokenize("'abc").is_err());
+    }
+
+    #[test]
+    fn lexes_the_xpath_three_phase_two_tokens() {
+        assert_eq!(
+            kinds("a || b"),
+            vec![
+                TokenKind::Name("a".into()),
+                TokenKind::DoublePipe,
+                TokenKind::Name("b".into()),
+            ]
+        );
+        assert_eq!(
+            kinds("$x => f()"),
+            vec![
+                TokenKind::Variable("x".into()),
+                TokenKind::Arrow,
+                TokenKind::FunctionName("f".into()),
+                TokenKind::LeftParen,
+                TokenKind::RightParen,
+            ]
+        );
+        // A lone `|` is still the union operator, not a truncated `||`.
+        assert_eq!(kinds("a | b")[1], TokenKind::Pipe);
+        // A lone `=` is still equality, not a truncated `=>`.
+        assert_eq!(kinds("a = b")[1], TokenKind::Equal);
     }
 
     #[test]

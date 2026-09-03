@@ -149,6 +149,29 @@
   higher-order function library (`filter`, `fold-left`, `fold-right`,
   `sort`, …), and maps and arrays, which are XPath 3.1 and stay behind the
   still-refused `xpath31`/`xslt31` bindings. See `spec/xpath3/`.
+- **XPath 3.0 phase 2: the arrow operator and string concatenation.** `E =>
+  f(…)` and `E || E`, the two remaining 3.0 operators that needed no new
+  evaluation machinery. The arrow operator is pure sugar — the parser
+  prepends the left operand as the target's first argument and builds an
+  ordinary `Expr::Function` (a named target) or `Expr::DynamicCall` (`$f`,
+  or a parenthesized expression); a new `Expr::Arrow` wraps that only so a
+  1.0/2.0 binding can reject `=>` by name rather than accepting whatever
+  call it desugars to. `||` atomizes both sides the way `concat()`'s
+  arguments already do. The simple map operator `!` did not come with
+  them: unlike `for-each()`, whose action binds the mapped-over item to a
+  named parameter, `!`'s right side can only see its item through `.`, and
+  this crate's `EvalContext` holds a context *node*, not a context *item*
+  — approximating it would mean `.` silently pointing at the wrong thing
+  whenever the item isn't a node, which is the one failure mode this
+  crate refuses to ship. See `spec/xpath3/`.
+- A stack overflow in eight repeating binary operators (`or`, `and`, the
+  comparisons, `||`, `+`/`-`, `*`/`div`/`mod`, `|`), found by fuzzing:
+  each was parsed by a loop that spent none of `MAX_RECURSION_DEPTH`'s
+  budget on how long a chain of itself ran, but the tree it built is still
+  walked recursively at evaluation time — unlike a location path's steps,
+  which are exempt from the same limit because they are walked in a loop
+  too. A shared `parse_binary_chain` helper closes the gap for all eight
+  at once.
 
 ## Next
 
