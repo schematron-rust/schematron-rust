@@ -172,6 +172,20 @@
   which are exempt from the same limit because they are walked in a loop
   too. A shared `parse_binary_chain` helper closes the gap for all eight
   at once.
+- **XPath 3.0 phase 3: the rest of the higher-order sequence functions,
+  and function-item introspection.** `filter`, `fold-left`, `fold-right`,
+  and `for-each-pair` are `for-each()`'s siblings, sharing its multiplying
+  construct's budget (`SequenceScope`) so a `filter` nested inside a
+  `for-each` is bounded the same way two nested `for-each`es already are.
+  `function-lookup`, `function-arity`, and `function-name` introspect a
+  function item itself. None needed new evaluation machinery beyond what
+  phase 1 already built for `for-each()`; `fold-left`/`fold-right` needed
+  only threading `$zero` through as a whole `Value` rather than a single
+  `Item`, since it need not be one item. Auditing what remained also
+  caught a factual error carried since phase 1: `sort` was listed as an
+  unwritten XPath 3.0 function, but real F&O 3.0 has no `fn:sort` at all
+  — it is new in 3.1, alongside maps and arrays, so it was never a gap in
+  this phase to begin with. See `spec/xpath3/`.
 
 ## Next
 

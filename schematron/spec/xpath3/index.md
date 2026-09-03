@@ -10,7 +10,7 @@ This document states exactly how much of XPath 3.0 itself the crate
 implements. `xpath31` and `xslt31` remain refused: XPath 3.1 adds maps and
 arrays, which this crate does not have.
 
-## Status: phase 2
+## Status: phase 3
 
 XPath 3.0's headline addition is the **function item** — a value that is
 itself a function, which a *dynamic call* can invoke. Phase 1 implemented
@@ -26,7 +26,7 @@ for:
   needed all of the above; see [spec/xpath2/](../xpath2/index.md)'s history
   of it being misfiled as an XPath 2.0 sequence function before that.
 
-Phase 2 adds the two remaining 3.0 operators that need no new evaluation
+Phase 2 added the two remaining 3.0 operators that need no new evaluation
 machinery — both are pure syntax, checked at the same compile-time gate as
 everything else version-specific:
 
@@ -35,12 +35,21 @@ everything else version-specific:
 - **String concatenation `||`**: `E || E`, atomizing each side the way
   `concat()`'s arguments already do.
 
-Not in this phase: the simple map operator `!`, and the rest of the
-higher-order function library (`filter`, `fold-left`, `fold-right`, `sort`,
-`function-lookup`, and friends). Each is a hard error naming the construct,
-same as everything this crate does not implement — see "What is not
-implemented" below, and "Why `!` needs more than syntax" for why it did not
-land alongside `=>` and `||`.
+Phase 3 finishes the higher-order sequence function library `for-each()`
+belongs to, plus the functions that introspect a function item itself
+rather than applying one — none of them needed anything phases 1 and 2
+had not already built:
+
+- **`filter(seq, predicate)`**, **`fold-left(seq, zero, f)`**,
+  **`fold-right(seq, zero, f)`**, **`for-each-pair(seq1, seq2, f)`** — see
+  "The rest of the higher-order sequence functions" below.
+- **`function-lookup(name, arity)`**, **`function-arity(f)`**,
+  **`function-name(f)`** — see "Introspecting a function item" below.
+
+Not in this phase: the simple map operator `!`. It is a hard error naming
+the construct, same as everything this crate does not implement — see
+"What is not implemented" below, and "Why `!` needs more than syntax" for
+why it did not land alongside everything else.
 
 ## What is implemented
 
@@ -63,6 +72,13 @@ schema cannot accidentally acquire 3.0 behavior.
 | Function | Notes |
 |---|---|
 | `for-each(sequence, action)` | Applies `action` to each item, in order, and concatenates the results |
+| `filter(sequence, predicate)` | Keeps the items `predicate`'s effective boolean value holds for |
+| `fold-left(sequence, zero, f)` | Combines from the left: `f(f(f(zero, i1), i2), i3)…` |
+| `fold-right(sequence, zero, f)` | Combines from the right: `f(i1, f(i2, f(i3, zero)))` |
+| `for-each-pair(sequence1, sequence2, f)` | Applies `f` to corresponding items of both, stopping at the shorter |
+| `function-lookup(name, arity)` | The named built-in at that arity as a function item, or the empty sequence when there isn't one |
+| `function-arity(f)` | `f`'s arity |
+| `function-name(f)` | `f`'s name, or the empty sequence for an inline function, which has none |
 
 ## Function items are not values in the usual sense
 
@@ -114,6 +130,54 @@ function item is still rejected by name. The wrapper exists only so a 1.0
 or 2.0 binding can reject `=>` itself by name, rather than accepting
 whichever ordinary call it would otherwise desugar to.
 
+## The rest of the higher-order sequence functions
+
+`for-each()` was the one the function-item machinery existed for; the
+other four are its siblings, and none needed anything new:
+
+- **`filter(seq, predicate)`** calls `predicate` once per item, keeping the
+  item when the result's effective boolean value holds — the same
+  conversion `if`, `some`, and `every` already apply to their own
+  conditions, not a stricter `xs:boolean`-only check.
+- **`fold-left(seq, zero, f)`** and **`fold-right(seq, zero, f)`** combine
+  a sequence into one value by repeated application, from opposite ends.
+  `zero` need not be a single item — it is threaded through as a whole
+  value, exactly like a `let`-bound one — so `fold-left((), 'seed', …)`
+  legitimately returns `'seed'` unevaluated for an empty sequence. The two
+  are genuinely different, not just written in reverse: `fold-left((1, 2,
+  3), 0, function($acc, $x) { $acc - $x })` is `((0 - 1) - 2) - 3 = -6`,
+  while `fold-right((1, 2, 3), 0, function($x, $acc) { $x - $acc })` is
+  `1 - (2 - (3 - 0)) = 2` — note the argument order also flips: the
+  running value is `$f`'s *first* parameter in `fold-left` and its
+  *second* in `fold-right`, matching which side of the combination it sits
+  on.
+- **`for-each-pair(seq1, seq2, f)`** applies `f` to corresponding items of
+  both sequences and concatenates the results. A length mismatch is not an
+  error — F&O does not treat it as one — the shorter sequence simply
+  decides how many pairs there are.
+
+Every one of these is a genuinely multiplying construct, exactly like
+`for-each()`, `for`, and a `to` range: nesting them multiplies the work,
+and they all draw on the *same* shared budget those already do, not one
+of their own — a `filter` inside a `for-each` inside another `for-each` is
+bounded by the same limit a triple-nested `for-each` is. See
+[spec/conformance/](../conformance/index.md)'s limits table.
+
+## Introspecting a function item
+
+- **`function-arity(f)`** returns how many parameters `f` takes.
+- **`function-name(f)`** returns the name a named function reference
+  (`name#arity`) carries, or the empty sequence for an inline function
+  expression, which was never given one.
+- **`function-lookup(name, arity)`** is the dynamic counterpart to
+  `name#arity`: where that syntax names a function literally and is
+  checked when the schema compiles — a typo is a compile-time error naming
+  the construct — `$name` here is an ordinary computed string, so there is
+  nothing to check until the call actually runs. A lookup that finds
+  nothing is not an error; F&O specifies the empty sequence instead, since
+  a dynamic lookup failing is an ordinary, expected outcome to test for
+  (`exists(function-lookup(...))`), not a broken schema.
+
 ## Why `!` needs more than syntax
 
 The simple map operator, `E1 ! E2`, evaluates `E2` once per item of `E1`
@@ -157,7 +221,7 @@ None of them silently does something else.
 | Construct | Why not |
 |---|---|
 | `!` (the simple map operator) | Needs a context item that can be any value, not just a node; see "Why `!` needs more than syntax" above |
-| `filter`, `fold-left`, `fold-right`, `for-each-pair`, `sort`, `function-lookup`, `function-arity`, `function-name` | Not yet implemented; each needs function items, which now exist, but none has been written |
+| `sort` | Not actually XPath 3.0: real F&O 3.0 has no `fn:sort` at all — it was added in 3.1, alongside maps and arrays. Not a gap in this phase; see the next row |
 | Maps and arrays | XPath 3.1, not 3.0; needs the `xpath31`/`xslt31` bindings, which remain refused |
 | `xpath31`, `xslt31` bindings | Still refused; use `allow_unknown_query_binding` |
 
@@ -175,6 +239,9 @@ None of them silently does something else.
       </assert>
       <assert test="(@prefix || @number) = @id">
         The invoice id must be the prefix and the number concatenated.
+      </assert>
+      <assert test="fold-left(line/@amount, 0, function($sum, $x) { $sum + number($x) }) = @total">
+        The invoice total must be the sum of every line amount.
       </assert>
     </rule>
   </pattern>

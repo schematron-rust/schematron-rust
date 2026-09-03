@@ -3,6 +3,40 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.13.0
+
+### Added
+
+- **XPath 3.0 phase 3: the rest of the higher-order sequence functions,
+  and function-item introspection.**
+  - `filter(sequence, predicate)`: keeps the items `predicate`'s effective
+    boolean value holds for.
+  - `fold-left(sequence, zero, f)` and `fold-right(sequence, zero, f)`:
+    combine a sequence into one value from the left or the right
+    respectively — genuinely different, not mirror images written the
+    same way: `fold-left`'s running value is `f`'s first parameter,
+    `fold-right`'s is its second, and `zero` need not be a single item,
+    so it is threaded through as a whole value.
+  - `for-each-pair(sequence1, sequence2, f)`: applies `f` to corresponding
+    items of both sequences and concatenates the results, stopping at the
+    shorter one — a length mismatch is not an error.
+  - `function-lookup(name, arity)`, `function-arity(f)`,
+    `function-name(f)`: introspect a function item. `function-lookup` is
+    the dynamic counterpart to `name#arity` — a computed name checked at
+    call time, returning the empty sequence rather than an error when
+    nothing matches, since F&O treats a dynamic lookup finding nothing as
+    an ordinary outcome to test for, not a broken schema.
+  - `filter`, `fold-left`, `fold-right`, and `for-each-pair` are
+    multiplying constructs exactly like `for-each()`, and share its
+    budget, not one of their own: a `filter` nested inside a `for-each` is
+    bounded the same way two nested `for-each`es already are.
+  - Not in this phase: the simple map operator `!`, still blocked on the
+    same context-item foundation phase 2 recorded. `sort` is not listed
+    as a gap at all: real XPath 3.0 F&O has no `fn:sort` — it is new in
+    3.1, alongside maps and arrays, and was a factual error inherited
+    from phase 1's own accounting, corrected here. See
+    [spec/xpath3/](spec/xpath3/index.md).
+
 ## 0.12.0
 
 ### Added

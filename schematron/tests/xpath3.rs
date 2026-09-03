@@ -1,13 +1,16 @@
 //! Integration tests for the XPath 3.0 subset this crate implements:
 //! function items (inline function expressions, named function references,
-//! dynamic calls, and `for-each()`, phase 1), plus the arrow operator `=>`
-//! and the string concatenation operator `||` (phase 2).
+//! dynamic calls, and `for-each()`, phase 1), the arrow operator `=>` and
+//! the string concatenation operator `||` (phase 2), and the rest of the
+//! higher-order sequence function library plus function-item introspection
+//! (`filter`, `fold-left`, `fold-right`, `for-each-pair`,
+//! `function-lookup`, `function-arity`, `function-name`, phase 3).
 //!
 //! Same two properties as `xpath2.rs`, one level up: the additions must
 //! **work** under an `xslt3`/`xpath3` binding, and everything outside the
-//! implemented subset — the simple map operator `!`,
-//! `filter`/`fold-left`/`fold-right`/`sort`, maps and arrays — must be a
-//! **hard error naming the construct**. See `spec/xpath3/`.
+//! implemented subset — the simple map operator `!`, `sort` (which is
+//! XPath 3.1, not 3.0), maps and arrays — must be a **hard error naming
+//! the construct**. See `spec/xpath3/`.
 
 use assertables::*;
 use schematron::{Document, Schema};
@@ -259,4 +262,142 @@ fn the_simple_map_operator_is_still_not_implemented() {
     // for why it needs more than phase 2 built.
     let message = compile_error("xslt3", "(1, 2, 3) ! (. * 2)");
     assert_contains!(message, "simple map operator");
+}
+
+// Phase 3: the rest of the higher-order sequence function library, and
+// introspection over function items.
+
+#[test]
+fn filter_keeps_items_the_predicate_holds_for() {
+    assert!(check(
+        "count(filter((1, 2, 3, 4, 5), function($x) { $x mod 2 = 0 })) = 2",
+        "<a/>"
+    ));
+    assert!(check(
+        "sum(filter((1, 2, 3, 4, 5), function($x) { $x mod 2 = 0 })) = 6",
+        "<a/>"
+    ));
+    assert!(check("count(filter((), function($x) { true() })) = 0", "<a/>"));
+}
+
+#[test]
+fn filter_is_refused_under_xpath_two() {
+    let message = compile_error("xslt2", "filter((1, 2), function($x) { true() })");
+    assert_contains!(message, "XPath 3.0");
+}
+
+#[test]
+fn fold_left_combines_from_the_left() {
+    assert!(check(
+        "fold-left((1, 2, 3, 4), 0, function($acc, $x) { $acc + $x }) = 10",
+        "<a/>"
+    ));
+    // Order matters: `((0 - 1) - 2) - 3 = -6`, not `1 - (2 - (3 - 0)) = 2`.
+    assert!(check(
+        "fold-left((1, 2, 3), 0, function($acc, $x) { $acc - $x }) = -6",
+        "<a/>"
+    ));
+    assert!(check(
+        "fold-left((), 'seed', function($acc, $x) { concat($acc, $x) }) = 'seed'",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn fold_right_combines_from_the_right() {
+    // The mirror image of the `fold-left` subtraction case above:
+    // `1 - (2 - (3 - 0)) = 2`.
+    assert!(check(
+        "fold-right((1, 2, 3), 0, function($x, $acc) { $x - $acc }) = 2",
+        "<a/>"
+    ));
+    assert!(check(
+        "fold-right((), 'seed', function($x, $acc) { concat($x, $acc) }) = 'seed'",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn for_each_pair_stops_at_the_shorter_sequence() {
+    assert!(check(
+        "sum(for-each-pair((1, 2, 3), (10, 20, 30, 40), function($a, $b) { $a + $b })) = 66",
+        "<a/>"
+    ));
+    assert!(check(
+        "count(for-each-pair((1, 2, 3), (10, 20, 30, 40), function($a, $b) { $a + $b })) = 3",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn function_arity_reports_a_function_items_arity() {
+    assert!(check("function-arity(string-length#1) = 1", "<a/>"));
+    assert!(check("function-arity(concat#3) = 3", "<a/>"));
+    assert!(check(
+        "function-arity(function($a, $b) { $a }) = 2",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn function_name_reports_a_named_references_name_and_nothing_for_a_closure() {
+    assert!(check("function-name(string-length#1) = 'string-length'", "<a/>"));
+    assert!(check(
+        "empty(function-name(function($x) { $x }))",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn function_lookup_finds_a_real_function_at_the_right_arity() {
+    assert!(check("function-lookup('string-length', 1)('abcd') = 4", "<a/>"));
+}
+
+#[test]
+fn function_lookup_is_the_empty_sequence_when_nothing_matches() {
+    for test in [
+        "empty(function-lookup('not-a-real-function', 1))",
+        // A real function, but not at this arity.
+        "empty(function-lookup('string-length', 9))",
+    ] {
+        assert!(check(test, "<a/>"), "{test}");
+    }
+}
+
+#[test]
+fn function_lookup_rejects_a_function_item_as_either_argument() {
+    let message = eval_error("function-lookup(string-length#1, 1)", "<a/>");
+    assert_contains!(message, "function item");
+}
+
+#[test]
+fn higher_order_functions_are_refused_under_xpath_two() {
+    for test in [
+        "fold-left((1), 0, function($acc, $x) { $acc })",
+        "fold-right((1), 0, function($x, $acc) { $acc })",
+        "for-each-pair((1), (1), function($a, $b) { $a })",
+        "function-lookup('string-length', 1)",
+        "function-arity(string-length#1)",
+        "function-name(string-length#1)",
+    ] {
+        let message = compile_error("xslt2", test);
+        assert_contains!(message, "XPath 3.0", "{test}");
+    }
+}
+
+#[test]
+fn higher_order_functions_share_the_nested_construct_budget() {
+    // The same shared budget `for-each` already draws on — see
+    // `for_each_shares_the_nested_construct_budget` above — is what every
+    // higher-order function in this phase spends against too, not a
+    // separate one per function.
+    let message = eval_error(
+        "count(for-each(1 to 999, function($i) { \
+           filter(1 to 999, function($j) { \
+             count(for-each(1 to 999, function($k) { $k })) > 0 \
+           }) \
+         }))",
+        "<a/>",
+    );
+    assert_contains!(message, "nested");
 }
