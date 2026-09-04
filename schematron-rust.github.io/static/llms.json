@@ -32,7 +32,7 @@
         { "title": "spec/validation/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/validation/index.md", "description": "The validation algorithm, exactly." },
         { "title": "spec/xpath/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xpath/index.md", "description": "The XPath 1.0 engine — axes, functions, conversions." },
         { "title": "spec/xpath2/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xpath2/index.md", "description": "The XPath 2.0 subset, and where it still behaves like 1.0." },
-        { "title": "spec/xpath3/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xpath3/index.md", "description": "The XPath 3.0 subset: function items, =>, ||, !, let, the higher-order sequence functions." },
+        { "title": "spec/xpath3/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xpath3/index.md", "description": "The XPath 3.0 subset: function items, =>, ||, !, let, Q{uri}local, the higher-order sequence functions." },
         { "title": "spec/xml/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/xml/index.md", "description": "The XML parser and its data model." },
         { "title": "spec/parsing/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/parsing/index.md", "description": "The five schema compilation passes." },
         { "title": "spec/svrl/", "url": "https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/svrl/index.md", "description": "The SVRL report format, read and written." },

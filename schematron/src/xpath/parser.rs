@@ -20,10 +20,26 @@ use super::lexer::{tokenize, Token, TokenKind};
 /// The limit counts nested sub-expressions: parentheses, predicates,
 /// function arguments, and unary minus. It does not count the length of a
 /// location path, which is parsed iteratively, so `a/b/c/…` of any length is
-/// fine. Sixty-four is far beyond any expression a person writes; the ceiling
-/// is set by how much stack one nesting level costs in an unoptimised build,
-/// where each level descends the whole precedence chain.
-pub const MAX_RECURSION_DEPTH: usize = 64;
+/// fine. Thirty-two is far beyond any expression a person writes; the
+/// ceiling is set by how much stack one nesting level costs in an
+/// unoptimised build, where each level descends the whole precedence chain
+/// — and needs deliberate headroom, not just whatever survives today's
+/// types, because this crate's own regression test for it
+/// (`refuses_absurd_nesting_instead_of_overflowing`) found real recursion
+/// starting to overflow the stack at a depth in the *low seventies* on this
+/// toolchain, once. That number moved on its own the very next time
+/// `Expr`/`NameTest`/`Step` grew by even one field elsewhere in this file's
+/// own history, from a margin of roughly ten levels above the then-64
+/// ceiling to *below* it — an EQName's `Q{uri}local` needing one more field
+/// on `NameTest`. This crate does not re-measure the real threshold on
+/// every future change to confirm the margin still holds; thirty-two keeps
+/// roughly half of the last-measured danger zone as headroom instead, so a
+/// modest future size increase to a type these functions hold does not
+/// silently reopen this. Measure again with a bare `Expr::Path` node
+/// (`a`) wrapped in an increasing number of parentheses and a temporarily
+/// inflated `MAX_RECURSION_DEPTH`, watching for where it starts to abort
+/// rather than return cleanly, if this ever needs revisiting.
+pub const MAX_RECURSION_DEPTH: usize = 32;
 
 /// A parse failure, with the offset it occurred at.
 ///
@@ -692,6 +708,7 @@ impl Parser {
             self.peek(),
             Some(
                 TokenKind::Name(_)
+                    | TokenKind::EQName(_)
                     | TokenKind::Star
                     | TokenKind::NodeType(_)
                     | TokenKind::AxisName(_)
@@ -886,6 +903,13 @@ impl Parser {
                 } else {
                     Ok(NodeTest::Name(NameTest::parse(&name)))
                 }
+            }
+            // XPath 3.0's EQName: `Q{uri}local` names by namespace URI
+            // directly. There is no EQName wildcard form — `Q{uri}*` is not
+            // part of the grammar — so this always names exactly one node.
+            Some(TokenKind::EQName(pair)) => {
+                let (uri, local) = *pair;
+                Ok(NodeTest::Name(NameTest::eqname(uri, local)))
             }
             Some(TokenKind::NodeType(kind)) => {
                 self.expect(&TokenKind::LeftParen)?;
@@ -1512,5 +1536,31 @@ mod tests {
     fn a_let_expression_needs_colon_equal() {
         let error = parse("let $x 1 return $x").unwrap_err();
         assert!(error.message.contains(":="), "{}", error.message);
+    }
+
+    #[test]
+    fn parses_an_eqname_step() {
+        let p = path("Q{http://example.com/ns}local");
+        assert_eq!(
+            p.steps[0].node_test,
+            NodeTest::Name(NameTest::eqname(
+                "http://example.com/ns".to_string(),
+                "local".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn parses_an_eqname_after_an_axis_and_on_an_attribute() {
+        assert_eq!(
+            path("child::Q{u}local").steps[0].node_test,
+            NodeTest::Name(NameTest::eqname("u".to_string(), "local".to_string()))
+        );
+        let p = path("@Q{u}local");
+        assert_eq!(p.steps[0].axis, Axis::Attribute);
+        assert_eq!(
+            p.steps[0].node_test,
+            NodeTest::Name(NameTest::eqname("u".to_string(), "local".to_string()))
+        );
     }
 }

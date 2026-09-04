@@ -3,6 +3,48 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.15.0
+
+### Added
+
+- **EQNames, `Q{uri}local`, for node name tests.** `Q{http://example.com/ns}foo`
+  names the same expanded name a declared prefix would
+  (`<ns prefix="p" uri="http://example.com/ns"/>` plus `p:foo`), without
+  needing that prefix declared — usable anywhere a node name test is
+  written: `Q{uri}local`, `@Q{uri}local`, `child::Q{uri}local`, and so on.
+  `Q{}local` — an empty braced URI literal — means no namespace, the same
+  as writing `local` unprefixed. Recognized whatever the query binding, so
+  a 1.0/2.0 schema that writes one gets a compile-time refusal naming
+  "an EQName," not a confusing parse error about a stray `{`.
+  - Deliberately scoped to node name tests, not variable names, type
+    names, or function references, which real XPath 3.0 also allows an
+    EQName to name. Node matching already resolved a prefix to a URI and
+    compared by URI, so accepting a URI directly was a small, contained
+    change; `Variables` keys a binding by the lexical spelling of its
+    name, not by resolved URI, so making `$Q{uri}local` interchangeable
+    with every prefixed spelling of the same expanded name would mean
+    reworking that keying everywhere variables are bound — not worth that
+    risk for a syntax real schemas essentially never write.
+
+### Fixed
+
+- **A stack-overflow regression in `MAX_RECURSION_DEPTH`'s safety margin.**
+  Found by fuzzing immediately after EQNames were written, in `NameTest`
+  — the type they extended — not in EQNames themselves: adding one field
+  held inline in several `Expr` variants was enough to push the parser's
+  already-thin margin above the real stack-overflow threshold negative,
+  turning `refuses_absurd_nesting_instead_of_overflowing`'s expected clean
+  parse error into a genuine crash. The true threshold on the toolchain
+  this was measured on turned out to be in the low seventies, against a
+  limit of 64 — a margin of about ten levels that one field consumed
+  entirely. `MAX_RECURSION_DEPTH` is now 32, roughly half the
+  last-measured danger zone rather than just under it; see its doc
+  comment in `src/xpath/parser.rs` for how to re-measure if a future
+  change needs to ask the same question again.
+
+See [spec/xpath3/](spec/xpath3/index.md) and
+[spec/testing/](spec/testing/index.md#what-fuzzing-found).
+
 ## 0.14.0
 
 ### Added

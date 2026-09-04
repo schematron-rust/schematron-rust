@@ -213,6 +213,28 @@
   still has, named rather than left implicit: `Q{uri}local` names
   (EQNames) and union types in casts and function signatures. See
   `spec/xpath3/`.
+- **EQNames, `Q{uri}local`, for node name tests.** The first of the two
+  gaps phase 4 named, closed the same way `let` was: node-name matching
+  already resolved a prefix to a URI and compared by URI, so accepting a
+  URI directly instead needed no new machinery, just a new lexer token
+  (`Q` immediately followed by `{`, unambiguous — no other construct puts
+  `{` right after a name character) and one more field on `NameTest`.
+  Deliberately not extended to variable names, type names, or function
+  references: `Variables` keys a binding by the *lexical* spelling of its
+  name, not by resolved URI, so making `$Q{uri}local` interchangeable
+  with every prefixed spelling of the same expanded name would mean
+  reworking that keying everywhere variables are bound — a
+  foundation-level change for a syntax real schemas essentially never
+  write, the same trade this file already declines for streaming
+  validation and `no_std`. Union types remain the one fully open gap.
+  Fuzzing this immediately after writing it — same discipline as every
+  construct above — found a real stack-overflow regression, not in
+  EQNames but in `NameTest`, the type it grew: `MAX_RECURSION_DEPTH`'s
+  margin above the real stack-overflow threshold turned out to be about
+  ten levels, and one inline (unboxed) field was enough to spend all of
+  it. `MAX_RECURSION_DEPTH` is now 32, roughly half of the last-measured
+  danger zone rather than just under it. See `spec/xpath3/` and
+  `spec/testing/`.
 
 ## Next
 
