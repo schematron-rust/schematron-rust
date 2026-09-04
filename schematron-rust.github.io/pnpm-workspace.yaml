@@ -1,4 +1,18 @@
-# Single-package repo. This file exists only to record build-script approval:
-# pnpm 10+ reads it instead of package.json's onlyBuiltDependencies.
+# Single-package repo. This file exists only to record build-script approval
+# and a dependency override: pnpm 10+ reads both here instead of
+# package.json's `pnpm` field.
 allowBuilds:
   esbuild: true
+
+# GHSA-pxg6-pf52-xh8x: cookie <0.7.0 accepts out-of-bounds characters in a
+# cookie name, path, or domain. Transitive, via @sveltejs/kit, which pins
+# 0.6.0 directly regardless of its own version — bumping @sveltejs/kit alone
+# does not clear it. This site is fully static (adapter-static, no server,
+# no cookie-handling code of its own), so practical exposure is nil either
+# way; overridden to close the audit finding rather than leave it standing.
+# Pinned to the 0.7.x line, not "latest": cookie 1.0 dropped the `parse`/
+# `serialize` named exports @sveltejs/kit's own cookie.js imports, so
+# resolving to 2.x (this override's first try) broke the build outright —
+# 0.7.x is the last line with both the fix and the API SvelteKit expects.
+overrides:
+  cookie: '^0.7.0'
