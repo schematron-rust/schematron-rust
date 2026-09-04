@@ -67,6 +67,11 @@ node name tests, the position that was genuinely tractable; see "EQNames"
 below for that scope and for a real stack-overflow regression fuzzing it
 found in the process, in `NameTest` rather than in EQNames themselves.
 
+That left one row in the table below — union types — as this document's
+last open item. Checking it against the actual grammar rather than
+implementing it found it was never a real gap at all: see "Union types are
+not a gap" below.
+
 ## What is implemented
 
 Available only when the schema declares `queryBinding="xslt3"` or
@@ -310,6 +315,46 @@ full account and how to re-measure; the short version is that the constant
 now keeps real headroom below the last-measured danger zone instead of
 sitting just under it.
 
+## Union types are not a gap
+
+This document used to list "union types in casts and signatures" —
+written `(xs:integer | xs:string)` — as the one real gap XPath 3.0 left
+open here. It isn't one, and the fix was to check the actual grammar
+before implementing anything, the same discipline `let` and EQNames both
+got.
+
+Neither XPath 3.0's grammar nor 3.1's defines a parenthesized,
+`|`-separated union-type literal at all:
+
+```
+ItemType             ::= KindTest | ("item" "(" ")") | FunctionTest
+                        | AtomicOrUnionType | ParenthesizedItemType
+AtomicOrUnionType     ::= EQName
+ParenthesizedItemType ::= "(" ItemType ")"
+```
+
+`AtomicOrUnionType` is just an `EQName` — one name, no `|` — and
+`ParenthesizedItemType` is parentheses around a single `ItemType` for
+grouping (so `(xs:integer)?` parses unambiguously), not a way to write a
+union inline. "Union types" in XPath 3.0 means a `SimpleTypeName` is
+allowed to name a *union* type, exactly as it is allowed to name an
+atomic one — a fact about what an `EQName` in that position may resolve
+to, not new syntax for writing one out. The only way to get a union type
+at all is `import schema` declaring one in an XML Schema document, then
+naming it by its `EQName`.
+
+This crate parses no `import schema` and no XML Schema documents in any
+capacity beyond XPath 2.0's XML-Schema-flavored regular expressions — a
+full XSD type importer is a separate feature, orders of magnitude larger
+than XPath 3.0 phase 4, and was never in scope. Without it, no union type
+can exist for an `EQName` to name, in any query binding this crate has or
+plans. So the syntax this document used to cite, `(xs:integer |
+xs:string)`, was never legal XPath 3.0 or 3.1 to begin with — writing it
+under a real 3.0 processor with schema-aware static typing is itself a
+static error, not a feature this crate happens to be missing. There is
+nothing left to implement, the same way `fn:sort` was never actually a
+3.0 gap either — see the table below.
+
 ## No parameter or return type annotations
 
 Real XPath 3.0 allows `function($a as xs:integer) as xs:integer { … }`.
@@ -332,12 +377,17 @@ None of them silently does something else.
 | Maps and arrays | XPath 3.1, not 3.0; needs the `xpath31`/`xslt31` bindings, which remain refused |
 | `xpath31`, `xslt31` bindings | Still refused; use `allow_unknown_query_binding` |
 | `Q{uri}local` as a variable name, a type name, or a function reference | EQNames are implemented for node name tests only — see "EQNames" above for why the other positions were left out |
-| Union types in casts and signatures (`(xs:integer \| xs:string)`) | No union item type exists in this crate's type model; `instance of`/`cast as`/`treat as` take one atomic type, and inline functions parse no type annotations at all — see below |
+| Union types in casts and signatures (`(xs:integer \| xs:string)`) | Not actually XPath 3.0 syntax: no version's grammar defines a union-type literal, and no union type can exist for an `EQName` to name without `import schema`, which this crate does not implement. Not a gap in this phase; see "Union types are not a gap" above |
 
-One real gap remains fully open — union types — found the same way `let`
-and EQNames were: checking this crate's XPath 3.0 subset against an
-authoritative list of what 3.0 actually added, not against what earlier
-phases here happened to already record.
+No gap remains open. Every row above is either genuinely out of scope by
+design (`xpath31`/`xslt31`, maps and arrays), a deliberately narrow scope
+with its reasoning recorded (EQNames outside node name tests), or, like
+`fn:sort`, shown on inspection to never have been a real XPath 3.0 gap at
+all (union types) — and function parameter/return type annotations, the
+one remaining deliberate simplification, are documented on their own
+above rather than listed here, since writing one is a plain parse error
+today rather than silently ignored. Phase 4 is the last phase this
+document expects to need.
 
 ## Using it
 

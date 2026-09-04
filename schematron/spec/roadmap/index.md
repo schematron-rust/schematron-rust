@@ -226,15 +226,27 @@
   reworking that keying everywhere variables are bound — a
   foundation-level change for a syntax real schemas essentially never
   write, the same trade this file already declines for streaming
-  validation and `no_std`. Union types remain the one fully open gap.
-  Fuzzing this immediately after writing it — same discipline as every
-  construct above — found a real stack-overflow regression, not in
-  EQNames but in `NameTest`, the type it grew: `MAX_RECURSION_DEPTH`'s
-  margin above the real stack-overflow threshold turned out to be about
-  ten levels, and one inline (unboxed) field was enough to spend all of
-  it. `MAX_RECURSION_DEPTH` is now 32, roughly half of the last-measured
-  danger zone rather than just under it. See `spec/xpath3/` and
-  `spec/testing/`.
+  validation and `no_std`. Fuzzing this immediately after writing it —
+  same discipline as every construct above — found a real
+  stack-overflow regression, not in EQNames but in `NameTest`, the type
+  it grew: `MAX_RECURSION_DEPTH`'s margin above the real stack-overflow
+  threshold turned out to be about ten levels, and one inline (unboxed)
+  field was enough to spend all of it. `MAX_RECURSION_DEPTH` is now 32,
+  roughly half of the last-measured danger zone rather than just under
+  it. See `spec/xpath3/` and `spec/testing/`.
+- **Union types: the second gap phase 4 named turned out not to be one.**
+  Checked against the actual grammar rather than implemented outright —
+  the same check that found `let`, EQNames, and `sort`'s real status in
+  the first place. Neither XPath 3.0's grammar nor 3.1's defines a
+  `(xs:integer | xs:string)`-style union-type literal at all:
+  `AtomicOrUnionType ::= EQName`, one name, and `ParenthesizedItemType`
+  is grouping, not union syntax. A `SimpleTypeName` may *resolve* to a
+  union type an `import schema` declared, but this crate parses no
+  `import schema` and no XML Schema documents beyond 2.0's
+  XSD-flavored regular expressions — a separate, far larger feature,
+  never in scope — so no union type can exist here for an `EQName` to
+  name, in any binding. Nothing was implemented; the gap was retracted.
+  See `spec/xpath3/#union-types-are-not-a-gap`.
 
 ## Next
 

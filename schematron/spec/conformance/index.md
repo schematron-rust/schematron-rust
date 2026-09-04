@@ -38,9 +38,9 @@ writing phase 4's own documentation, not part of any phase's original plan
 — the `let` expression and EQNames (`Q{uri}local`, scoped to node name
 tests: `Q{uri}local`, `@Q{uri}local`, and similar; not variable names,
 type names, or function references). Everything XPath 1.0 and 2.0
-implement is available too, at exactly their own semantics; union types in
-casts and function signatures, and maps and arrays (XPath 3.1), are not
-implemented.
+implement is available too, at exactly their own semantics. Maps and
+arrays (XPath 3.1) are not implemented; union types were never actually a
+3.0 gap to begin with — see [spec/xpath3/](../xpath3/index.md#union-types-are-not-a-gap).
 
 XPath 3.1 adds more than this crate implements, so it stays refused:
 accepting it would overclaim. `allow_unknown_query_binding` compiles such a
