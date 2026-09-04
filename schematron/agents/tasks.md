@@ -95,6 +95,20 @@ order:
 8. Document it: the version's own `spec/xpath2/` or `spec/xpath3/`, plus
    whichever of `spec/conformance/`, `spec/roadmap/`, `README.md`, and
    `llms.txt`/`llms.json` mention that version's feature list.
+9. If the change adds a field to `NameTest`, `Expr`, `Step`, `PathExpr`, or
+   anything else held inline (not `Box`ed) in a type these hold — run
+   `refuses_absurd_nesting_instead_of_overflowing` (`cargo test --lib
+   refuses_absurd_nesting_instead_of_overflowing`) before calling the
+   change done, not just the ordinary gate. `MAX_RECURSION_DEPTH`'s margin
+   above the real stack-overflow threshold is thin on purpose — see its
+   own doc comment in `src/xpath/parser.rs` — and one field added to
+   `NameTest` for EQNames was once enough to turn this test's expected
+   clean parse error into a genuine crash. The ordinary gate's
+   `cargo test --all-features` *does* run this test, so a real regression
+   here will not slip past it silently — but reaching for it by name
+   first, the moment such a field lands, catches the crash before it is
+   buried in a long test run's output, the same way it would be worth
+   doing for any other type whose size is load-bearing.
 
 ## Add a CLI flag
 

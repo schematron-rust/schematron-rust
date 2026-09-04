@@ -33,12 +33,14 @@ them. Phase 2 adds the arrow operator `=>` and string concatenation `||`.
 Phase 3 finishes the higher-order sequence function library (`filter`,
 `fold-left`, `fold-right`, `for-each-pair`) and adds function-item
 introspection (`function-lookup`, `function-arity`, `function-name`).
-Phase 4 adds the simple map operator `!`, and alongside it the `let`
-expression — found while writing phase 4's own documentation, not part of
-any phase's original plan. Everything XPath 1.0 and 2.0 implement is
-available too, at exactly their own semantics; `Q{uri}local` names, union
-types in casts and function signatures, and maps and arrays (XPath 3.1)
-are not implemented.
+Phase 4 adds the simple map operator `!`, and alongside it — found while
+writing phase 4's own documentation, not part of any phase's original plan
+— the `let` expression and EQNames (`Q{uri}local`, scoped to node name
+tests: `Q{uri}local`, `@Q{uri}local`, and similar; not variable names,
+type names, or function references). Everything XPath 1.0 and 2.0
+implement is available too, at exactly their own semantics; union types in
+casts and function signatures, and maps and arrays (XPath 3.1), are not
+implemented.
 
 XPath 3.1 adds more than this crate implements, so it stays refused:
 accepting it would overclaim. `allow_unknown_query_binding` compiles such a
@@ -115,7 +117,7 @@ Number-to-string conversion follows XPath 1.0's format, not Rust's `Display`.
 |---|---|---|
 | Include depth | 64, configurable | Cycles and expansion blow-up |
 | `extends` chain depth | 64 | Same |
-| XPath sub-expression nesting | 64 | Stack exhaustion on hostile input |
+| XPath sub-expression nesting | 32 | Stack exhaustion on hostile input |
 | A single `to` range | 1,000,000 items | A range is materialised |
 | Nested ranges and `for`/`some`/`every` together | 10,000,000 items | Each may be within the limit while the product is not: three ranges of 999 ask for close to a billion |
 | XML element nesting | 1024 | Same |

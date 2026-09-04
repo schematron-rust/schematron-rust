@@ -659,6 +659,11 @@ impl Schema {
     /// test needs an XPath 2.0 binding.
     fn check_node_test(&self, test: &NodeTest, source: &str, location: &str) -> Result<()> {
         match test {
+            // An EQName carries its namespace URI outright — nothing to
+            // resolve, so no `check_prefix` call, only the version gate.
+            NodeTest::Name(NameTest { uri: Some(_), .. }) => {
+                self.require_v3("an EQName (Q{uri}local)", source, location)
+            }
             NodeTest::Name(NameTest {
                 prefix: Some(prefix),
                 ..

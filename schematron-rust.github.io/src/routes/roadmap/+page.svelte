@@ -33,7 +33,8 @@
     'XPath 3.0 phase 2: the arrow operator => and string concatenation ||',
     'A stack overflow in eight repeating binary operators, found by fuzzing, closed with a shared parse_binary_chain helper',
     'XPath 3.0 phase 3: the rest of the higher-order sequence functions — filter, fold-left, fold-right, for-each-pair — and function-item introspection',
-    'XPath 3.0 phase 4: the simple map operator !, plus the let expression found while documenting it'
+    'XPath 3.0 phase 4: the simple map operator !, plus the let expression found while documenting it',
+    'EQNames, Q{uri}local, for node name tests — the other gap phase 4 found, plus a stack-overflow regression in the recursion-depth margin, caught by fuzzing and closed the same day'
   ];
 </script>
 

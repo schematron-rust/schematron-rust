@@ -35,7 +35,7 @@ policy — not XPath semantics.
 - [spec/validation/](schematron/spec/validation/index.md): the validation algorithm, exactly
 - [spec/xpath/](schematron/spec/xpath/index.md): the XPath 1.0 engine — axes, functions, conversions
 - [spec/xpath2/](schematron/spec/xpath2/index.md): the XPath 2.0 subset, and where it still behaves like 1.0
-- [spec/xpath3/](schematron/spec/xpath3/index.md): the XPath 3.0 subset — function items, `=>`, `||`, `!`, `let`, the higher-order sequence functions
+- [spec/xpath3/](schematron/spec/xpath3/index.md): the XPath 3.0 subset — function items, `=>`, `||`, `!`, `let`, `Q{uri}local`, the higher-order sequence functions
 - [spec/xml/](schematron/spec/xml/index.md): the XML parser and its data model
 - [spec/parsing/](schematron/spec/parsing/index.md): the five schema compilation passes
 - [spec/svrl/](schematron/spec/svrl/index.md): the SVRL report format, read and written

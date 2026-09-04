@@ -5,9 +5,11 @@
 //! higher-order sequence function library plus function-item introspection
 //! (`filter`, `fold-left`, `fold-right`, `for-each-pair`,
 //! `function-lookup`, `function-arity`, `function-name`, phase 3), the
-//! simple map operator `!` (phase 4), and the `let` expression (found —
-//! and fixed in the same sitting — as an accounting gap while writing
-//! phase 4's own documentation, so it has no phase number of its own).
+//! simple map operator `!` (phase 4), and the `let` expression and EQNames
+//! (`Q{uri}local`, scoped to node name tests — see `spec/xpath3/`), both
+//! found — and fixed in the same sitting — as accounting gaps while
+//! writing phase 4's own documentation, so neither has a phase number of
+//! its own.
 //!
 //! Same two properties as `xpath2.rs`, one level up: the additions must
 //! **work** under an `xslt3`/`xpath3` binding, and everything outside the
@@ -495,4 +497,60 @@ fn let_is_refused_under_xpath_two() {
     let message = compile_error("xslt2", "let $x := 1 return $x");
     assert_contains!(message, "XPath 3.0");
     assert_contains!(message, "let");
+}
+
+// EQNames: `Q{uri}local`, XPath 3.0's namespace-URI-direct name form —
+// found alongside `let`, not a phase of its own. Scoped to node name tests
+// (element/attribute steps); see `spec/xpath3/` for what that leaves out.
+
+#[test]
+fn eqname_selects_by_namespace_uri_directly() {
+    let source = schema_with(
+        "xslt3",
+        r#"<ns prefix="p" uri="http://example.com/ns"/>
+           <pattern><rule context="a">
+             <assert test="count(Q{http://example.com/ns}foo) = 1">failed</assert>
+           </rule></pattern>"#,
+    );
+    let schema = Schema::from_str(&source).expect("schema should compile");
+    let document = Document::from_str(r#"<a xmlns:p="http://example.com/ns"><p:foo/></a>"#)
+        .expect("document should parse");
+    assert!(schema.validate(&document).expect("validation should run").is_valid());
+}
+
+#[test]
+fn eqname_and_a_prefix_resolving_to_the_same_uri_select_the_same_node() {
+    // The whole point of an EQName: it names the same expanded name a
+    // declared prefix would, without needing that prefix declared.
+    let source = schema_with(
+        "xslt3",
+        r#"<ns prefix="p" uri="http://example.com/ns"/>
+           <pattern><rule context="a">
+             <assert test="Q{http://example.com/ns}foo = p:foo">failed</assert>
+           </rule></pattern>"#,
+    );
+    let schema = Schema::from_str(&source).expect("schema should compile");
+    let document = Document::from_str(r#"<a xmlns:p="http://example.com/ns"><p:foo>x</p:foo></a>"#)
+        .expect("document should parse");
+    assert!(schema.validate(&document).expect("validation should run").is_valid());
+}
+
+#[test]
+fn eqname_with_an_empty_uri_means_no_namespace() {
+    // `Q{}local` means the same as an unprefixed `local` — no namespace —
+    // not "resolve an empty prefix."
+    assert!(check("count(Q{}b) = 1", "<a><b/></a>"));
+    assert!(check("@Q{}id = '5'", "<a id='5'/>"));
+}
+
+#[test]
+fn an_element_named_q_still_parses_as_a_name() {
+    assert!(check("count(Q) = 1", "<a><Q/></a>"));
+}
+
+#[test]
+fn eqname_is_refused_under_xpath_two() {
+    let message = compile_error("xslt2", "Q{}foo");
+    assert_contains!(message, "XPath 3.0");
+    assert_contains!(message, "EQName");
 }

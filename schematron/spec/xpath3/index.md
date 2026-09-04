@@ -62,6 +62,11 @@ followed by `$`" dispatch — so it is fixed in the same commit as phase 4
 rather than deferred to a phase of its own. See "The `let` expression"
 below.
 
+The same check turned up **EQNames**, `Q{uri}local`, too — implemented for
+node name tests, the position that was genuinely tractable; see "EQNames"
+below for that scope and for a real stack-overflow regression fuzzing it
+found in the process, in `NameTest` rather than in EQNames themselves.
+
 ## What is implemented
 
 Available only when the schema declares `queryBinding="xslt3"` or
@@ -79,6 +84,7 @@ schema cannot accidentally acquire 3.0 behavior.
 | `E \|\| E` | String concatenation: the string value of each side, joined |
 | `E1 ! E2` | The simple map operator: `E2` evaluated once per item of `E1`, that item as the context item. See below |
 | `let $v := E return E` | Binds `E`'s value — the whole value, not iterated — to `$v` for the second `E`. See below |
+| `Q{uri}local` | An EQName: names an element or attribute by namespace URI directly, no prefix to declare. Node name tests only. See below |
 
 ### Functions
 
@@ -251,6 +257,59 @@ subset against an authoritative feature list while writing up phase 4,
 not against what earlier phases here happened to already record — so it
 carries no phase number of its own; see the status section above.
 
+## EQNames
+
+`Q{uri}local` names an element or attribute by namespace URI directly —
+`Q{http://example.com/ns}foo` selects the same nodes `p:foo` would if the
+schema declared `<ns prefix="p" uri="http://example.com/ns"/>`, without
+needing that declaration at all. `Q{}local` — an empty braced URI literal
+— means *no* namespace, the same as writing `local` unprefixed, never "the
+prefix that happens to be empty."
+
+`Q{` is recognized as the start of one, whatever the query binding, the
+same way the other 3.0-only tokens are — a 1.0/2.0 schema that writes one
+gets a compile-time refusal naming it, "an EQName," rather than a
+confusing parse error about a stray `{`. The one lexical wrinkle: `Q`
+directly followed by `{`, no space, is what triggers it, so an element or
+attribute genuinely named `Q` is unaffected — `Q`, `Q/a`, `@Q` all still
+mean exactly what they did before, and only the exact `Q{` sequence, which
+was a syntax error either way before this existed, changes meaning.
+
+**Scoped to node name tests** — `Q{uri}local` in a path step
+(`Q{uri}local`, `@Q{uri}local`, `child::Q{uri}local`, and so on) — not
+extended to variable names, type names in `instance of`/`cast as`, or
+function references, which real XPath 3.0 also allows an EQName to name.
+Node name matching in this crate already resolves a prefix to its URI and
+compares by URI (`context.namespaces.resolve(prefix)`, then compared
+against the document node's own resolved namespace), so accepting a URI
+directly instead of a prefix to resolve was a genuinely small, contained
+change. Variable binding is not: `Variables` keys a binding by the
+*lexical* spelling of its name (`prefix:local` as written), not by
+resolved URI, so `$p:x` and `$q:x` are already two different bindings in
+this crate even when `p` and `q` resolve to the same URI — a pre-existing
+simplification nobody has hit in practice. Making `$Q{uri}local`
+interchangeable with every prefixed spelling of the same expanded name
+would mean reworking that keying from lexical to expanded-name everywhere
+variables are bound and looked up, which is a foundation-level change for
+a syntax real schemas essentially never write; not worth that risk today,
+by the same reasoning [spec/roadmap/](../roadmap/index.md) already applies
+to streaming validation and `no_std`. Type names and function references
+were left out for the same reason: this crate's names are schema-`<ns>`
+scoped throughout, and neither position was worth reopening that on its
+own.
+
+Fuzzing this immediately after writing it — the same discipline applied to
+every construct in this document — found a real, if narrow, stack-overflow
+regression, not in EQName parsing itself but in `NameTest`, the type it
+extended: adding one field to a struct held inline (not boxed) in several
+`Expr` variants was enough to push `MAX_RECURSION_DEPTH`'s already-thin
+margin negative, so the deepest *legal* nesting the parser accepted
+started to overflow the stack instead of returning cleanly. See
+`MAX_RECURSION_DEPTH`'s own doc comment in `src/xpath/parser.rs` for the
+full account and how to re-measure; the short version is that the constant
+now keeps real headroom below the last-measured danger zone instead of
+sitting just under it.
+
 ## No parameter or return type annotations
 
 Real XPath 3.0 allows `function($a as xs:integer) as xs:integer { … }`.
@@ -272,12 +331,13 @@ None of them silently does something else.
 | `sort` | Not actually XPath 3.0: real F&O 3.0 has no `fn:sort` at all — it was added in 3.1, alongside maps and arrays. Not a gap in this phase; see the next row |
 | Maps and arrays | XPath 3.1, not 3.0; needs the `xpath31`/`xslt31` bindings, which remain refused |
 | `xpath31`, `xslt31` bindings | Still refused; use `allow_unknown_query_binding` |
-| `Q{uri}local` (EQNames) | Not parsed anywhere a name is written — this crate resolves prefixes via `<ns>` declarations only |
+| `Q{uri}local` as a variable name, a type name, or a function reference | EQNames are implemented for node name tests only — see "EQNames" above for why the other positions were left out |
 | Union types in casts and signatures (`(xs:integer \| xs:string)`) | No union item type exists in this crate's type model; `instance of`/`cast as`/`treat as` take one atomic type, and inline functions parse no type annotations at all — see below |
 
-Two real gaps remain, found the same way `let` was: checking this crate's
-XPath 3.0 subset against an authoritative list of what 3.0 actually added,
-not against what earlier phases here happened to already record.
+One real gap remains fully open — union types — found the same way `let`
+and EQNames were: checking this crate's XPath 3.0 subset against an
+authoritative list of what 3.0 actually added, not against what earlier
+phases here happened to already record.
 
 ## Using it
 

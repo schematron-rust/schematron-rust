@@ -556,13 +556,25 @@ impl Axis {
 }
 
 /// A name that may carry a prefix, resolved against the schema's `ns`
-/// declarations at evaluation time.
+/// declarations at evaluation time — or, written as an XPath 3.0 EQName
+/// (`Q{uri}local`), a namespace URI already known outright, resolving
+/// nothing. See [`NameTest::eqname`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct NameTest {
-    /// The prefix, if the name was written with one.
+    /// The prefix, if the name was written with one. Always `None` when
+    /// [`NameTest::uri`] is `Some` — an EQName carries a URI directly and
+    /// was never written with a prefix to resolve.
     pub prefix: Option<String>,
     /// The local part.
     pub local: String,
+    /// The namespace URI, when the name was written as an EQName
+    /// (`Q{uri}local`) rather than with a prefix. `Q{}local` — an empty
+    /// braced URI literal — means *no* namespace, the same as writing
+    /// `local` unprefixed; every reader of this field treats `Some(u)` for
+    /// an empty `u` the same as `None`, never as "resolve an empty
+    /// prefix."
+    pub uri: Option<String>,
 }
 
 impl NameTest {
@@ -573,17 +585,33 @@ impl NameTest {
             Some((prefix, local)) => NameTest {
                 prefix: Some(prefix.to_string()),
                 local: local.to_string(),
+                uri: None,
             },
             None => NameTest {
                 prefix: None,
                 local: raw.to_string(),
+                uri: None,
             },
+        }
+    }
+
+    /// An XPath 3.0 EQName, `Q{uri}local` — a name already carrying its
+    /// namespace URI outright, never a prefix to resolve.
+    #[must_use]
+    pub fn eqname(uri: String, local: String) -> NameTest {
+        NameTest {
+            prefix: None,
+            local,
+            uri: Some(uri),
         }
     }
 }
 
 impl fmt::Display for NameTest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(uri) = &self.uri {
+            return write!(f, "Q{{{uri}}}{}", self.local);
+        }
         match &self.prefix {
             Some(p) => write!(f, "{p}:{}", self.local),
             None => f.write_str(&self.local),

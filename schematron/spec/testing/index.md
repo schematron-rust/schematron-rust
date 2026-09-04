@@ -310,6 +310,21 @@ build itself, completing every time rather than exhausting memory outright.
 Legal, bounded, and slower under composition than any one construct alone
 would suggest; not a defect, by the same test as the slow-unit case above.
 
+A real one, though, while EQNames were being written: `refuses_absurd_nesting_instead_of_overflowing`
+— an existing regression test, not `fuzz_xpath` itself, though the same
+discipline of testing immediately after touching the evaluator is what
+caught it — started genuinely overflowing the stack instead of returning
+its expected clean parse error. `NameTest` gained one field for `Q{uri}local`,
+held inline (not boxed) in several `Expr` variants, and that alone was
+enough: `MAX_RECURSION_DEPTH`'s 64 had never actually been re-measured
+against real recursion at that depth, only against the parser's own
+counter correctly stopping *at* it, and the true stack-safe threshold on
+this toolchain turned out to be in the low seventies — a margin of about
+ten levels that one added field consumed entirely. `MAX_RECURSION_DEPTH`
+is now 32, roughly half of the last-measured danger zone rather than just
+under it, and its own doc comment in `src/xpath/parser.rs` records how to
+re-measure if a future change needs to ask the same question again.
+
 ## Benchmarks
 
 `criterion` benches in `benches/`:

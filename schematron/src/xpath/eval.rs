@@ -1953,13 +1953,20 @@ pub(crate) fn matches_node_test(
             if axis == Axis::Namespace {
                 return document.name(node).is_some_and(|n| n.local == name.local);
             }
-            let uri = match &name.prefix {
-                Some(prefix) => match context.namespaces.resolve(prefix) {
-                    Some(uri) => Some(uri),
-                    None => return false,
+            // An EQName (`Q{uri}local`) already carries its namespace URI —
+            // nothing to resolve — and treats an empty braced URI literal
+            // the same as no namespace, matching `Q{}local`'s own meaning.
+            let uri = match &name.uri {
+                Some(uri) if uri.is_empty() => None,
+                Some(uri) => Some(uri.as_str()),
+                None => match &name.prefix {
+                    Some(prefix) => match context.namespaces.resolve(prefix) {
+                        Some(uri) => Some(uri),
+                        None => return false,
+                    },
+                    // XPath 1.0: an unprefixed name is in no namespace.
+                    None => None,
                 },
-                // XPath 1.0: an unprefixed name is in no namespace.
-                None => None,
             };
             document
                 .name(node)

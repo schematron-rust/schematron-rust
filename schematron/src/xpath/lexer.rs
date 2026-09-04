@@ -100,6 +100,20 @@ pub(crate) enum TokenKind {
     Bang,
     /// `:=` — separates a `let` expression's variable from its value.
     Assign,
+    /// `Q{uri}local` — an XPath 3.0 EQName, naming an element or attribute
+    /// by namespace URI directly rather than by a prefix to resolve.
+    ///
+    /// Boxed: `TokenKind` is held in a local on every parser stack frame,
+    /// through a precedence chain 64 levels deep at the parser's own limit
+    /// (`MAX_RECURSION_DEPTH`), so its size is not free. Every other
+    /// variant with data is one `String` (24 bytes); an unboxed `(String,
+    /// String)` here would have doubled `TokenKind`'s size to fit the
+    /// biggest variant — which is exactly what turned
+    /// `refuses_absurd_nesting_instead_of_overflowing` from a clean parse
+    /// error into a genuine stack overflow the one time this was tried
+    /// unboxed. Boxing keeps this variant pointer-sized, at or under every
+    /// other variant, so the deepest legal nesting still fits.
+    EQName(Box<(String, String)>),
 }
 
 impl fmt::Display for TokenKind {
@@ -154,6 +168,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Arrow => f.write_str("=>"),
             TokenKind::Bang => f.write_str("!"),
             TokenKind::Assign => f.write_str(":="),
+            TokenKind::EQName(pair) => write!(f, "Q{{{}}}{}", pair.0, pair.1),
         }
     }
 }
@@ -457,6 +472,13 @@ impl<'a> Lexer<'a> {
                 b'\'' | b'"' => self.lex_literal(start)?,
                 b'$' => self.lex_variable(start)?,
                 c if c.is_ascii_digit() => self.lex_number(start)?,
+                // `Q{uri}local` — an XPath 3.0 EQName. `Q` directly
+                // followed by `{`, no whitespace, is unambiguous: `{`
+                // never otherwise follows a name character in this
+                // grammar, so an ordinary element or attribute named `Q`
+                // is unaffected — only `Q{` itself changes meaning, and
+                // that sequence was a syntax error before this existed.
+                b'Q' if self.peek_at(1) == Some(b'{') => self.lex_eqname(start)?,
                 c if is_name_start(c) => self.lex_name(start),
                 c => {
                     return Err(Lexer::error(
@@ -520,6 +542,40 @@ impl<'a> Lexer<'a> {
         }
         let name = self.input[name_start..self.position].to_string();
         self.push(TokenKind::Variable(name), start);
+        Ok(())
+    }
+
+    /// `Q{uri}local`. The `Q{` prefix has already been confirmed by the
+    /// caller's lookahead; this consumes from there.
+    fn lex_eqname(&mut self, start: usize) -> Result<(), LexError> {
+        self.position += 2; // "Q{"
+        let uri_start = self.position;
+        while self.peek().is_some_and(|c| c != b'{' && c != b'}') {
+            self.position += 1;
+        }
+        if self.peek() != Some(b'}') {
+            return Err(Lexer::error(
+                start,
+                "unterminated 'Q{...}' URI literal in an EQName",
+            ));
+        }
+        let uri = self.input[uri_start..self.position].to_string();
+        self.position += 1; // '}'
+
+        let local_start = self.position;
+        if !self.peek().is_some_and(is_name_start) {
+            return Err(Lexer::error(
+                start,
+                "expected a local name after 'Q{...}' in an EQName",
+            ));
+        }
+        self.position += 1;
+        while self.peek().is_some_and(is_name_char) {
+            self.position += 1;
+        }
+        let local = self.input[local_start..self.position].to_string();
+
+        self.push(TokenKind::EQName(Box::new((uri, local))), start);
         Ok(())
     }
 
@@ -853,5 +909,41 @@ mod tests {
             ]
         );
         assert_eq!(kinds("child::a")[1], TokenKind::ColonColon);
+    }
+
+    #[test]
+    fn lexes_an_eqname() {
+        assert_eq!(
+            kinds("Q{http://example.com/ns}local"),
+            vec![TokenKind::EQName(Box::new((
+                "http://example.com/ns".into(),
+                "local".into()
+            )))]
+        );
+        // The empty braced URI literal means no namespace; still an EQName
+        // token, not two.
+        assert_eq!(
+            kinds("Q{}local"),
+            vec![TokenKind::EQName(Box::new((String::new(), "local".into())))]
+        );
+    }
+
+    #[test]
+    fn an_element_named_q_is_unaffected() {
+        // Only `Q` directly followed by `{` changes meaning.
+        assert_eq!(kinds("Q"), vec![TokenKind::Name("Q".into())]);
+        assert_eq!(
+            kinds("Q/a"),
+            vec![
+                TokenKind::Name("Q".into()),
+                TokenKind::Slash,
+                TokenKind::Name("a".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unterminated_eqname_uri_is_an_error() {
+        assert!(tokenize("Q{unterminated").is_err());
     }
 }
