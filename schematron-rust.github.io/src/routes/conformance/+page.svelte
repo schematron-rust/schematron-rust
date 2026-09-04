@@ -128,9 +128,10 @@
   <Alert type="warning" role="status" heading="Maps, arrays, and sort are XPath 3.1, not 3.0 — and stay refused.">
     <p>
       <a href={specUrl('xpath3/index.md')}>spec/xpath3/</a> states exactly what
-      is implemented, what one further gap remains (union types in casts and
-      function signatures), and why <code>fn:sort</code> was never actually a
-      3.0 gap to begin with — it does not exist until 3.1.
+      is implemented, and why neither <code>fn:sort</code> nor union types in
+      casts and signatures were ever actually XPath 3.0 gaps to begin with —
+      the first does not exist until 3.1, and the second has no literal
+      syntax in any version's grammar at all.
     </p>
   </Alert>
 </section>
