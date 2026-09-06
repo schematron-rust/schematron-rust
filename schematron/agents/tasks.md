@@ -266,9 +266,12 @@ the pull request, and confirm it does not pull in C.
    `spec/` and `examples/` still are.
 4. All four gates, plus the differential suite with `SCHEMATRON_SKELETON` set,
    plus `cargo bench` against a saved baseline.
-5. `cargo publish --dry-run`, then `cargo publish`. An agent working in this
-   repository is authorized to run the real publish, not only the dry run —
-   see [`spec/trusted-publishing/`](../../spec/trusted-publishing/index.md).
-   It is still irreversible (crates.io allows yanking, not deletion): do not
-   skip steps 3–4 to get here faster.
-6. Tag `v<version>` and push it alongside the commit.
+5. Commit the change (on its own branch, per this repository's standing
+   workflow) and merge it into `main` with `--no-ff`, then push `main` to
+   `origin`. An agent working in this repository is authorized to run that
+   push itself, not only prepare the commit for a human to push — see
+   [`spec/release-process/`](../../spec/release-process/index.md).
+6. `cargo publish --dry-run`, then `cargo publish`. Same authorization,
+   same document. It is still irreversible (crates.io allows yanking, not
+   deletion): do not skip steps 3–4 to get here faster.
+7. Tag `v<version>` and push the tag to `origin`.

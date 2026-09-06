@@ -59,11 +59,13 @@ The recipe is [`agents/tasks.md`](agents/tasks.md#release); it is not
 repeated here. What's worth stating in this file specifically: an agent
 working here may decide that a specific, already-landed, gate-passed
 change warrants a release, and run the real `cargo publish` for it —
-not only prepare one and wait to be told. That authorization is bounded by
-[`../spec/release-process/`](../spec/release-process/index.md); it does not
-relax the recipe's own gates, and it does not extend to deciding what a
-release *claims*. See [`../AI_STATEMENT.md`](../AI_STATEMENT.md) for the
-full disclosure this is part of.
+not only prepare one and wait to be told. The same decision also covers
+committing, merging into `main`, and pushing `main` and the release tag to
+`origin` — the whole pipeline, not publish alone. That authorization is
+bounded by [`../spec/release-process/`](../spec/release-process/index.md);
+it does not relax the recipe's own gates, and it does not extend to
+deciding what a release *claims*. See [`../AI_STATEMENT.md`](../AI_STATEMENT.md)
+for the full disclosure this is part of.
 
 ## The one domain rule to internalise
 
