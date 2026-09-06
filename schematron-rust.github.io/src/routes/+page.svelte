@@ -283,9 +283,10 @@ cat data.xml | schematron -s rules.sch -`}</code></pre>
       <code>some</code>, <code>every</code>, and ranges. XPath 3.0: function
       items, the arrow operator <code>=&gt;</code>, string concatenation
       <code>||</code>, the simple map operator <code>!</code>, <code>let</code>,
-      and the higher-order sequence functions. Everything outside either
-      subset is a <strong>hard error naming the construct</strong>, never a
-      wrong answer. <a href="/conformance/">The exact boundary &rarr;</a>
+      EQNames (<code>Q&#123;uri&#125;local</code>), and the higher-order
+      sequence functions. Everything outside either subset is a
+      <strong>hard error naming the construct</strong>, never a wrong answer.
+      <a href="/conformance/">The exact boundary &rarr;</a>
     </p>
   </Details>
 
