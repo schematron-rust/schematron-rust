@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Version | 1.1.0 |
-| Effective date | 2026-09-02 |
+| Version | 1.2.0 |
+| Effective date | 2026-09-06 |
 | Status | Active |
 | Author and owner | Joel Parker Henderson, maintainer |
 | Canonical location | `AI_STATEMENT.md` at the repository root |
@@ -118,7 +118,7 @@ anywhere in this document: no defensible method exists for measuring one.
 | The website (`schematron-rust.github.io/`) | ai-generated | Held to its own `AGENTS.md`/`CLAUDE.md` |
 | Documentation, `CHANGELOG.md`, `NEWS.md`, and this statement | ai-generated | Held to the repository's own prose conventions |
 | What ISO/IEC 19757-3 requires where the standard is silent, conformance and portability findings, requirement adjudications | none | Decided by the maintainer, recorded in `schematron/spec/conformance/` or `schematron/spec/roadmap/` with reasoning |
-| Deciding that a specific release is ready — that an already-landed, gate-passed change warrants a crates.io release — and executing `cargo publish` for it | autonomous | Adopted 2026-09-02, at the maintainer's direction, and bounded by [`spec/release-process/`](spec/release-process/index.md): only inside a live interactive session on the maintainer's own machine, never a scheduled or unattended one; only using the `cargo login` credential already configured there, never a separate one; only after every step of the release recipe in [`schematron/agents/tasks.md`](schematron/agents/tasks.md#release) holds — the version bump, the `CHANGELOG.md` entry, `cargo package --list`, the four-command gate, the differential suite, and `cargo bench`; and bounded to *whether and when*, never to *what a release claims*. §4's accountability is unchanged by this row |
+| Deciding that a specific release is ready — that an already-landed, gate-passed change warrants a release — and executing it: committing, merging into `main`, pushing `main` and the release tag to `origin`, and running `cargo publish` | autonomous | Adopted 2026-09-02 for the crates.io side, at the maintainer's direction, and widened 2026-09-06 to the git side (committing, merging, and pushing to `origin`), also at the maintainer's explicit direction. Bounded by [`spec/release-process/`](spec/release-process/index.md): only inside a live interactive session on the maintainer's own machine, never a scheduled or unattended one; only using the `cargo login` credential already configured there and only the `origin` remote, never a separate credential or a different remote; only after every step of the release recipe in [`schematron/agents/tasks.md`](schematron/agents/tasks.md#release) holds — the version bump, the `CHANGELOG.md` entry, `cargo package --list`, the four-command gate, the differential suite, and `cargo bench`; and bounded to *whether and when*, never to *what a release claims*. §4's accountability is unchanged by this row |
 | Accepting a contribution from someone else | none | Prohibited use; see §11 |
 
 **autonomous** now appears in exactly the one row above, adopted
@@ -135,11 +135,17 @@ plainly. That is now the one exception: within the bounds
 agentic tool may **decide that a specific release is ready** — that an
 already-committed, gate-passed change warrants one — without the
 maintainer naming that release as a separate instruction, and execute it.
-That is deliberately narrower than "automated" in the scheduled-workflow
-sense — it still requires a human-started, live session, the same
-environment every other agentic action in this repository already runs
-in — and it is the one row in §5 where the decision is not the
-maintainer's alone. Every other decision with consequences — what a
+Until 2026-09-06, "execute it" meant `cargo publish` alone, with the git
+side — committing, merging into `main`, pushing `main` and the tag to
+`origin` — still outside what this exception covered; on that date, at the
+maintainer's explicit direction, the same decision was widened to cover
+that too, so a release is no longer decided in a way that leaves half of
+it for a human to finish. Both remain deliberately narrower than
+"automated" in the scheduled-workflow sense — it still requires a
+human-started, live session, the same environment every other agentic
+action in this repository already runs in, pushing only to `origin`, never
+a different remote — and it is the one row in §5 where the decision is not
+the maintainer's alone. Every other decision with consequences — what a
 conformance gap means, what a roadmap item is worth building, what a
 release's `CHANGELOG.md` entry claims — remains the maintainer's. A
 decision that exists only inside a tool session, outside what §5's
@@ -331,6 +337,7 @@ this repository's actual files rather than copied from theirs.
 | 1.0.0 | 2026-09-02 | First issue, written to reconcile this repository with the AI-disclosure practice already adopted in this maintainer's other Rust workspaces, and to record the same day's governance change: an agentic tool may now decide a landed change warrants a crates.io release and run `cargo publish` for it, bounded by [`spec/trusted-publishing/`](spec/trusted-publishing/index.md). |
 | 1.0.1 | 2026-09-02 | §4 corrected: the first issue's "shall not be named as the author of, or a signer of" was imprecise about the `Co-Authored-By:` trailer §10 already documents, echoing wording an earlier sibling-workspace draft got wrong (a blanket "no co-author" rule that its own commit history contradicted). Restated precisely: git's `Author:`/`Committer:` field is always the human, and is what §4 prohibits a tool from occupying; a trailer naming the tool as co-author is disclosure, not a violation. `CONTRIBUTING.md` gained a matching "Using AI tools" section, so the same mistake cannot be reintroduced there either. |
 | 1.1.0 | 2026-09-02 | The autonomous release-decision row (§5) and §6 now point to [`spec/release-process/`](spec/release-process/index.md), a new, fuller normative document — [`spec/trusted-publishing/`](spec/trusted-publishing/index.md)'s "Governance" note is kept short and points there rather than duplicating the bounds. §5's row wording tightened to say plainly what it authorizes: deciding that a specific release is *ready*, not only executing one already decided, and explicitly bounded to *whether and when* rather than *what a release claims*. `schematron/README.md` and `schematron/AGENTS.md` gained matching pointers. |
+| 1.2.0 | 2026-09-06 | At the maintainer's explicit direction ("revise spec: automate commit, merge into main, push, publish"), the autonomous release-decision row (§5) and §6 widened from *publish alone* to the whole release pipeline: committing, merging into `main`, and pushing `main` and the release tag to `origin`, alongside `cargo publish`. Before this date, the git side of a release was still a step a human had to run separately, and [`spec/release-process/`](spec/release-process/index.md)'s §3 said so in as many words ("bounded to crates.io... if that changes, the bound does not automatically extend with it") — that bound is what changed, deliberately and by name, not by drift. Annex B's `autonomous-use` field updated to match. [`schematron/agents/tasks.md`](schematron/agents/tasks.md#release), `schematron/README.md`, and `schematron/AGENTS.md` updated in the same commit. |
 
 ## Annex B. Machine-readable summary
 
@@ -339,8 +346,8 @@ is authoritative where the two could ever disagree.
 
 ```yaml
 ai-statement:
-  version: 1.1.0
-  last-updated: 2026-09-02
+  version: 1.2.0
+  last-updated: 2026-09-06
   vocabulary: w3c-ai-content-disclosure
   disclosure-default: ai-generated
   tools:
@@ -357,5 +364,5 @@ ai-statement:
     release-decisions: autonomous
   commit-trailers: true
   ships-ai-system: false
-  autonomous-use: release-publish-only
+  autonomous-use: release-publish-and-origin-push
 ```

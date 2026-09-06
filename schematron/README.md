@@ -385,7 +385,9 @@ source. See [agents/testing.md](agents/testing.md).
 
 An AI coding agent may decide a specific, already-landed, gate-passed
 change warrants a release, and run the actual `cargo publish` for it — not
-only prepare one for a human to run — bounded by
+only prepare one for a human to run. The same decision also covers
+committing, merging into `main`, and pushing `main` and the release tag to
+`origin`, bounded by
 [`../spec/release-process/`](../spec/release-process/index.md) and
 disclosed in [`../AI_STATEMENT.md`](../AI_STATEMENT.md). The maintainer
 remains accountable either way; see both documents for exactly what that
