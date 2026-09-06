@@ -108,6 +108,18 @@ a lint, investigating "this schema does nothing," bumping the MSRV, adding a
 dependency, and the release checklist. Use them rather than improvising the
 shape of a change.
 
+**The release recipe is the one with standing governance behind it, not
+just a checklist.** [`spec/release-process/`](../spec/release-process/index.md)
+(repo root) authorizes an agent working in this repository to decide, on
+its own, that a landed, gate-passed change warrants a release — and to
+carry out the whole thing: commit, merge into `main`, push `main` and the
+release tag to `origin`, and `cargo publish`. That is bounded — a live
+interactive session only, the existing `cargo login` credential and the
+`origin` remote only, never inventing what a release *claims* — read the
+document's §§1–4 before relying on it, don't just skim this paragraph.
+`AI_STATEMENT.md` (repo root) discloses this as the one **autonomous** row
+in an otherwise directed practice.
+
 ## Testing shape
 
 `schematron/agents/testing.md` covers the layers and which to reach for.

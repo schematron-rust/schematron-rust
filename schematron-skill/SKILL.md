@@ -101,13 +101,16 @@ function references (`name#arity`), and dynamic calls (`$f(1, 2)`) — the
 arrow operator (`$x => f()`, sugar for piping a value in as a function's
 first argument), string concatenation (`||`), the simple map operator
 (`E1 ! E2`, evaluating `E2` once per item of `E1` with that item as the
-context item), the `let $v := E return E` expression, and the higher-order
-sequence functions (`for-each`, `filter`, `fold-left`, `fold-right`,
-`for-each-pair`, `function-lookup`, `function-arity`, `function-name`).
-Same discipline as 2.0: anything outside the documented subset is a hard
-error naming the construct. `sort`, maps, and arrays are XPath 3.1, not
-3.0, and stay unsupported (`xpath31`/`xslt31` bindings are refused by
-default). See `schematron/spec/xpath3/index.md`.
+context item), the `let $v := E return E` expression, EQNames
+(`Q{uri}local`, naming an element or attribute by namespace URI directly —
+node name tests only, not variables, types, or function references), and
+the higher-order sequence functions (`for-each`, `filter`, `fold-left`,
+`fold-right`, `for-each-pair`, `function-lookup`, `function-arity`,
+`function-name`). Same discipline as 2.0: anything outside the documented
+subset is a hard error naming the construct. `sort`, maps, and arrays are
+XPath 3.1, not 3.0, and stay unsupported (`xpath31`/`xslt31` bindings are
+refused by default); union types in casts and signatures were never
+actually XPath 3.0 syntax to begin with. See `schematron/spec/xpath3/index.md`.
 
 ## Using it
 
