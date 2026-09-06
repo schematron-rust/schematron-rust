@@ -1,10 +1,28 @@
 # News
 
-Repository-level news — announcements about the project itself, not the
+Repository-level news — announcements about the project instead of the
 crate's behavior. The crate's own release notes are
 [`schematron/CHANGELOG.md`](schematron/CHANGELOG.md); this file covers
 everything else that is worth a reader noticing, starting from when this file
 was created.
+
+## 2026-09-06
+
+- **The autonomous release decision widened to cover the git side, not
+  crates.io alone.** Since 2026-09-02, an agentic tool could decide a
+  landed, gate-passed change warranted a crates.io release and run
+  `cargo publish` for it; pushing the resulting commit and tag to
+  `origin` — the step that makes a release actually *visible* — was
+  still outside that authorization, and
+  [`spec/release-process/`](spec/release-process/index.md)'s bounds
+  said so explicitly. At the maintainer's direction, that changed:
+  the same decision now also covers committing, merging into `main`,
+  and pushing `main` and the release tag to `origin`, so a release
+  isn't decided in a way that leaves half of it for a human to finish.
+  `AI_STATEMENT.md` moved to 1.2.0 to match. Exercised for the first
+  time the same day, for `schematron` 0.15.0 — see
+  [`schematron/CHANGELOG.md`](schematron/CHANGELOG.md) for what that
+  release actually contains.
 
 ## 2026-09-02
 
