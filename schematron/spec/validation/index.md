@@ -294,3 +294,14 @@ variable and an unknown function never reach this point; both are caught when
 the schema loads. It is not silently
 treated as false, because a silently-false assertion is a validation that
 passes for the wrong reason.
+
+## Streaming
+
+The algorithm above assumes the whole instance document is already a tree in
+memory. Streaming validation ([streaming/](../streaming/index.md)) computes
+the identical result — the same rule-matching semantics, the same
+first-matching-rule-wins, the same finding at the same location — by a
+different execution strategy: one repeating record parsed, matched, fired,
+and discarded at a time, rather than one pass over an already-complete tree.
+Only for a schema whose active patterns are provably local to one record's
+own subtree; anything else is refused by name rather than approximated.
