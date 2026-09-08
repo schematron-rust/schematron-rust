@@ -16,6 +16,7 @@
     { flag: '--flag <FLAG>', description: 'Report only assertions with this flag. Repeatable.' },
     { flag: '--max-failures <N>', description: 'Stop after N findings.' },
     { flag: '--parallel', description: 'Evaluate patterns on separate threads.' },
+    { flag: '--stream', description: 'Validate one repeating record at a time, in bounded memory. Refused, naming why, unless the schema and document qualify. Cannot combine with --parallel.' },
     { flag: '--svrl-findings-only', description: 'Omit fired-rule events from SVRL.' },
     { flag: '--allow-unknown-query-binding', description: 'Compile an unsupported binding (xpath31 and later) anyway, best effort.' },
     { flag: '--list-phases', description: "Print the schema's phases and exit." },

@@ -36,6 +36,9 @@ pub enum Error {
 
     #[error("cannot resolve {href}: {message}")]
     Resolve { href: String, message: String },
+
+    #[error("streaming validation is not possible: {message}")]
+    Streaming { message: String },
 }
 ```
 

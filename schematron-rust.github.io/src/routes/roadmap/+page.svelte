@@ -35,7 +35,8 @@
     'XPath 3.0 phase 3: the rest of the higher-order sequence functions — filter, fold-left, fold-right, for-each-pair — and function-item introspection',
     'XPath 3.0 phase 4: the simple map operator !, plus the let expression found while documenting it',
     'EQNames, Q{uri}local, for node name tests — the other gap phase 4 found, plus a stack-overflow regression in the recursion-depth margin, caught by fuzzing and closed the same day',
-    'Union types retracted as a gap, not implemented as one — neither the XPath 3.0 nor 3.1 grammar has a (T | T) union-type literal at all, so the syntax this roadmap once cited was never real XPath to begin with'
+    'Union types retracted as a gap, not implemented as one — neither the XPath 3.0 nor 3.1 grammar has a (T | T) union-type literal at all, so the syntax this roadmap once cited was never real XPath to begin with',
+    'Streaming validation, requested by the maintainer, overriding an earlier deferral here — one repeating record parsed, matched, fired, and discarded at a time, for schemas provably local to it, with no rework of the arena or NodeId model after all: verified with a counting allocator that live bytes stay identical at 10,000, 100,000, and 1,000,000 records'
   ];
 </script>
 
@@ -89,28 +90,12 @@
   />
 
   <p>
-    Two items remain, and both are arguments for <em>not</em> doing the
+    One item remains, and it is an argument for <em>not</em> doing the
     work yet. That is deliberate: a roadmap that only lists ambitions is a wish
     list.
   </p>
 
-  <Details summary="1. Streaming validation — narrower than it looks">
-    <p>
-      For patterns whose rules only need the subtree rooted at the context node,
-      validate without materialising the whole document.
-    </p>
-    <p>
-      It pays off only when <em>every</em> active pattern is subtree-local: one
-      <code>//</code>, one <code>key()</code>, one <code>ancestor::</code>
-      forces the whole tree to be materialised anyway. Cross-node constraints
-      are precisely what Schematron exists for, so most real schemas would fall
-      back. Weighed against reworking the arena and <code>NodeId</code> model
-      the entire engine rests on, that is a poor trade until someone has a
-      document it actually blocks.
-    </p>
-  </Details>
-
-  <Details summary="2. no_std core — blocked, and the earlier reasoning was wrong">
+  <Details summary="1. no_std core — blocked, and the earlier reasoning was wrong">
     <p>
       The claim was that only I/O and the resolver need <code>std</code>. They
       are not the obstacle: <code>quick-xml</code>, which this crate's XML

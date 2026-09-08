@@ -18,6 +18,7 @@ schematron [OPTIONS] --schema <SCHEMA> [DOCUMENT]...
 | `--flag <FLAG>` | Report only assertions with this flag. Repeatable. |
 | `--max-failures <N>` | Stop after N findings |
 | `--parallel` | Evaluate patterns on separate threads; see [validation/](../validation/index.md) |
+| `--stream` | Validate one repeating record at a time, in bounded memory; refused, naming why, unless the schema and document qualify — see [streaming/](../streaming/index.md). Cannot be combined with `--parallel` |
 | `--svrl-findings-only` | Omit `fired-rule` events from SVRL |
 | `--allow-unknown-query-binding` | Compile an unsupported binding (`xpath31` and later) anyway, best effort |
 | `--list-phases` | Print the schema's phases and exit |

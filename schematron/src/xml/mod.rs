@@ -1,9 +1,17 @@
 //! A pure Rust XML parser and XPath 1.0 data model.
 //!
-//! Schematron is defined over the XPath data model, so validating a document
-//! needs a tree with all seven XPath node kinds, correct namespace scoping,
-//! and a stable document order — not a stream of events. This module provides
-//! exactly that and nothing more; it is not a general-purpose XML toolkit.
+//! Schematron is defined over the XPath data model, so matching a rule
+//! context or evaluating a test always needs a real tree with all seven
+//! XPath node kinds, correct namespace scoping, and a stable document
+//! order — never a bare stream of events with no tree behind it. This
+//! module provides exactly that and nothing more; it is not a
+//! general-purpose XML toolkit.
+//!
+//! That tree need not span the *whole* document at once, though: streaming
+//! validation (`spec/streaming/`, `StreamingReader`) builds the same tree
+//! one record at a time, in bounded memory, for schemas whose rules never
+//! need more than a record's own subtree — never an event stream standing
+//! in for the data model itself.
 //!
 //! See `spec/xml/` for the design and its deliberate limits.
 //!
@@ -22,6 +30,7 @@
 mod document;
 mod node;
 mod parser;
+mod streaming;
 mod writer;
 
 pub use document::Document;
@@ -30,3 +39,4 @@ pub use parser::MAX_DEPTH;
 pub use writer::{escape_attribute, escape_text};
 
 pub(crate) use node::NodeData;
+pub(crate) use streaming::StreamingReader;

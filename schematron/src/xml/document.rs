@@ -373,6 +373,19 @@ impl Document {
         out
     }
 
+    /// Every node in `start`'s own subtree, `start` itself included, in
+    /// document order — the same walk [`Document::all_nodes_in_document_order`]
+    /// does from the true root, but scoped to one node.
+    ///
+    /// Used by streaming validation (`src/validate/engine.rs`) to fire rules
+    /// within one record's subtree without re-walking the whole document —
+    /// see `spec/streaming/`.
+    pub(crate) fn nodes_in_subtree_order(&self, start: NodeId) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        self.push_all(start, &mut out);
+        out
+    }
+
     fn push_all(&self, id: NodeId, out: &mut Vec<NodeId>) {
         out.push(id);
         out.extend_from_slice(self.namespaces(id));
@@ -406,6 +419,20 @@ impl Document {
         self.data(id).sibling_position
     }
 
+    /// Overrides `id`'s own `sibling_position`, computed by
+    /// [`Document::finalize_subtree`] only for its *children*.
+    ///
+    /// Streaming validation reuses one arena slot across many records
+    /// (`src/xml/streaming.rs`), so a record's parent only ever has *one*
+    /// child attached at finalize time — `finalize_subtree` would number
+    /// every record `[1]`, which is wrong for a location such as
+    /// `/orders/order[42]`. The streaming reader tracks the true
+    /// cumulative count itself and calls this once per record, after
+    /// `finalize_subtree`, to correct it.
+    pub(crate) fn set_sibling_position(&mut self, id: NodeId, position: usize) {
+        self.nodes[id.0].sibling_position = position;
+    }
+
     /// Computes `subtree_end` and `sibling_position` for every node.
     ///
     /// Run once after a tree is built, in a single pass. Both values are
@@ -417,7 +444,18 @@ impl Document {
         }
     }
 
-    fn finalize_subtree(&mut self, id: NodeId) -> usize {
+    /// Computes `subtree_end` and `sibling_position` for one subtree,
+    /// independent of the rest of the tree.
+    ///
+    /// [`Document::append_document`] already relies on this working on an
+    /// arbitrary subtree, not just from a document's true root; streaming
+    /// validation (`src/xml/streaming.rs`) reuses the same primitive once
+    /// per record. `id`'s own `sibling_position` is not touched here — only
+    /// its *children's* — so a caller numbering `id` itself among siblings
+    /// spanning more than what is currently attached to its parent (as
+    /// streaming does, since only one record is ever attached at a time)
+    /// must set it separately; see [`Document::set_sibling_position`].
+    pub(crate) fn finalize_subtree(&mut self, id: NodeId) -> usize {
         // Attributes and namespace nodes are numbered before children, so the
         // subtree's highest order starts from whichever exists.
         let mut end = self.data(id).order;

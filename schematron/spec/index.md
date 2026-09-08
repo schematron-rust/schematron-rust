@@ -20,6 +20,7 @@ XML data model, its own XPath 1.0 engine, and its own Schematron validator.
 | Validation semantics | [validation/](validation/index.md) | Implemented |
 | SVRL report output | [svrl/](svrl/index.md) | Implemented |
 | Keys | [keys/](keys/index.md) | Implemented |
+| Streaming validation | [streaming/](streaming/index.md) | Implemented — one repeating record at a time, for schemas whose rules are local to it |
 | Schema linting | [linting/](linting/index.md) | Implemented |
 | Library API | [api/](api/index.md) | Implemented |
 | Command line interface | [cli/](cli/index.md) | Implemented |

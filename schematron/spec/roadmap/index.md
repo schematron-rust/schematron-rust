@@ -247,22 +247,32 @@
   never in scope — so no union type can exist here for an `EQName` to
   name, in any binding. Nothing was implemented; the gap was retracted.
   See `spec/xpath3/#union-types-are-not-a-gap`.
+- **Streaming validation, at the maintainer's direction, overriding this
+  document's own earlier deferral.** The deferral's reasoning stays true —
+  it pays off only when every active pattern is local to one record's own
+  subtree, and most real schemas are not — but the feared cost, "reworking
+  the arena and `NodeId` model the entire engine rests on," turned out not
+  to be the actual price: `NodeId` stayed a plain arena index throughout;
+  each record is parsed into the same slot the previous one occupied,
+  truncated before the next starts. `Document::finalize_subtree` — already
+  load-bearing for `document()`'s cross-document merge — is reused
+  unchanged per record, with one real correctness trap found along the
+  way: a record's own `sibling_position` needs the *true* cumulative
+  count, not "1st of 1," since a reused slot's parent only ever has one
+  child attached at finalize time. Verified with a counting allocator, not
+  assumed: live bytes at the end of a run are identical at 10,000,
+  100,000, and 1,000,000 records, after a first, more naive check
+  (resident set) looked like it wasn't actually bounded and turned out to
+  be ordinary allocator retention instead — see `spec/testing/`. See
+  `spec/streaming/` for exactly what a schema and document have to look
+  like, and why `--stream` refuses rather than approximates one that
+  doesn't.
 
 ## Next
 
 Ordered by value, not by how the XPath 2.0 phases happened to be numbered.
 
-1. **Streaming validation** — for patterns whose rules only need the subtree
-   rooted at the context node, validate without materialising the whole
-   document.
-
-   **Narrower than it looks.** It pays off only when *every* active pattern is
-   subtree-local: one `//`, one `key()`, one `ancestor::` forces the whole tree
-   to be materialised anyway. Cross-node constraints are precisely what
-   Schematron exists for, so most real schemas would fall back. Weighed against
-   reworking the arena and `NodeId` model the entire engine rests on, that is a
-   poor trade until someone has a document it actually blocks.
-2. **`no_std` core** — **blocked, and the earlier reasoning here was wrong.**
+1. **`no_std` core** — **blocked, and the earlier reasoning here was wrong.**
    The claim was that only I/O and the resolver need `std`. They are not the
    obstacle: `quick-xml`, which this crate's XML parser is built on, declares
    no `no_std` support and reaches for `std::io` and `std::error` throughout.

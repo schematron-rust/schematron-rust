@@ -63,6 +63,7 @@ reporting an unknown function.
 | `diagnostics`, `diagnostic` | Full |
 | `properties`, `property` | Full |
 | `key` | Full, as a **non-ISO extension** — see [keys/](../keys/index.md) |
+| Streaming validation (`--stream`) | Full, as a **non-ISO extension**, for schemas provably local to one record — see [streaming/](../streaming/index.md) |
 | `param`, abstract patterns (`abstract`, `is-a`) | Full |
 | abstract rules (`rule/@abstract` + `extends`) | Full |
 | `title`, `p`, `emph`, `span`, `dir` | Full |

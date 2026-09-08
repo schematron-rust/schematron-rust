@@ -92,6 +92,107 @@ pub(crate) fn validate(
     validate_loading_documents(schema, document, options)
 }
 
+/// Validates a streamed document: one repeating record parsed, matched,
+/// fired, and discarded at a time, so peak memory stays bounded by the
+/// skeleton plus one record instead of growing with the document. See
+/// `Schema::validate_streaming` and `spec/streaming/`.
+///
+/// Reuses `run_pattern`'s claim-then-fire algorithm unchanged for the
+/// skeleton itself (there is nothing else there before the first record,
+/// so a plain call already gives the right answer) and
+/// `run_pattern_scoped_to_record` — the same algorithm, scoped to one
+/// record's own subtree — for everything after.
+pub(crate) fn validate_streaming<R: std::io::Read>(
+    schema: &Schema,
+    source: R,
+    options: &ValidateOptions,
+) -> Result<Report> {
+    if let Err(reason) = schema.streaming_eligible() {
+        return Err(Error::streaming(reason.to_string()));
+    }
+    if options.is_parallel() {
+        return Err(Error::streaming(
+            "--stream/validate_streaming cannot be combined with parallel pattern \
+             evaluation: the arena streaming reuses across records is not safe to \
+             share across threads",
+        ));
+    }
+
+    let model = schema.model();
+    let phase = resolve_phase(model, &options.phase)?;
+    let active = active_patterns(model, phase.as_deref());
+    let keys = Keys::new(); // guaranteed empty: streaming_eligible refuses any <key>
+    let documents = Documents::new();
+    let current_time = options.resolve_current_time();
+    let implicit_timezone = options.implicit_timezone.unwrap_or(0);
+    let mut variables = Variables::new();
+    let mut failures = 0usize;
+
+    let mut combined: Vec<ActivePattern> = active
+        .iter()
+        .map(|pattern| ActivePattern {
+            id: pattern.id.clone(),
+            name: pattern.title.clone(),
+            documents: None,
+            rules: Vec::new(),
+        })
+        .collect();
+
+    let mut reader = crate::xml::StreamingReader::open(source)?;
+
+    // The skeleton alone, before any record exists: catches a rule whose
+    // context matches the document element itself or its own attributes —
+    // the only nodes that exist at this point. An ordinary `run_pattern`
+    // call already does exactly the right thing here.
+    {
+        let run = Run {
+            schema,
+            document: reader.document(),
+            keys: &keys,
+            documents: &documents,
+            current_time,
+            implicit_timezone,
+            options,
+        };
+        for (pattern, out) in active.iter().zip(combined.iter_mut()) {
+            let fired = run_pattern(run, pattern, None, &mut variables, &mut failures)?;
+            out.rules.extend(fired.rules);
+        }
+    }
+
+    while options.max_failures.is_none_or(|limit| failures < limit) {
+        let Some(record) = reader.next_record()? else {
+            break;
+        };
+        let run = Run {
+            schema,
+            document: reader.document(),
+            keys: &keys,
+            documents: &documents,
+            current_time,
+            implicit_timezone,
+            options,
+        };
+        for (pattern, out) in active.iter().zip(combined.iter_mut()) {
+            let fired =
+                run_pattern_scoped_to_record(run, pattern, record, &mut variables, &mut failures)?;
+            out.rules.extend(fired.rules);
+            if options.max_failures.is_some_and(|limit| failures >= limit) {
+                break;
+            }
+        }
+    }
+    reader.finish()?;
+
+    Ok(Report {
+        title: model.title.clone(),
+        phase,
+        schema_version: model.schema_version.clone(),
+        namespaces: model.namespaces.clone(),
+        patterns: combined,
+    })
+}
+
 /// Validation for a schema that calls `document()`.
 ///
 /// Evaluation holds the tree immutably, so a `document()` call cannot load
@@ -540,6 +641,81 @@ fn run_pattern(
     }
 
     for node in document.all_nodes_in_document_order() {
+        let index = claims[node.0];
+        if index == UNCLAIMED {
+            continue;
+        }
+        let rule = &pattern.rules[index as usize];
+        let fired = fire_rule(run, rule, node, variables, failures)?;
+        if options.record_fired_rules || !fired.assertions.is_empty() {
+            active.rules.push(fired);
+        }
+        if options.max_failures.is_some_and(|limit| *failures >= limit) {
+            break;
+        }
+    }
+
+    variables.truncate(mark);
+    Ok(active)
+}
+
+/// Like [`run_pattern`], but claims and fires only within one streaming
+/// record's own subtree — never the skeleton nodes (the document element
+/// and its own attributes/namespaces) that stay resident across every
+/// record, since [`validate_streaming`] already claims and fires those
+/// exactly once, before the first record, with an ordinary `run_pattern`
+/// call. Calling *this* on the skeleton too would refire on it every
+/// record, because it never leaves the reused arena.
+///
+/// `matched_nodes` and `fire_rule` are reused completely unchanged — the
+/// only difference from `run_pattern` is which nodes count as in scope:
+/// matches outside `record`'s own subtree are discarded rather than
+/// claimed, and firing walks `record`'s subtree instead of the whole
+/// document.
+fn run_pattern_scoped_to_record(
+    run: Run<'_>,
+    pattern: &Pattern,
+    record: NodeId,
+    variables: &mut Variables,
+    failures: &mut usize,
+) -> Result<ActivePattern> {
+    let Run { document, options, .. } = run;
+    let mark = variables.mark();
+    // Guaranteed empty by `Schema::streaming_eligible`, so this binds
+    // nothing — kept for structural parity with `run_pattern`, so the two
+    // stay obviously comparable rather than silently diverging over time.
+    bind_all(run, record, &pattern.lets, variables, "pattern/let")?;
+
+    let mut active = ActivePattern {
+        id: pattern.id.clone(),
+        name: pattern.title.clone(),
+        documents: None,
+        rules: Vec::new(),
+    };
+
+    let mut claims: Vec<u32> = vec![UNCLAIMED; document.nodes.len()];
+    let mut claimed = false;
+    for (index, rule) in pattern.rules.iter().enumerate() {
+        let index = u32::try_from(index).unwrap_or(UNCLAIMED - 1);
+        for node in matched_nodes(run, rule, variables)? {
+            if node != record && !document.is_descendant_of(node, record) {
+                // A skeleton-level match — `validate_streaming`'s one-time
+                // pass over the bare skeleton already claimed and fired it.
+                continue;
+            }
+            if claims[node.0] == UNCLAIMED {
+                claims[node.0] = index;
+                claimed = true;
+            }
+        }
+    }
+
+    if !claimed {
+        variables.truncate(mark);
+        return Ok(active);
+    }
+
+    for node in document.nodes_in_subtree_order(record) {
         let index = claims[node.0];
         if index == UNCLAIMED {
             continue;

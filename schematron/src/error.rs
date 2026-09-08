@@ -124,6 +124,20 @@ pub enum Error {
         /// Why it failed, or why it was refused.
         message: String,
     },
+
+    /// A streaming validation request could not be honoured: the schema or
+    /// the document does not meet the constraints streaming validation
+    /// requires. See `spec/streaming/`.
+    ///
+    /// Deliberately a hard error rather than a silent fallback to full
+    /// materialization — someone asking for streaming likely did so
+    /// because the document will not fit fully in memory, and guessing
+    /// would risk exhausting it instead of failing cleanly.
+    #[error("streaming validation is not possible: {message}")]
+    Streaming {
+        /// What specifically disqualified it.
+        message: String,
+    },
 }
 
 impl Error {
@@ -169,6 +183,12 @@ impl Error {
     pub(crate) fn xpath_eval(context: impl Into<String>, message: impl Into<String>) -> Self {
         Error::XPathEval {
             context: context.into(),
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn streaming(message: impl Into<String>) -> Self {
+        Error::Streaming {
             message: message.into(),
         }
     }

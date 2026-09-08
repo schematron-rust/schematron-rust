@@ -5,7 +5,7 @@
 // schematron-rust and must be kept in step with it. See AGENTS.md.
 
 export const CRATE = 'schematron';
-export const VERSION = '0.15.0';
+export const VERSION = '0.16.0';
 export const MSRV = '1.96';
 export const REPO = 'https://github.com/schematron-rust/schematron-rust';
 export const CRATES_IO = 'https://crates.io/crates/schematron';
@@ -31,6 +31,7 @@ export const SPEC_DOCS: SpecDoc[] = [
   { file: 'validation/index.md', title: 'Validation', covers: 'The validation algorithm, exactly.' },
   { file: 'svrl/index.md', title: 'SVRL', covers: 'The report format, read and written.' },
   { file: 'keys/index.md', title: 'Keys', covers: 'Keys, and why a cross-reference check needs one.' },
+  { file: 'streaming/index.md', title: 'Streaming validation', covers: 'One repeating record at a time, in bounded memory, for schemas local to it.' },
   { file: 'linting/index.md', title: 'Linting', covers: 'Catching schemas that silently do nothing.' },
   { file: 'api/index.md', title: 'API', covers: 'The library surface.' },
   { file: 'cli/index.md', title: 'CLI', covers: 'Every option, and every exit code.' },

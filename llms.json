@@ -36,6 +36,7 @@
         { "title": "spec/parsing/", "url": "schematron/spec/parsing/index.md", "description": "The five schema compilation passes." },
         { "title": "spec/svrl/", "url": "schematron/spec/svrl/index.md", "description": "The SVRL report format, read and written." },
         { "title": "spec/keys/", "url": "schematron/spec/keys/index.md", "description": "Keys, and why a cross-reference check needs one." },
+        { "title": "spec/streaming/", "url": "schematron/spec/streaming/index.md", "description": "Validating one repeating record at a time, in bounded memory, for schemas local to it." },
         { "title": "spec/linting/", "url": "schematron/spec/linting/index.md", "description": "Catching schemas that silently do nothing." },
         { "title": "spec/api/", "url": "schematron/spec/api/index.md", "description": "The library surface." },
         { "title": "spec/cli/", "url": "schematron/spec/cli/index.md", "description": "Every CLI option and exit code." },
