@@ -357,11 +357,31 @@ starts from the primary root only.
 
 - Test: `src/xml/document.rs::tests::appending_a_document_keeps_the_two_trees_separate`
 
+### A streamed record's rules fire once, never once per record
+
+The document element (and its own attributes) stays resident across every
+record streaming validation parses, so a rule matching it would refire on
+every single record under a naive per-record claim pass. It is claimed and
+fired exactly once instead, by an ordinary `run_pattern` call over the bare
+skeleton before the first record — `run_pattern_scoped_to_record`
+(`src/validate/engine.rs`) explicitly discards any match outside the
+current record's own subtree so it can never do this again.
+
+- Test: `tests/streaming.rs::a_rule_on_the_document_element_itself_fires_exactly_once`
+
 ### Trees must be finalized
 
-Any code path that builds a `Document` must call `Document::finalize()`, or
-`subtree_end` and `sibling_position` are wrong and the axes silently misbehave.
-The parser and the include resolver both do.
+Any code path that builds a `Document` must call `Document::finalize()` (or,
+for one node's own subtree rather than the whole tree, `finalize_subtree`
+directly), or `subtree_end` and `sibling_position` are wrong and the axes
+silently misbehave. The parser and the include resolver both call
+`finalize()`; `document()`'s cross-document merge and streaming validation's
+`StreamingReader` (`src/xml/streaming.rs`) both call `finalize_subtree`
+directly, once per subtree — streaming additionally overwrites its record's
+own `sibling_position` afterward, since a reused arena slot's parent only
+ever has one child attached when that pass runs, which is not the true
+cumulative count a location needs. See `spec/streaming/`.
 
 - Test: `fuzz/fuzz_targets/fuzz_xml.rs` asserts subtree consistency on every
   parsed tree.
+- Test: `tests/streaming.rs::sibling_positions_in_locations_are_the_true_cumulative_count`
