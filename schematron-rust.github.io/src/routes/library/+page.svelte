@@ -143,6 +143,37 @@ let report = schema.validate_with(&document, &options)?;`}</code></pre>
 </section>
 
 <section class="section prose">
+  <SectionHeading class="section-heading-start" eyebrow="Bounded memory" heading="Streaming validation" level={2} />
+
+  <p>
+    For a document too large to comfortably hold fully in memory,{' '}
+    <code>validate_streaming</code> validates one repeating record at a
+    time — the document element's direct children, e.g.{' '}
+    <code>&lt;order&gt;</code> under <code>&lt;orders&gt;</code> — parsed,
+    matched, fired, and discarded before the next is parsed:
+  </p>
+
+  <CodeBlock label="Streaming from a file">
+    <pre><code>{`let schema = Schema::from_path("rules.sch")?;
+schema.streaming_eligible()?; // checked once, before any document is read
+
+let file = std::fs::File::open("orders.xml")?;
+let report = schema.validate_streaming(file, &ValidateOptions::new())?;`}</code></pre>
+  </CodeBlock>
+
+  <p>
+    Only for a schema whose active patterns are provably local to one
+    record's own subtree: any <code>&lt;key&gt;</code>,{' '}
+    <code>key()</code>, <code>id()</code>, <code>document()</code>,{' '}
+    <code>following::</code>/<code>preceding::</code>/<code>following-sibling::</code>,
+    or a schema-, phase-, or pattern-scoped <code>&lt;let&gt;</code>, refuses
+    it by name rather than silently falling back to ordinary validation — a
+    fallback that might exhaust the memory someone specifically asked to
+    avoid using. See <a href={specUrl('streaming/index.md')}>spec/streaming/</a>.
+  </p>
+</section>
+
+<section class="section prose">
   <SectionHeading class="section-heading-start" eyebrow="Resolvers" heading="Where includes come from" level={2} />
 
   <p>
@@ -167,6 +198,7 @@ let report = schema.validate_with(&document, &options)?;`}</code></pre>
 cargo run --example report_formats       # SVRL, JSON, and text from one run
 cargo run --example embedded_schema      # includes served from memory
 cargo run --example parallel_validation  # one schema, eight threads
+cargo run --example streaming_validation # bounded memory, one record at a time
 cargo run --example xpath_engine         # the XPath engine on its own`}</code></pre>
   </CodeBlock>
 

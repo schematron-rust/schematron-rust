@@ -470,5 +470,6 @@ cargo run --example validate_file
 cargo run --example report_formats
 cargo run --example embedded_schema
 cargo run --example parallel_validation
+cargo run --example streaming_validation
 cargo run --example xpath_engine
 ```
