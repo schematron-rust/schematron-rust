@@ -363,6 +363,7 @@ cargo run --example validate_file        # the shortest useful program
 cargo run --example report_formats       # SVRL, JSON, and text from one run
 cargo run --example embedded_schema      # includes served from memory
 cargo run --example parallel_validation  # one schema, eight threads
+cargo run --example streaming_validation # bounded memory, one record at a time
 cargo run --example xpath_engine         # the XPath engine on its own
 ```
 
