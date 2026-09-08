@@ -31,6 +31,10 @@ impl Schema {
     pub fn validate(&self, document: &Document) -> Result<Report>;
     pub fn validate_with(&self, document: &Document, options: &ValidateOptions) -> Result<Report>;
 
+    /// One repeating record at a time, in bounded memory. See spec/streaming/.
+    pub fn validate_streaming<R: Read>(&self, source: R, options: &ValidateOptions) -> Result<Report>;
+    pub fn streaming_eligible(&self) -> std::result::Result<(), &str>;
+
     pub fn id(&self) -> Option<&str>;
     pub fn title(&self) -> Option<&str>;
     pub fn query_binding(&self) -> &QueryBinding;
