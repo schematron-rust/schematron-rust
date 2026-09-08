@@ -40,6 +40,7 @@ policy — not XPath semantics.
 - [spec/parsing/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/parsing/index.md): the five schema compilation passes
 - [spec/svrl/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/svrl/index.md): the SVRL report format, read and written
 - [spec/keys/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/keys/index.md): keys, and why a cross-reference check needs one
+- [spec/streaming/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/streaming/index.md): validating one repeating record at a time, in bounded memory, for schemas local to it
 - [spec/linting/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/linting/index.md): catching schemas that silently do nothing
 - [spec/api/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/api/index.md): the library surface
 - [spec/cli/](https://github.com/schematron-rust/schematron-rust/blob/main/schematron/spec/cli/index.md): every CLI option and exit code

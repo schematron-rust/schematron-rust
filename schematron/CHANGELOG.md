@@ -3,6 +3,44 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.16.0
+
+### Added
+
+- **Streaming validation.** `Schema::validate_streaming` and the CLI's
+  `--stream` validate one repeating record at a time — the document
+  element's direct children, e.g. `<order>` under `<orders>` — parsed,
+  matched, fired, and discarded before the next is parsed, so peak memory
+  stays bounded by a thin ancestor chain plus one record instead of
+  growing with the document. Only for a schema whose active patterns are
+  provably local to one record's own subtree: any `<key>`, `key()`,
+  `id()`, `document()`, `following::`/`preceding::`/`following-sibling::`
+  anywhere in any expression, or a schema-, phase-, or pattern-scoped
+  `<let>` (each evaluated once against the document root, before any
+  record exists, even one using only safe axes), refuses streaming by
+  name rather than approximating it — a silent fallback to full
+  materialization could exhaust the memory someone specifically asked to
+  avoid using. `--stream` cannot be combined with `--parallel`, for the
+  same reason. See `spec/streaming/`.
+  - The arena (`Document`, `src/xml/document.rs`) needed no redesign for
+    this: `NodeId` stays a plain index, and each record is parsed into
+    the same arena slot the previous one occupied, truncated back to the
+    skeleton before the next record starts. Verified with a counting
+    global allocator, not assumed: live bytes at the end of a run are
+    identical at 10,000, 100,000, and 1,000,000 records — see
+    `spec/testing/`'s benchmarks section for what a first, more naive
+    memory check got wrong (resident set, not live bytes) and why.
+  - `Document::finalize_subtree` — already load-bearing for
+    `document()`'s cross-document merge — is reused unchanged per record;
+    the one correctness trap this found is that a record's own
+    `sibling_position` needs the *true* cumulative count, not "1st of 1,"
+    since a reused arena slot's parent only ever has one child attached
+    at finalize time. `/orders/order[42]` still means the 42nd order.
+  - Found while designing this, not by implementing it: pattern-scoped
+    `<let>` has the exact same too-early-evaluation problem as
+    schema-scoped and phase-scoped `<let>`, which an earlier draft of
+    this feature's own plan had wrongly called safe.
+
 ## 0.15.0
 
 ### Added

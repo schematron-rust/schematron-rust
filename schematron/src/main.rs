@@ -96,6 +96,19 @@ struct Cli {
     #[arg(long)]
     parallel: bool,
 
+    /// Validate one repeating record at a time, never holding the whole
+    /// document in memory.
+    ///
+    /// Only for a schema whose active patterns are provably local to one
+    /// record's own subtree, and a document shaped as a wrapper element
+    /// around many repeating children — see spec/streaming/. Refused with
+    /// a named reason, not a silent fallback to ordinary validation, when
+    /// either does not qualify: a fallback that might exhaust memory
+    /// defeats the reason to ask for this in the first place. Cannot be
+    /// combined with --parallel.
+    #[arg(long)]
+    stream: bool,
+
     /// Omit `fired-rule` events from SVRL output.
     #[arg(long)]
     svrl_findings_only: bool,
@@ -211,6 +224,13 @@ fn run(cli: &Cli) -> Result<u8, Exit> {
             "no documents given; pass one or more file paths, or `-` for standard input",
         ));
     }
+    if cli.stream && cli.parallel {
+        return Err(Exit::new(
+            EXIT_USAGE,
+            "--stream cannot be combined with --parallel: the arena streaming reuses \
+             across records is not safe to share across threads",
+        ));
+    }
 
     let mut validate_options = ValidateOptions::new()
         .with_phase(
@@ -230,10 +250,14 @@ fn run(cli: &Cli) -> Result<u8, Exit> {
     let mut failures = 0;
 
     for path in &cli.documents {
-        let document = read_document(path)?;
-        let mut report = schema
-            .validate_with(&document, &validate_options)
-            .map_err(|e| Exit::new(EXIT_SCHEMA, e.to_string()))?;
+        let mut report = if cli.stream {
+            validate_streaming_path(&schema, path, &validate_options)?
+        } else {
+            let document = read_document(path)?;
+            schema
+                .validate_with(&document, &validate_options)
+                .map_err(|e| Exit::new(EXIT_SCHEMA, e.to_string()))?
+        };
 
         if !cli.flag.is_empty() {
             retain_flags(&mut report, &cli.flag);
@@ -266,6 +290,26 @@ fn read_document(path: &str) -> Result<Document, Exit> {
             .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("standard input: {e}")));
     }
     Document::from_path(path).map_err(|e| Exit::new(EXIT_DOCUMENT, e.to_string()))
+}
+
+/// The `--stream` counterpart to [`read_document`] plus
+/// `Schema::validate_with`, in one step: streaming reads and validates as
+/// it goes rather than parsing to a [`Document`] first.
+fn validate_streaming_path(
+    schema: &Schema,
+    path: &str,
+    options: &ValidateOptions,
+) -> Result<Report, Exit> {
+    if path == "-" {
+        return schema
+            .validate_streaming(std::io::stdin(), options)
+            .map_err(|e| Exit::new(EXIT_SCHEMA, format!("standard input: {e}")));
+    }
+    let file = std::fs::File::open(path)
+        .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("cannot read {path}: {e}")))?;
+    schema
+        .validate_streaming(file, options)
+        .map_err(|e| Exit::new(EXIT_SCHEMA, format!("{path}: {e}")))
 }
 
 /// Keeps only the findings whose flag is in `flags`.

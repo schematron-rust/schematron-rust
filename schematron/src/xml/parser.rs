@@ -8,6 +8,8 @@
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 use std::path::Path;
+use std::rc::Rc;
+use std::cell::Cell;
 
 use super::document::Document;
 use super::node::{NodeData, NodeId, NodeKind, QName, XML_NAMESPACE};
@@ -29,17 +31,34 @@ struct NsFrame {
     uri: String,
 }
 
-struct Builder<'a> {
-    doc: Document,
+/// Where a [`Builder`] gets a byte position's line and column from.
+///
+/// Whole-document parsing keeps the complete source in memory, so
+/// [`line_column`] can scan it directly from a byte offset. Streaming
+/// parsing (`src/xml/streaming.rs`) never buffers the whole input — that is
+/// the point of it — so a `LineTrackingReader` there counts newlines
+/// incrementally as bytes are read instead, and shares that running count
+/// through this `Rc<Cell<_>>` rather than a byte offset to re-derive it
+/// from. `position: usize` on [`Builder::error`] is still accepted in the
+/// streaming case for call-site symmetry with the whole-document path, but
+/// is unused: the live count is always current by construction, since it is
+/// updated as part of every read that could produce an error.
+pub(crate) enum PositionSource<'a> {
+    WholeDocument(&'a str),
+    Streaming(Rc<Cell<(usize, usize)>>),
+}
+
+pub(crate) struct Builder<'a> {
+    pub(crate) doc: Document,
     order: usize,
     ns_stack: Vec<NsFrame>,
     /// Index into `ns_stack` marking where each open element's declarations begin.
     ns_marks: Vec<usize>,
-    source: &'a str,
+    source: PositionSource<'a>,
 }
 
 impl<'a> Builder<'a> {
-    fn new(source: &'a str) -> Self {
+    pub(crate) fn new(source: PositionSource<'a>) -> Self {
         Self {
             doc: Document::empty(),
             order: 0,
@@ -57,7 +76,7 @@ impl<'a> Builder<'a> {
         self.order
     }
 
-    fn push_node(&mut self, kind: NodeKind, parent: NodeId) -> NodeId {
+    pub(crate) fn push_node(&mut self, kind: NodeKind, parent: NodeId) -> NodeId {
         let order = self.next_order();
         let id = NodeId(self.doc.nodes.len());
         self.doc.nodes.push(NodeData::new(kind, Some(parent), order));
@@ -107,8 +126,11 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn error(&self, position: usize, message: impl Into<String>) -> Error {
-        let (line, column) = line_column(self.source, position);
+    pub(crate) fn error(&self, position: usize, message: impl Into<String>) -> Error {
+        let (line, column) = match &self.source {
+            PositionSource::WholeDocument(source) => line_column(source, position),
+            PositionSource::Streaming(live) => live.get(),
+        };
         Error::XmlParse {
             line,
             column,
@@ -192,7 +214,7 @@ impl<'a> Builder<'a> {
 
     /// Appends character data, merging with a preceding text node so that
     /// CDATA boundaries and entity references do not fragment the tree.
-    fn push_text(&mut self, parent: NodeId, text: &str) {
+    pub(crate) fn push_text(&mut self, parent: NodeId, text: &str) {
         if text.is_empty() {
             return;
         }
@@ -268,7 +290,15 @@ fn resolve_entity(name: &str) -> std::result::Result<char, String> {
 }
 
 fn line_column(source: &str, position: usize) -> (usize, usize) {
-    let position = position.min(source.len());
+    let mut position = position.min(source.len());
+    // quick-xml's own byte offset does not promise to land on a char
+    // boundary — a multi-byte character (anything above ASCII, not just
+    // an exotic one) straddling the position it reports would otherwise
+    // panic slicing `source` below. Rounding down to the nearest boundary
+    // is always safe: 0 always is one, so this loop always terminates.
+    while !source.is_char_boundary(position) {
+        position -= 1;
+    }
     let before = &source[..position];
     let line = before.matches('\n').count() + 1;
     let column = before.rfind('\n').map_or(position, |i| position - i - 1) + 1;
@@ -375,7 +405,7 @@ fn decode_bytes(bytes: &[u8]) -> Result<String> {
 
 /// Opens an element: declares its namespaces, creates the node, then attaches
 /// its namespace nodes and attribute nodes in document order.
-fn start_element(
+pub(crate) fn start_element(
     builder: &mut Builder<'_>,
     parent: NodeId,
     start: &BytesStart<'_>,
@@ -396,10 +426,131 @@ fn start_element(
 }
 
 /// Closes an element by discarding the namespace declarations it introduced.
-fn end_element(builder: &mut Builder<'_>) {
+pub(crate) fn end_element(builder: &mut Builder<'_>) {
     if let Some(mark) = builder.ns_marks.pop() {
         builder.ns_stack.truncate(mark);
     }
+}
+
+/// One iteration's outcome from [`handle_event`]: whether the caller should
+/// keep reading, or this was `Event::Eof`.
+pub(crate) enum EventOutcome {
+    Continue,
+    Eof,
+}
+
+/// Handles one quick-xml event against `builder`'s tree, advancing `open`
+/// and `saw_element` accordingly.
+///
+/// Shared verbatim between whole-document parsing ([`parse`], below) and
+/// streaming parsing (`src/xml/streaming.rs`), so entity/CDATA/comment/PI/
+/// depth handling can never drift between the two — a streamed document is
+/// still an ordinary [`Document`], just built and torn down one record at a
+/// time; see `spec/streaming/`.
+pub(crate) fn handle_event(
+    builder: &mut Builder<'_>,
+    open: &mut Vec<NodeId>,
+    saw_element: &mut bool,
+    position: usize,
+    event: Event<'_>,
+) -> Result<EventOutcome> {
+    // The parent is always the innermost open element, or the root.
+    let parent = *open.last().expect("the root is never popped");
+
+    match event {
+        Event::Eof => return Ok(EventOutcome::Eof),
+
+        // The XML declaration carries no node. A DOCTYPE is skipped: the
+        // crate does no DTD processing, and says so plainly rather than
+        // half-honouring it. See spec/conformance/.
+        Event::Decl(_) | Event::DocType(_) => {}
+
+        Event::Start(start) => {
+            if open.len() > MAX_DEPTH {
+                return Err(builder.error(
+                    position,
+                    format!("element nesting deeper than the limit of {MAX_DEPTH}"),
+                ));
+            }
+            let element = start_element(builder, parent, &start, position)?;
+            open.push(element);
+            *saw_element = true;
+        }
+
+        Event::Empty(start) => {
+            start_element(builder, parent, &start, position)?;
+            end_element(builder);
+            *saw_element = true;
+        }
+
+        Event::End(_) => {
+            // quick-xml has already checked that the name matches.
+            open.pop();
+            end_element(builder);
+        }
+
+        Event::Text(text) => {
+            let raw = text.as_ref();
+            let decoded = unescape(raw).map_err(|m| builder.error(position, m))?;
+            // Whitespace outside the document element is not a text node.
+            if parent == builder.doc.root {
+                if !decoded.trim().is_empty() {
+                    return Err(builder.error(
+                        position,
+                        "character data outside the document element",
+                    ));
+                }
+            } else {
+                builder.push_text(parent, &decoded);
+            }
+        }
+
+        Event::CData(cdata) => {
+            let raw = cdata.as_ref().to_string();
+            if parent != builder.doc.root {
+                // CDATA is literal: no entity expansion, and it merges
+                // with adjacent character data into one text node.
+                builder.push_text(parent, &raw);
+            }
+        }
+
+        Event::Comment(comment) => {
+            let raw = comment.as_ref().to_string();
+            let id = builder.push_node(NodeKind::Comment, parent);
+            builder.doc.nodes[id.0].value = raw;
+        }
+
+        Event::PI(pi) => {
+            let raw = pi.as_ref().to_string();
+            let (target, content) = match raw.find(char::is_whitespace) {
+                Some(i) => (raw[..i].to_string(), raw[i..].trim_start().to_string()),
+                None => (raw.clone(), String::new()),
+            };
+            let id = builder.push_node(NodeKind::ProcessingInstruction, parent);
+            builder.doc.nodes[id.0].name = Some(QName::local(target));
+            builder.doc.nodes[id.0].value = content;
+        }
+
+        // quick-xml 0.38+ reports every entity/character reference in
+        // character data as its own event rather than leaving it embedded
+        // in Text, so this is where `&amp;`, `&#65;`, and any other
+        // reference in element content now actually get resolved — see
+        // resolve_entity's doc comment.
+        Event::GeneralRef(byteref) => {
+            let c = resolve_entity(&byteref).map_err(|m| builder.error(position, m))?;
+            // Mirrors Event::Text: character data, including a reference
+            // to it, cannot appear outside the document element.
+            if parent == builder.doc.root {
+                return Err(builder.error(
+                    position,
+                    "character data outside the document element",
+                ));
+            }
+            let mut buf = [0u8; 4];
+            builder.push_text(parent, c.encode_utf8(&mut buf));
+        }
+    }
+    Ok(EventOutcome::Continue)
 }
 
 fn parse(source: &str) -> Result<Document> {
@@ -415,7 +566,7 @@ fn parse(source: &str) -> Result<Document> {
     // worse than one that refuses.
     config.check_comments = true;
 
-    let mut builder = Builder::new(source);
+    let mut builder = Builder::new(PositionSource::WholeDocument(source));
     let mut open: Vec<NodeId> = vec![builder.doc.root];
     let mut saw_element = false;
 
@@ -427,102 +578,10 @@ fn parse(source: &str) -> Result<Document> {
             .read_event()
             .map_err(|e| builder.error(position, e.to_string()))?;
 
-        // The parent is always the innermost open element, or the root.
-        let parent = *open.last().expect("the root is never popped");
-
-        match event {
-            Event::Eof => break,
-
-            // The XML declaration carries no node. A DOCTYPE is skipped: the
-            // crate does no DTD processing, and says so plainly rather than
-            // half-honouring it. See spec/conformance/.
-            Event::Decl(_) | Event::DocType(_) => {}
-
-            Event::Start(start) => {
-                if open.len() > MAX_DEPTH {
-                    return Err(builder.error(
-                        position,
-                        format!("element nesting deeper than the limit of {MAX_DEPTH}"),
-                    ));
-                }
-                let element = start_element(&mut builder, parent, &start, position)?;
-                open.push(element);
-                saw_element = true;
-            }
-
-            Event::Empty(start) => {
-                start_element(&mut builder, parent, &start, position)?;
-                end_element(&mut builder);
-                saw_element = true;
-            }
-
-            Event::End(_) => {
-                // quick-xml has already checked that the name matches.
-                open.pop();
-                end_element(&mut builder);
-            }
-
-            Event::Text(text) => {
-                let raw = text.as_ref();
-                let decoded = unescape(raw).map_err(|m| builder.error(position, m))?;
-                // Whitespace outside the document element is not a text node.
-                if parent == builder.doc.root {
-                    if !decoded.trim().is_empty() {
-                        return Err(builder.error(
-                            position,
-                            "character data outside the document element",
-                        ));
-                    }
-                } else {
-                    builder.push_text(parent, &decoded);
-                }
-            }
-
-            Event::CData(cdata) => {
-                let raw = cdata.as_ref().to_string();
-                if parent != builder.doc.root {
-                    // CDATA is literal: no entity expansion, and it merges
-                    // with adjacent character data into one text node.
-                    builder.push_text(parent, &raw);
-                }
-            }
-
-            Event::Comment(comment) => {
-                let raw = comment.as_ref().to_string();
-                let id = builder.push_node(NodeKind::Comment, parent);
-                builder.doc.nodes[id.0].value = raw;
-            }
-
-            Event::PI(pi) => {
-                let raw = pi.as_ref().to_string();
-                let (target, content) = match raw.find(char::is_whitespace) {
-                    Some(i) => (raw[..i].to_string(), raw[i..].trim_start().to_string()),
-                    None => (raw.clone(), String::new()),
-                };
-                let id = builder.push_node(NodeKind::ProcessingInstruction, parent);
-                builder.doc.nodes[id.0].name = Some(QName::local(target));
-                builder.doc.nodes[id.0].value = content;
-            }
-
-            // quick-xml 0.38+ reports every entity/character reference in
-            // character data as its own event rather than leaving it
-            // embedded in Text, so this is where `&amp;`, `&#65;`, and any
-            // other reference in element content now actually get
-            // resolved — see resolve_entity's doc comment.
-            Event::GeneralRef(byteref) => {
-                let c = resolve_entity(&byteref).map_err(|m| builder.error(position, m))?;
-                // Mirrors Event::Text: character data, including a
-                // reference to it, cannot appear outside the document
-                // element.
-                if parent == builder.doc.root {
-                    return Err(builder.error(
-                        position,
-                        "character data outside the document element",
-                    ));
-                }
-                let mut buf = [0u8; 4];
-                builder.push_text(parent, c.encode_utf8(&mut buf));
-            }
+        if let EventOutcome::Eof =
+            handle_event(&mut builder, &mut open, &mut saw_element, position, event)?
+        {
+            break;
         }
     }
 
@@ -686,5 +745,16 @@ mod tests {
     fn line_column_counts_from_one() {
         assert_eq!(line_column("abc\ndef", 5), (2, 2));
         assert_eq!(line_column("abc", 0), (1, 1));
+    }
+
+    #[test]
+    fn line_column_does_not_panic_on_a_position_inside_a_multi_byte_character() {
+        // Found by fuzzing (fuzz_xml): quick-xml's own byte offset does not
+        // promise to land on a char boundary, and a naive `&source[..position]`
+        // panics rather than erroring when it doesn't — U+0085 (NEL) is two
+        // bytes in UTF-8; a position of 1, landing between them, used to
+        // panic instead of rounding down to the boundary at 0.
+        let source = "\u{85}x";
+        assert_eq!(line_column(source, 1), (1, 1));
     }
 }

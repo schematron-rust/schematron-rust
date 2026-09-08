@@ -144,6 +144,15 @@ schematron --schema rules.sch data.xml
 Phase selection, output format, and flag filtering are all CLI options; see
 `schematron/spec/cli/index.md` for the full flag reference.
 
+For a document too large to comfortably hold fully in memory, `--stream`
+(or `Schema::validate_streaming`) validates one repeating record at a
+time — the document element's direct children, e.g. `<order>` under
+`<orders>` — instead of materialising the whole tree. Only for a schema
+whose rules never need more than one record's own subtree: any `<key>`,
+`key()`, `id()`, `document()`, `following::`/`preceding::`/
+`following-sibling::`, or a schema-/phase-/pattern-scoped `<let>`, refuses
+it by name rather than guessing. See `schematron/spec/streaming/index.md`.
+
 ## When a schema seems to do nothing
 
 Reach for `schematron --schema rules.sch --lint` (or `Schema::lint()`) first — it catches the
@@ -171,6 +180,7 @@ This skill is a map, not the territory — the crate's `schematron/spec/` direct
 | The XPath 3.0 subset and its limits | `schematron/spec/xpath3/index.md` |
 | SVRL, read and written | `schematron/spec/svrl/index.md` |
 | Keys and cross-references | `schematron/spec/keys/index.md` |
+| Streaming validation, and what disqualifies it | `schematron/spec/streaming/index.md` |
 | Why a schema does nothing | `schematron/spec/linting/index.md` |
 | Library API | `schematron/spec/api/index.md` |
 | CLI flags and exit codes | `schematron/spec/cli/index.md` |

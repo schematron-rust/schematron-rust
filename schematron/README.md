@@ -233,6 +233,7 @@ states the limits and deliberate divergences in full.
 | `queryBinding="xpath31"` and later | Refused by default |
 | `extends rule` and `extends href`, with `#fragment` identifiers | Full |
 | `document(uri, base)` | Full — resolves against the second argument's first node |
+| Streaming validation (`--stream`) | Full, as a non-ISO extension, for schemas provably local to one record — see [spec/streaming/](spec/streaming/index.md) |
 | XPath 2.0 kind tests as node tests — `element()`, `attribute(id)`, `document-node()` | Full, under an `xslt2` binding |
 
 Beyond the standard, the crate lints a schema for constructs that are legal
@@ -309,6 +310,13 @@ the compiled schema is reused across documents and across threads. Rule
 contexts are evaluated once per document rather than tested node by node, so
 matching is linear rather than quadratic in document size. Patterns can
 optionally evaluate in parallel.
+
+For a document too large to comfortably hold fully in memory —
+`--stream`/`Schema::validate_streaming` — validates one repeating record at
+a time instead, for schemas whose rules are local to a record's own
+subtree. Refused, naming why, rather than silently falling back to
+ordinary validation, when a schema or document doesn't qualify. See
+[spec/streaming/](spec/streaming/index.md).
 
 Indicative figures, and the benchmarks that produce them, are in
 [spec/testing/](spec/testing/index.md#benchmarks). Run them yourself with

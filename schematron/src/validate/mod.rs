@@ -40,4 +40,4 @@ pub use report::{
     ActivePattern, AssertionResult, DiagnosticResult, FiredRule, PropertyResult, Report, ResultKind,
 };
 
-pub(crate) use engine::validate;
+pub(crate) use engine::{validate, validate_streaming};

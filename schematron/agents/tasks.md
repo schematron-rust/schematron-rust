@@ -35,6 +35,24 @@ approximate it. Add it to `V2_FUNCTIONS_NEEDING_SEQUENCES` or
 `V2_FUNCTIONS_NEEDING_DATES` so the error names the gap instead of saying
 "unknown function".
 
+If the function needs more of the document than its own argument's
+subtree — the way `id()`/`key()` need the whole document, the way
+`document()` needs a different one entirely — add its name to
+`streaming_unsafe_construct` in `src/schema/compile.rs`, or streaming
+validation (`spec/streaming/`) will silently accept a schema it cannot
+actually validate correctly one record at a time.
+
+## Add a new XPath axis
+
+There is no recipe for this: XPath 1.0's thirteen axes are fixed by the
+spec and this crate implements all of them, so there should never be a
+new one to add. If a change ever adds an axis anyway, it needs the same
+streaming check the paragraph above describes — does the axis read only a
+node's already-parsed ancestor chain plus its own subtree (safe), or does
+it need the whole document or another node's full sibling list, the way
+`following::`/`preceding::`/`following-sibling::` do (unsafe, add to
+`streaming_unsafe_construct`'s `axis_reason`)?
+
 ## Add a new XPath syntax construct (not a function)
 
 A new operator or expression form — `=>` and `||` were the last two of

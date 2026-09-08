@@ -334,6 +334,7 @@ re-measure if a future change needs to ask the same question again.
 | `bench_xml_parse` | Parsing 10 / 1 000 / 100 000 elements; deep nesting; string values; document order |
 | `bench_xpath` | Compiling expressions, evaluating them, and each axis separately |
 | `bench_validate` | Schema compilation, end-to-end validation, compile-once-validate-many, fired-rule recording, and report rendering |
+| `bench_streaming` | Streaming vs. full validation throughput over a growing record count; see below for what it does *not* measure |
 
 ```sh
 cargo bench
@@ -350,6 +351,19 @@ Two of these earn their keep specifically:
   finding. Fixing it — by precomputing sibling positions and subtree ranges,
   see [xml/](../xml/index.md) — made the 10 000-element case fourteen times faster
   and restored linear scaling.
+- **`bench_streaming` measures throughput, not memory** — criterion has no
+  way to, so `--stream`'s actual point (bounded memory, see
+  [streaming/](../streaming/index.md)) was checked separately, and the first
+  check was misleading in a way worth recording. Resident set alone
+  (`/usr/bin/time -l`) crept up with record count for streaming too — 10 000
+  records held 8.3 MB, one million held 282 MB — which looked like the
+  design wasn't actually bounded. A custom global allocator counting bytes
+  actually **live** when `validate_streaming` returned settled it: identical
+  at 10 000, 100 000, and 1 000 000 records. The resident-set creep is the
+  system allocator retaining freed pages from many small alloc/free cycles
+  rather than returning them to the OS — ordinary behavior under this
+  access pattern, not a leak — and exactly why a memory claim here means
+  "live bytes, counted directly," not "resident set, read off a monitor."
 
 Indicative numbers on an M-series laptop:
 

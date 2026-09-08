@@ -158,6 +158,12 @@ pub struct Schema {
     /// schema that does not — pays nothing for the machinery that supports
     /// it. See `spec/xpath/`.
     pub(crate) uses_document_function: bool,
+    /// Why streaming validation refuses this schema, or `None` when it
+    /// qualifies. Computed once at compile time — same reasoning as
+    /// `uses_document_function` — so `--stream`/`validate_streaming` can
+    /// fail immediately, naming the reason, rather than partway through a
+    /// large document. See `spec/streaming/`.
+    pub(crate) streaming_ineligible_reason: Option<String>,
 }
 
 impl Schema {
@@ -250,6 +256,7 @@ impl Schema {
             resolver: Arc::clone(&options.resolver),
             version,
             uses_document_function: false,
+            streaming_ineligible_reason: None,
         };
         schema.compile_expressions()?;
         schema.check_references()?;
@@ -257,6 +264,7 @@ impl Schema {
             .expressions
             .values()
             .any(calls_document_function);
+        schema.streaming_ineligible_reason = streaming_ineligibility_reason(&schema);
         Ok(schema)
     }
 
@@ -868,6 +876,52 @@ impl Schema {
         crate::validate::validate(self, document, options)
     }
 
+    /// Validates a document read from `source` one record at a time, never
+    /// materialising the whole document in memory.
+    ///
+    /// Only for schemas whose active patterns are provably local to one
+    /// record's own subtree — most real schemas are not, and
+    /// [`Schema::streaming_eligible`] says why not for one that isn't,
+    /// before any of `source` is even read. See `spec/streaming/` for
+    /// exactly what qualifies and what the "record" boundary is.
+    ///
+    /// Deliberately a hard error rather than a silent fallback to
+    /// [`Schema::validate_with`] when a schema does not qualify: someone
+    /// reaching for this specifically needed bounded memory, and a silent
+    /// fallback could exhaust it instead of failing cleanly.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Streaming`] if this schema is not streaming-eligible, or if
+    /// `options` asks for parallel pattern evaluation (the arena streaming
+    /// reuses across records is not safe to share across threads). As
+    /// [`Schema::validate_with`] otherwise, plus [`Error::XmlParse`] and
+    /// [`Error::Io`] from reading `source`.
+    pub fn validate_streaming<R: std::io::Read>(
+        &self,
+        source: R,
+        options: &crate::ValidateOptions,
+    ) -> Result<crate::Report> {
+        crate::validate::validate_streaming(self, source, options)
+    }
+
+    /// Whether [`Schema::validate_streaming`] can validate a document
+    /// against this schema at all, and why not when it can't.
+    ///
+    /// Checked once at compile time, not per call — see `spec/streaming/`
+    /// for the exact list of disqualifying constructs.
+    ///
+    /// # Errors
+    ///
+    /// The reason streaming is refused, as plain text naming the construct
+    /// or declaration responsible.
+    pub fn streaming_eligible(&self) -> std::result::Result<(), &str> {
+        match &self.streaming_ineligible_reason {
+            None => Ok(()),
+            Some(reason) => Err(reason.as_str()),
+        }
+    }
+
     /// The resolver used for `pattern/@documents`.
     pub(crate) fn resolver(&self) -> &dyn super::resolver::Resolver {
         self.resolver.as_ref()
@@ -1129,6 +1183,159 @@ fn calls_document_function(expr: &Expr) -> bool {
                     .iter()
                     .any(|step| step.predicates.iter().any(calls_document_function))
         }
+    }
+}
+
+/// Whether streaming validation can validate documents against this
+/// schema, and why not when it can't. See [`Schema::validate_streaming`]
+/// and `spec/streaming/`.
+///
+/// Deliberately schema-wide, not scoped to one phase's active patterns —
+/// the same choice `uses_document_function` already made: simpler, and
+/// conservative in the direction that never lets an unsound schema
+/// through, at the cost of occasionally refusing one whose only
+/// disqualifying construct sits in a pattern that would never actually
+/// run.
+fn streaming_ineligibility_reason(schema: &Schema) -> Option<String> {
+    if !schema.model.keys.is_empty() {
+        return Some(
+            "the schema declares <key>; a key indexes the whole document, and a \
+             per-record index would silently answer key() differently than a real \
+             one would"
+                .to_string(),
+        );
+    }
+    if !schema.model.lets.is_empty() {
+        return Some(
+            "the schema declares a schema-scoped <let>, which is evaluated once \
+             against the document root before any record has been parsed"
+                .to_string(),
+        );
+    }
+    if let Some(phase) = schema.model.phases.iter().find(|p| !p.lets.is_empty()) {
+        return Some(format!(
+            "phase {:?} declares a phase-scoped <let>, which is evaluated once \
+             against the document root before any record has been parsed",
+            phase.id
+        ));
+    }
+    for pattern in &schema.model.patterns {
+        if pattern.documents.is_some() {
+            return Some(format!(
+                "pattern {} declares @documents, which validates other whole \
+                 documents against the same pattern rather than the streamed one",
+                pattern_label(pattern)
+            ));
+        }
+        if !pattern.lets.is_empty() {
+            return Some(format!(
+                "pattern {} declares a pattern-scoped <let>, which is evaluated \
+                 once against the document root before any record has been parsed",
+                pattern_label(pattern)
+            ));
+        }
+    }
+    for expr in schema.expressions.values() {
+        if let Some(what) = streaming_unsafe_construct(expr) {
+            return Some(format!(
+                "an expression uses {what}, which needs more of the document than \
+                 one record's own subtree"
+            ));
+        }
+    }
+    None
+}
+
+fn pattern_label(pattern: &Pattern) -> String {
+    match &pattern.id {
+        Some(id) => format!("{id:?}"),
+        None => "(unnamed)".to_string(),
+    }
+}
+
+/// The first construct anywhere in `expr` that needs more of the document
+/// than one record's own subtree, if any — see
+/// [`streaming_ineligibility_reason`].
+///
+/// `following::`, `preceding::`, and `following-sibling::` each need
+/// either the whole document or a record's *parent's* full child list
+/// (`collect_axis`, `src/xpath/eval.rs`); `document()`, `id()`, and
+/// `key()` each need the whole document too, the same reasoning
+/// [`calls_document_function`] already applies to `document()` alone.
+/// Every other axis and function reads only a node's already-parsed
+/// ancestor chain plus its own subtree, which streaming always has.
+fn streaming_unsafe_construct(expr: &Expr) -> Option<&'static str> {
+    const UNSAFE_FUNCTIONS: [&str; 3] = ["document", "id", "key"];
+
+    match expr {
+        Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) => None,
+        Expr::Negate(inner) => streaming_unsafe_construct(inner),
+        Expr::Binary(_, left, right) => {
+            streaming_unsafe_construct(left).or_else(|| streaming_unsafe_construct(right))
+        }
+        Expr::Function { name, args } => UNSAFE_FUNCTIONS
+            .iter()
+            .find(|&&f| f == name)
+            .map(|&f| function_reason(f))
+            .or_else(|| args.iter().find_map(streaming_unsafe_construct)),
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => streaming_unsafe_construct(condition)
+            .or_else(|| streaming_unsafe_construct(then_branch))
+            .or_else(|| streaming_unsafe_construct(else_branch)),
+        Expr::TypeOp { value, .. } => streaming_unsafe_construct(value),
+        Expr::Sequence(members) => members.iter().find_map(streaming_unsafe_construct),
+        Expr::Range(from, to) => {
+            streaming_unsafe_construct(from).or_else(|| streaming_unsafe_construct(to))
+        }
+        Expr::For { input, body, .. } => {
+            streaming_unsafe_construct(input).or_else(|| streaming_unsafe_construct(body))
+        }
+        Expr::Let { value, body, .. } => {
+            streaming_unsafe_construct(value).or_else(|| streaming_unsafe_construct(body))
+        }
+        Expr::Quantified { input, test, .. } => {
+            streaming_unsafe_construct(input).or_else(|| streaming_unsafe_construct(test))
+        }
+        Expr::InlineFunction { body, .. } => streaming_unsafe_construct(body),
+        Expr::NamedFunctionRef { name, .. } => UNSAFE_FUNCTIONS
+            .iter()
+            .find(|&&f| f == name)
+            .map(|&f| function_reason(f)),
+        Expr::DynamicCall { function, args } => streaming_unsafe_construct(function)
+            .or_else(|| args.iter().find_map(streaming_unsafe_construct)),
+        Expr::Arrow(called) => streaming_unsafe_construct(called),
+        Expr::Path(path) => {
+            let start = match &path.start {
+                PathStart::Expr(expr, predicates) => streaming_unsafe_construct(expr)
+                    .or_else(|| predicates.iter().find_map(streaming_unsafe_construct)),
+                PathStart::Root | PathStart::Context => None,
+            };
+            start.or_else(|| path.steps.iter().find_map(|step| {
+                axis_reason(step.axis)
+                    .or_else(|| step.predicates.iter().find_map(streaming_unsafe_construct))
+            }))
+        }
+    }
+}
+
+fn axis_reason(axis: Axis) -> Option<&'static str> {
+    match axis {
+        Axis::Following => Some("the following:: axis"),
+        Axis::Preceding => Some("the preceding:: axis"),
+        Axis::FollowingSibling => Some("the following-sibling:: axis"),
+        _ => None,
+    }
+}
+
+fn function_reason(name: &'static str) -> &'static str {
+    match name {
+        "document" => "document()",
+        "id" => "id()",
+        "key" => "key()",
+        _ => unreachable!("only called with a name from UNSAFE_FUNCTIONS"),
     }
 }
 
