@@ -1,7 +1,15 @@
 # XML data model and parser
 
-Schematron is defined over the XPath data model, so the crate needs a real
-XPath tree, not an event stream. `schematron::xml` provides it.
+Schematron is defined over the XPath data model, so matching a rule context
+or evaluating a test always needs a real XPath tree — never a bare stream of
+events with no tree behind it. `schematron::xml` provides that tree.
+
+That tree need not span the whole document at once, though: streaming
+validation ([streaming/](../streaming/index.md)) builds the same tree one
+record at a time, in bounded memory, for schemas whose rules are local to a
+record's own subtree. Everything below describes the tree itself; how
+streaming reuses one arena slot across records rather than growing it
+without bound is `spec/streaming/`'s own story, not repeated here.
 
 ## Tree representation
 
@@ -95,7 +103,12 @@ text nodes, because Schematron rules legitimately match `text()`.
 
 Alongside its document-order index, each node stores the highest order value
 in its own subtree, and its one-based position among siblings sharing its kind
-and expanded name. Both are computed in a single pass when the tree is built.
+and expanded name. Both are computed by one pass over a subtree,
+`Document::finalize_subtree` — normally run once, over the whole tree, when
+it is built; streaming validation instead runs it once per record, over
+just that record's own subtree, and corrects the record's own sibling
+position separately, since a reused arena slot's parent only ever has one
+child attached when that pass runs. See [streaming/](../streaming/index.md).
 
 They exist because the obvious implementations are quadratic, and this crate's
 whole job is to visit every node of a document:
