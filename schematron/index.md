@@ -34,11 +34,12 @@ that is a defect in one of them.
 | [spec/validation/](spec/validation/index.md) | The validation algorithm, exactly |
 | [spec/xpath/](spec/xpath/index.md) | The XPath 1.0 engine |
 | [spec/xpath2/](spec/xpath2/index.md) | The XPath 2.0 subset, and its limits |
-| [spec/xpath3/](spec/xpath3/index.md) | The XPath 3.0 subset: function items, `=>`, `\|\|`, `!`, `let`, the higher-order sequence functions |
+| [spec/xpath3/](spec/xpath3/index.md) | The XPath 3.0 subset: function items, `=>`, `\|\|`, `!`, `let`, `Q{uri}local`, the higher-order sequence functions |
 | [spec/xml/](spec/xml/index.md) | The XML parser and data model |
 | [spec/parsing/](spec/parsing/index.md) | The five schema compilation passes |
 | [spec/svrl/](spec/svrl/index.md) | The SVRL report format, read and written |
 | [spec/keys/](spec/keys/index.md) | Keys, and why a cross-reference check needs one |
+| [spec/streaming/](spec/streaming/index.md) | Validating one repeating record at a time, in bounded memory |
 | [spec/linting/](spec/linting/index.md) | Catching schemas that silently do nothing |
 | [spec/api/](spec/api/index.md) | Library API |
 | [spec/cli/](spec/cli/index.md) | Command line interface |
@@ -68,6 +69,7 @@ cargo run --example validate_file        # the shortest useful program
 cargo run --example report_formats       # SVRL, JSON, and text from one run
 cargo run --example embedded_schema      # includes served from memory
 cargo run --example parallel_validation  # one schema, eight threads
+cargo run --example streaming_validation # bounded memory, one record at a time
 cargo run --example xpath_engine         # the XPath engine on its own
 ```
 
