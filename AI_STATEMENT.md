@@ -179,9 +179,11 @@ cargo +1.96 test --all-features               # the MSRV boundary
   pairs, against the reference XSLT processor and records every known
   divergence in [`schematron/spec/conformance/`](schematron/spec/conformance/index.md).
 - **Fuzz targets** (`schematron/fuzz/`) bound the XML parser, the XPath
-  parser, `include`/`extends` resolution, and the validator itself, because
-  "malformed input is an error, never a panic" is a non-negotiable
-  (`schematron/agents/invariants.md`).
+  parser, `include`/`extends` resolution, the validator itself, and
+  streaming validation — including that it agrees with ordinary
+  validation exactly, whenever the fuzzed schema happens to qualify for
+  it — because "malformed input is an error, never a panic" is a
+  non-negotiable (`schematron/agents/invariants.md`).
 - **Criterion benchmarks**, run against a saved baseline before a release,
   so a performance claim is a measurement rather than an impression.
 - **CI runs the crate, MSRV, and site jobs on every push and pull request**
