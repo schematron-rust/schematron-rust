@@ -215,8 +215,9 @@ tests resolution rather than only length.
 | `fuzz_xpath` | arbitrary UTF-8 | The XPath lexer and parser never panic. |
 | `fuzz_schema` | arbitrary UTF-8 | Schema compilation never panics. |
 | `fuzz_validate` | structured: schema + document | Full validation never panics and always terminates. |
+| `fuzz_streaming` | structured: schema + document | Streaming validation never panics and always terminates; when the fuzzed schema happens to be streaming-eligible, its report matches whole-document validation's exactly. |
 
-The invariant under test is the same for all four: **no panic, no hang, no
+The invariant under test is the same for all five: **no panic, no hang, no
 unbounded memory**. Recursion in the XPath parser and in include resolution is
 depth-limited so that deeply nested input returns an error instead of blowing
 the stack.
@@ -229,6 +230,10 @@ Each target also checks an invariant beyond "did not crash":
   scalar types, so the conversions are exercised too.
 - `fuzz_validate` asserts that SVRL this crate emits is XML this crate can
   read back.
+- `fuzz_streaming` re-validates the same input through `Schema::validate_with`
+  and asserts the two reports agree, item for item — the property
+  `tests/streaming.rs` states by hand, fuzzed instead of enumerated. See
+  [streaming/](../streaming/index.md).
 
 ```sh
 cargo +nightly fuzz run fuzz_xpath -- -max_total_time=60 -report_slow_units=30
@@ -256,8 +261,10 @@ or measure the baseline first.
 the strength of the schema compiler having checked arity, but `evaluate` is
 public and that path never ran the check. The fix was to check arity in the
 library itself; the regression test is
-`xpath::eval::tests::wrong_arity_is_an_error_not_a_panic`. Since then all four
-targets have run clean for roughly eight million executions.
+`xpath::eval::tests::wrong_arity_is_an_error_not_a_panic`. Since then the four
+targets that existed at the time have run clean for roughly eight million
+executions; `fuzz_streaming` joined later, when streaming validation did, and
+is held to the same bar.
 
 ### What fuzzing found
 

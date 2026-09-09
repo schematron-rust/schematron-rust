@@ -108,9 +108,12 @@ cargo +nightly fuzz build
 cargo +nightly fuzz run fuzz_xpath -- -max_total_time=60 -rss_limit_mb=4096
 ```
 
-Four targets: `fuzz_xml`, `fuzz_xpath`, `fuzz_schema`, `fuzz_validate`. Each
-asserts more than "did not crash" — tree self-consistency, total conversions,
-SVRL reparsing. Seeds are copied from `tests/corpus/`.
+Five targets: `fuzz_xml`, `fuzz_xpath`, `fuzz_schema`, `fuzz_validate`,
+`fuzz_streaming`. Each asserts more than "did not crash" — tree
+self-consistency, total conversions, SVRL reparsing, and, for
+`fuzz_streaming` specifically, that streaming and whole-document validation
+agree exactly whenever the fuzzed schema happens to be streaming-eligible.
+Seeds are copied from `tests/corpus/`.
 
 A crash writes `fuzz/artifacts/<target>/crash-<hash>`. Reproduce with:
 
