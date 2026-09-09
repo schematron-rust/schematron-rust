@@ -147,6 +147,23 @@
     </p>
   </Details>
 
+  <Details summary="A large document runs out of memory, or takes too much of it.">
+    <p>
+      Try <code>--stream</code> (or <code>Schema::validate_streaming</code>):
+      it validates one repeating record at a time — the document element's
+      direct children, e.g. <code>&lt;order&gt;</code> under
+      <code>&lt;orders&gt;</code> — instead of materialising the whole
+      document. Only for a schema whose rules are local to one record's own
+      subtree; anything else (<code>key()</code>, <code>id()</code>,
+      <code>document()</code>, <code>following::</code>, a schema- or
+      phase-scoped <code>&lt;let&gt;</code>, among others) is refused by name
+      rather than silently falling back — a fallback that might exhaust the
+      memory you were trying to avoid using in the first place. See
+      <a href={specUrl('streaming/index.md')}>spec/streaming/</a> for exactly
+      what qualifies.
+    </p>
+  </Details>
+
   <Details summary="My schema works here but behaves differently under another processor.">
     <p>
       Run <code>schematron -s rules.sch --portability</code>. It reports the
