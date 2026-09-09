@@ -92,7 +92,11 @@ trade. 1.5's `pattern/@name` is not mapped onto `title`; use ISO spellings.
 ## XML support
 
 Supported: namespaces, all seven node kinds, CDATA, comments, processing
-instructions, predefined and numeric entities, UTF-8 and UTF-16.
+instructions, predefined and numeric entities, UTF-8 and UTF-16 — the last of
+these under `Document::from_bytes` and ordinary validation only. Streaming
+validation (`--stream`) requires UTF-8: detecting a UTF-16 byte-order mark
+would mean buffering the start of the input specially, for a case real batch
+files essentially never have. See [streaming/](../streaming/index.md).
 
 Not supported, by design:
 
