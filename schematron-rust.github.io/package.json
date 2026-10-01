@@ -21,12 +21,12 @@
     "lily-design-system-svelte-theme-picker": "^0.1.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.70.3",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
-    "@types/node": "^26.4.1",
-    "svelte": "^5.57.0",
+    "@types/node": "^26.6.3",
+    "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "^6.0.3",
     "vite": "^6.4.3"
