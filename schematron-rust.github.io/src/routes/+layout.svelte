@@ -4,7 +4,7 @@
   import { ThemePicker } from 'lily-design-system-svelte-theme-picker';
   import { TextSizePicker } from 'lily-design-system-svelte-text-size-picker';
   import { SharePicker } from 'lily-design-system-svelte-share-picker';
-  import { REPO } from '$lib/site';
+  import { REPO } from '#lib/site.js';
 
   let { children } = $props();
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { InsetText, InformationCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
-  import { MSRV, REPO } from '$lib/site';
+  import { MSRV, REPO } from '#lib/site.js';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();

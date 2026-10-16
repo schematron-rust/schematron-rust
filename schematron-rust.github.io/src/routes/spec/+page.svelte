@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Card, InformationCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
-  import { SPEC_DOCS, specUrl, REPO, specLabel, MSRV } from '$lib/site';
+  import { SPEC_DOCS, specUrl, REPO, specLabel, MSRV } from '#lib/site.js';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();

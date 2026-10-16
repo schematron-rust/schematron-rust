@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Alert, InsetText, WarningCallout, Separator, CallToAction, SectionHeading, CodeBlock } from 'lily-design-system-svelte-headless';
-  import { REPO, specUrl } from '$lib/site';
+  import { REPO, specUrl } from '#lib/site.js';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();

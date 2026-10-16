@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Table, Tag, Alert, InformationCallout, Separator, CallToAction, SectionHeading, CodeBlock, TableHead, TableBody, TableRow, TableTH, TableTD } from 'lily-design-system-svelte-headless';
-  import { specUrl } from '$lib/site';
+  import { specUrl } from '#lib/site.js';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
