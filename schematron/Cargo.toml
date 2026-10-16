@@ -65,6 +65,11 @@ pedantic = { level = "warn", priority = -1 }
 # words, not as code identifiers, so backticking them would be wrong.
 doc_markdown = "allow"
 
+# `assert!(x.is_empty())` reads as the claim it is making; the lint's
+# suggested `assert_eq!(x, [] as [T; 0])` needs a type annotation and a
+# `Debug` bound on every element type for no gain in clarity.
+assert_is_empty = "allow"
+
 # XPath 1.0 defines its numeric type as an IEEE 754 double and specifies
 # equality on it exactly. Comparing with an epsilon here would make the engine
 # disagree with every other conformant Schematron processor.
