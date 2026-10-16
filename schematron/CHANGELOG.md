@@ -3,6 +3,13 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.16.1
+
+Maintenance release; no behavior change. Dependencies refreshed
+(`clap` 4.6.7, `thiserror` 2.0.21, and the fuzz crate's `arbitrary` 1.5), and
+`clippy::assert_is_empty` is allowed crate-wide so the `-D warnings` gate
+passes on current toolchains.
+
 ## 0.16.0
 
 ### Added
