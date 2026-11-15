@@ -11,14 +11,7 @@ use assertables::*;
 
 /// The path of the binary Cargo built for this test run.
 fn binary() -> PathBuf {
-    // The test executable lives in target/<profile>/deps/; the binary is two
-    // levels up from there.
-    let mut path = std::env::current_exe().expect("test executable path");
-    path.pop();
-    if path.ends_with("deps") {
-        path.pop();
-    }
-    path.join(format!("schematron{}", std::env::consts::EXE_SUFFIX))
+    PathBuf::from(env!("CARGO_BIN_EXE_schematron"))
 }
 
 fn examples() -> PathBuf {
