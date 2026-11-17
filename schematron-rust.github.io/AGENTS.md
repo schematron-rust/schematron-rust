@@ -219,5 +219,5 @@ A commit landing in the monorepo does not, by itself, deploy anything —
 step 1 has to run first.
 
 Because this is an organisation Pages site (`schematron-rust.github.io`), the
-base path is `/`. Do not add a `paths.base` to `svelte.config.js` — every
+base path is `/`. Do not add a `paths.base` to `vite.config.ts` — every
 internal link is written root-relative and depends on it.
