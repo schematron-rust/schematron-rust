@@ -85,3 +85,10 @@ format_push_string = "allow"
 [profile.release]
 lto = true
 codegen-units = 1
+
+# cargo-mutants builds every mutant once in a throwaway copy of the tree: no debug information and no
+# incremental state make each build quicker and smaller. `.cargo/mutants.toml` selects it.
+[profile.mutants]
+inherits = "test"
+debug = "none"
+incremental = false
