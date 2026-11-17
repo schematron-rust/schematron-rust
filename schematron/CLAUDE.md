@@ -37,7 +37,7 @@ and why:
 - **`cargo clippy --fix` refuses on a dirty tree**, so commit or stash first
   rather than reaching for `--allow-dirty`; the point of the refusal is that
   the rewrite is otherwise unreviewable.
-- **The MSRV toolchain `1.96` is installed.** If a bump is needed,
+- **The MSRV toolchain `1.98` is installed.** If a bump is needed,
   `rustup toolchain install <version> --profile minimal` first, then actually
   run the tests on it.
 

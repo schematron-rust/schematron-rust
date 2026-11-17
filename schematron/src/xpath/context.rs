@@ -120,8 +120,7 @@ impl Documents {
     pub fn missing(&self) -> Vec<Request> {
         self.missing
             .lock()
-            .map(|missing| missing.iter().cloned().collect())
-            .unwrap_or_default()
+            .map_or_default(|missing| missing.iter().cloned().collect())
     }
 
     /// Forgets the recorded misses, before another pass.

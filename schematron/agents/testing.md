@@ -128,7 +128,7 @@ the regression is covered by `cargo test` and not only by a nightly run.
 ## The MSRV boundary
 
 ```sh
-cargo +1.96 test --all-features
+cargo +1.98 test --all-features
 ```
 
 Must run on the boundary toolchain itself. A newer compiler accepts strictly

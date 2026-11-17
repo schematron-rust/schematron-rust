@@ -96,5 +96,5 @@ worked schema used throughout the tutorial and the CLI tests.
 cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features
-cargo +1.96 test --all-features
+cargo +1.98 test --all-features
 ```

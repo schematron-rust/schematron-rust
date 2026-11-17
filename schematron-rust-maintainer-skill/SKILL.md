@@ -44,7 +44,7 @@ Run from `schematron/`:
 cargo test --all-features                     # unit, integration, corpus, CLI, docs
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features            # must be warning-free
-cargo +1.96 test --all-features               # the MSRV boundary
+cargo +1.98 test --all-features               # the MSRV boundary
 ```
 
 Do not report a change as done on a partial run. If a gate fails for a

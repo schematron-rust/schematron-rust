@@ -30,7 +30,7 @@ cd schematron
 cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features
-cargo +1.96 test --all-features   # the MSRV boundary
+cargo +1.98 test --all-features   # the MSRV boundary
 ```
 
 All four must pass before a change is done. See

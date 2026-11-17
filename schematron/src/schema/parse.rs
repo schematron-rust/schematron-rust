@@ -130,8 +130,7 @@ impl Parser<'_> {
     /// Splits a whitespace-separated list of identifiers.
     fn id_list(&self, node: NodeId, name: &str) -> Vec<String> {
         self.attribute(node, name)
-            .map(|value| value.split_whitespace().map(ToString::to_string).collect())
-            .unwrap_or_default()
+            .map_or_default(|value| value.split_whitespace().map(ToString::to_string).collect())
     }
 
     fn schema(&self, node: NodeId) -> Result<SchemaModel> {

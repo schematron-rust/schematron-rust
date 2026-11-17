@@ -7,17 +7,17 @@ everything newer. The MSRV is declared in `Cargo.toml`:
 
 ```toml
 [package]
-rust-version = "1.96"
+rust-version = "1.98"
 ```
 
 ## Current value
 
 | | |
 |---|---|
-| Current stable | 1.98 |
+| Current stable | 1.100 |
 | Policy | N-2 |
-| **MSRV** | **1.96** |
-| Verified | `cargo +1.96 test --all-features`, full suite passing |
+| **MSRV** | **1.98** |
+| Verified | `cargo +1.98 test --all-features`, full suite passing |
 
 ## What N-2 means in practice
 
@@ -25,8 +25,8 @@ Rust ships a stable release every six weeks, so two releases is roughly
 **twelve weeks** — about three months. A downstream project that updates its
 toolchain even twice a year is never blocked by this crate.
 
-Counting is by release number, not by date: when stable becomes 1.99, the MSRV
-becomes 1.97, whether or not anything in the crate needed the change.
+Counting is by release number, not by date: when stable becomes 1.101, the MSRV
+becomes 1.99, whether or not anything in the crate needed the change.
 
 ## Why N-2
 
@@ -73,22 +73,22 @@ An MSRV that is written down but never exercised is a guess. Verify with the
 exact toolchain, not with a newer one:
 
 ```sh
-rustup toolchain install 1.96 --profile minimal
-cargo +1.96 test --all-features
+rustup toolchain install 1.98 --profile minimal
+cargo +1.98 test --all-features
 ```
 
 Testing on a *newer* toolchain proves nothing about the MSRV, because newer
 compilers accept strictly more. The check has to run on the boundary version
 itself.
 
-Note that `cargo +1.96 clippy` needs the `clippy` component in that toolchain;
+Note that `cargo +1.98 clippy` needs the `clippy` component in that toolchain;
 the `--profile minimal` install above omits it. Day-to-day linting runs on
 current stable, where `clippy::incompatible_msrv` already catches the same
 class of problem by reading `rust-version`.
 
 ## Updating when stable moves
 
-When Rust `1.99` ships, the MSRV becomes `1.97`. Writing `NEW` for the new
+When Rust `1.101` ships, the MSRV becomes `1.99`. Writing `NEW` for the new
 value, so that nothing below can be copied as if it were a live command:
 
 1. Set `rust-version` to `NEW` in `Cargo.toml`.

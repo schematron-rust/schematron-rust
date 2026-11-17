@@ -32,7 +32,7 @@ and not duplicated here:
   `examples/` are still included.
 - The four-command gate passes: `cargo test --all-features`, `cargo
   clippy --all-targets --all-features -- -D warnings`, `cargo doc --no-deps
-  --all-features`, `cargo +1.96 test --all-features`.
+  --all-features`, `cargo +1.98 test --all-features`.
 - The differential suite passes against the ISO reference implementation
   (`SCHEMATRON_SKELETON` set).
 - `cargo bench` shows nothing that reads as a real regression rather than

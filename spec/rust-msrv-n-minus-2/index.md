@@ -16,7 +16,7 @@ repository may assume.
   MSRV MUST NOT be used.
 - Only the minor version is pinned. Any patch release of the MSRV minor
   version (`1.(N-2).x`) is acceptable, and the recorded value names the minor
-  version only (`"1.96"`, not `"1.96.0"`), matching how `cargo` itself treats
+  version only (`"1.98"`, not `"1.98.0"`), matching how `cargo` itself treats
   `rust-version`.
 - Pre-release channels (beta, nightly) are never the MSRV and MUST NOT be
   required by any target this policy covers.
@@ -79,6 +79,6 @@ the policy allows.
 ## Current value
 
 As of the most recent update to this document, stable Rust is **1.98**, so the
-MSRV is **1.96** — matching `schematron/Cargo.toml`. If stable has moved on
+MSRV is **1.98** — matching `schematron/Cargo.toml`. If stable has moved on
 since, this document is stale in its example only — the rule above is what
 binds, and `schematron/Cargo.toml` must be brought back in line with it.

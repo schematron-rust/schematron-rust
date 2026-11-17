@@ -200,7 +200,7 @@ fn reference_svrl(
     let expanded = xsltproc(&skeleton.join("iso_abstract_expand.xsl"), &included, &[])?;
     let expanded = write("expanded.sch", &expanded)?;
 
-    let params: Vec<(&str, &str)> = phase.map(|p| vec![("phase", p)]).unwrap_or_default();
+    let params: Vec<(&str, &str)> = phase.map_or_default(|p| vec![("phase", p)]);
     let validator = xsltproc(&skeleton.join("iso_svrl_for_xslt1.xsl"), &expanded, &params)?;
     let validator = write("validator.xsl", &validator)?;
 

@@ -3,6 +3,12 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## 0.17.0
+
+- **MSRV raised to 1.98** (current stable 1.100 minus two, up from 1.96).
+  This is a breaking change for 0.x, hence the minor bump. Verified with
+  `cargo +1.98 test --all-features`. Dependencies refreshed; no behavior change.
+
 ## 0.16.1
 
 Maintenance release; no behavior change. Dependencies refreshed

@@ -363,8 +363,7 @@ pub(crate) fn call(
             Ok(Value::String(
                 haystack
                     .find(&needle)
-                    .map(|i| haystack[..i].to_string())
-                    .unwrap_or_default(),
+                    .map_or_default(|i| haystack[..i].to_string()),
             ))
         }
         "substring-after" => {
@@ -372,8 +371,7 @@ pub(crate) fn call(
             Ok(Value::String(
                 haystack
                     .find(&needle)
-                    .map(|i| haystack[i + needle.len()..].to_string())
-                    .unwrap_or_default(),
+                    .map_or_default(|i| haystack[i + needle.len()..].to_string()),
             ))
         }
         "substring" => Ok(Value::String(substring(args, document))),
@@ -1392,8 +1390,7 @@ fn compile_regex(
     document: &Document,
 ) -> Result<regex::Regex, EvalError> {
     let flags = flags
-        .map(|value| value.to_xpath_string(document))
-        .unwrap_or_default();
+        .map_or_default(|value| value.to_xpath_string(document));
     build_regex(pattern, &flags).map_err(EvalError::new)
 }
 

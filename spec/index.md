@@ -17,7 +17,7 @@ A change to how the project accepts money belongs here.
 | [Trusted publishing](trusted-publishing/index.md) | Planned — blocked on Codeberg/Forgejo support |
 | [Release process](release-process/index.md) | Implemented — who decides a release is ready and executes it, and the bounds on that |
 | [Dependabot](dependabot/index.md) | Implemented |
-| [Rust MSRV policy](rust-msrv-n-minus-2/index.md) | Implemented — 1.96 |
+| [Rust MSRV policy](rust-msrv-n-minus-2/index.md) | Implemented — 1.98 |
 | [Agent skills](agent-skills/index.md) | Implemented — `schematron-skill`, `schematron-rust-maintainer-skill` |
 | [llms.json and llms.txt](llms-json-and-llms-txt/index.md) | Implemented — at the repository root and the website root |
 | [Node current version](node-current-version/index.md) | Implemented — 26, in `schematron-rust.github.io/` |

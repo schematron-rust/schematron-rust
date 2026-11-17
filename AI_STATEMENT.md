@@ -162,7 +162,7 @@ run from `schematron/`:
 cargo test --all-features                     # unit, integration, corpus, CLI, docs
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features            # must be warning-free
-cargo +1.96 test --all-features               # the MSRV boundary
+cargo +1.98 test --all-features               # the MSRV boundary
 ```
 
 - **Spec authority.** [`schematron/spec/`](schematron/spec/index.md) is

@@ -375,7 +375,7 @@ cargo run --example xpath_engine         # the XPath engine on its own
 cargo test --all-features                                   # everything
 cargo clippy --all-targets --all-features -- -D warnings    # pedantic, and clean
 cargo doc --no-deps --all-features                          # warning-free
-cargo +1.96 test --all-features                             # the MSRV boundary
+cargo +1.98 test --all-features                             # the MSRV boundary
 ```
 
 Slower, run when relevant: `cargo bench`, and

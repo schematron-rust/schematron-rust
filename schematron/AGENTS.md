@@ -43,7 +43,7 @@ Every one of these must pass before you claim a change is done:
 cargo test --all-features                     # unit, integration, corpus, CLI, docs
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps --all-features            # must be warning-free
-cargo +1.96 test --all-features               # the MSRV boundary
+cargo +1.98 test --all-features               # the MSRV boundary
 ```
 
 Slower, run when relevant:
