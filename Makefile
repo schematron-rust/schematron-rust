@@ -44,11 +44,12 @@ REMOTE       := pages
 URL          := git@github.com:schematron-rust/schematron-rust.github.io.git
 SPLIT        := _split_site
 
-.PHONY: help publish github-pages
+.PHONY: help publish github-pages test-minimum-supported-rust-version
 
 help:
 	@echo "make publish       publish $(PREFIX)/ to the Pages repo (recommended)"
 	@echo "make github-pages  publish $(PREFIX)/ via a plain 'git subtree push'"
+	@echo "make test-minimum-supported-rust-version  check and test on Rust N-2 (MSRV) and N-1"
 	@echo ""
 	@echo "Add FORCE=1 to overwrite the Pages repo's history (make publish only)."
 
@@ -98,3 +99,7 @@ publish:
 
 github-pages:
 	bin/make-github-pages '$(NAME)' '$(URL)'
+
+# Check and test on Rust N-2 (the MSRV) and N-1; see bin/make-test-minimum-supported-rust-version.
+test-minimum-supported-rust-version:
+	bin/make-test-minimum-supported-rust-version
