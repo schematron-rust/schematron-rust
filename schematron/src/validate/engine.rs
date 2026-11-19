@@ -317,15 +317,16 @@ fn validate_once(
         "schema/let",
     )?;
     if let Some(phase_id) = &phase {
-        if let Some(phase) = model.phase(phase_id) {
-            bind_all(
-                run,
-                document.root(),
-                &phase.lets,
-                &mut variables,
-                "phase/let",
-            )?;
-        }
+        let phase = model
+            .phase(phase_id)
+            .expect("phase selection was resolved against this model");
+        bind_all(
+            run,
+            document.root(),
+            &phase.lets,
+            &mut variables,
+            "phase/let",
+        )?;
     }
 
     report.patterns = if options.is_parallel() && active.len() > 1 {
@@ -449,11 +450,7 @@ fn run_patterns_in_parallel(
 
         handles
             .into_iter()
-            .map(|handle| {
-                handle.join().unwrap_or_else(|_| {
-                    Err(Error::xpath_eval("validate", "a worker thread panicked"))
-                })
-            })
+            .map(|handle| worker_result(handle.join()))
             .collect::<Vec<_>>()
     });
 
@@ -465,6 +462,10 @@ fn run_patterns_in_parallel(
     }
     ordered.sort_by_key(|(index, _)| *index);
     Ok(ordered.into_iter().map(|(_, pattern)| pattern).collect())
+}
+
+fn worker_result<T>(result: std::thread::Result<Result<T>>) -> Result<T> {
+    result.unwrap_or_else(|_| Err(Error::xpath_eval("validate", "a worker thread panicked")))
 }
 
 /// Builds every declared key's index over one document.
@@ -1129,6 +1130,7 @@ fn instantiate(
 mod tests {
     use super::*;
     use crate::schema::model::{Key, Phase, RuleChild};
+    use crate::schema::Assertion;
     use crate::schema::{MemoryResolver, Resolver, SchemaOptions};
     use crate::xpath::parse;
     use std::sync::Arc;
@@ -1139,16 +1141,20 @@ mod tests {
         </schema>
     "#;
 
+    fn assertion_mut(child: &mut RuleChild) -> &mut Assertion {
+        match child {
+            RuleChild::Assertion(assertion) => assertion,
+            RuleChild::Extends(_) => panic!("compiled rules contain no extends"),
+        }
+    }
+
     #[test]
     fn relative_patterns_become_rooted_descendant_searches() {
         let expr = parse("a/b").unwrap();
         let rooted = root_match_expression(&expr);
-        assert!(matches!(rooted, Expr::Path(_)));
-        if let Expr::Path(path) = rooted {
-            assert_eq!(path.start, PathStart::Root);
-            assert_eq!(path.steps[0].axis, Axis::DescendantOrSelf);
-            assert_eq!(path.steps.len(), 3);
-        }
+        assert!(
+            matches!(rooted, Expr::Path(path) if path.start == PathStart::Root && path.steps[0].axis == Axis::DescendantOrSelf && path.steps.len() == 3)
+        );
     }
 
     #[test]
@@ -1160,15 +1166,9 @@ mod tests {
     #[test]
     fn unions_rewrite_each_branch() {
         let rooted = root_match_expression(&parse("a | b").unwrap());
-        assert!(matches!(rooted, Expr::Binary(BinaryOp::Union, _, _)));
-        if let Expr::Binary(BinaryOp::Union, left, right) = rooted {
-            for branch in [*left, *right] {
-                assert!(matches!(branch, Expr::Path(_)));
-                if let Expr::Path(path) = branch {
-                    assert_eq!(path.start, PathStart::Root);
-                }
-            }
-        }
+        assert!(matches!(rooted, Expr::Binary(BinaryOp::Union, left, right)
+            if matches!(*left, Expr::Path(ref path) if path.start == PathStart::Root)
+            && matches!(*right, Expr::Path(ref path) if path.start == PathStart::Root)));
     }
 
     #[test]
@@ -1274,9 +1274,8 @@ mod tests {
             schema.model.patterns[0].rules[0].body[0],
             RuleChild::Assertion(_)
         ));
-        if let RuleChild::Assertion(assertion) = &mut schema.model.patterns[0].rules[0].body[0] {
-            assertion.subject = Some("forced".into());
-        }
+        assertion_mut(&mut schema.model.patterns[0].rules[0].body[0]).subject =
+            Some("forced".into());
         schema
             .expressions
             .insert("forced".into(), parse("$missing").unwrap());
@@ -1337,10 +1336,9 @@ mod tests {
             schema.model.patterns[0].rules[0].body[0],
             RuleChild::Assertion(_)
         ));
-        if let RuleChild::Assertion(assertion) = &mut schema.model.patterns[0].rules[0].body[0] {
-            assertion.diagnostics.push("missing".into());
-            assertion.properties.push("missing".into());
-        }
+        let assertion = assertion_mut(&mut schema.model.patterns[0].rules[0].body[0]);
+        assertion.diagnostics.push("missing".into());
+        assertion.properties.push("missing".into());
         let report = schema
             .validate(&Document::from_str("<a/>").unwrap())
             .unwrap();
@@ -1381,18 +1379,16 @@ mod tests {
                 schema.model.patterns[0].rules[0].body[0],
                 RuleChild::Assertion(_)
             ));
-            if let RuleChild::Assertion(assertion) = &mut schema.model.patterns[0].rules[0].body[0]
-            {
-                assertion.content = if name_content {
-                    vec![Content::Name {
-                        path: Some("forced".into()),
-                    }]
-                } else {
-                    vec![Content::ValueOf {
-                        select: "forced".into(),
-                    }]
-                };
-            }
+            let assertion = assertion_mut(&mut schema.model.patterns[0].rules[0].body[0]);
+            assertion.content = if name_content {
+                vec![Content::Name {
+                    path: Some("forced".into()),
+                }]
+            } else {
+                vec![Content::ValueOf {
+                    select: "forced".into(),
+                }]
+            };
             schema
                 .expressions
                 .insert("forced".into(), parse("$missing").unwrap());
@@ -1507,14 +1503,28 @@ mod tests {
             .contains("schema/let"));
 
         let mut schema = Schema::from_str(SCHEMA).unwrap();
-        if let RuleChild::Assertion(assertion) = &mut schema.model.patterns[0].rules[0].body[0] {
-            assertion.content = vec![Content::Name {
+        assertion_mut(&mut schema.model.patterns[0].rules[0].body[0]).content =
+            vec![Content::Name {
                 path: Some("text-node".into()),
             }];
-        }
         schema
             .expressions
             .insert("text-node".into(), parse("text()").unwrap());
         assert!(schema.validate(&document).is_ok());
+    }
+
+    #[test]
+    fn worker_panics_become_validation_errors() {
+        let panic: Box<dyn std::any::Any + Send> = Box::new("boom");
+        assert!(worker_result::<()>(Err(panic))
+            .unwrap_err()
+            .to_string()
+            .contains("worker thread panicked"));
+        assert!(worker_result::<()>(Ok(Ok(()))).is_ok());
+        assert!(std::panic::catch_unwind(|| {
+            let mut child = RuleChild::Extends("base".into());
+            let _ = assertion_mut(&mut child);
+        })
+        .is_err());
     }
 }

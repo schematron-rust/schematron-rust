@@ -637,6 +637,15 @@ mod tests {
         assert!(read_document_stream(FailingIo).is_err());
         assert!(read_document_stream(&b"not xml"[..]).is_err());
         assert!(write_stdout(FailingIo, "result").is_err());
+        FailingIo.flush().unwrap();
+
+        let without_help = Lint {
+            kind: schematron::LintKind::ConstantTest,
+            location: "pattern[1]".into(),
+            message: "fixed".into(),
+            help: None,
+        };
+        assert!(render_lints(&[without_help]).contains("fixed"));
     }
 
     #[test]
@@ -700,6 +709,37 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(run(&cli).unwrap_err().code, EXIT_DOCUMENT);
+
+        let external_schema_path = directory.join("external.sch");
+        std::fs::write(
+            &external_schema_path,
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern documents="'absent.xml'"><rule context="item"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let cli = Cli::try_parse_from([
+            "schematron",
+            "-s",
+            external_schema_path.to_str().unwrap(),
+            "--quiet",
+            document_arg,
+        ])
+        .unwrap();
+        assert_eq!(run(&cli).unwrap_err().code, EXIT_SCHEMA);
+
+        let non_streaming = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="item"><assert test="preceding::item">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        assert_eq!(
+            validate_streaming_path(&non_streaming, document_arg, &ValidateOptions::new())
+                .unwrap_err()
+                .code,
+            EXIT_SCHEMA
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 }

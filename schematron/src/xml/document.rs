@@ -780,7 +780,7 @@ mod tests {
         assert!(empty.is_empty());
         assert_eq!(empty.len(), 1);
 
-        let mut d = doc(r#"<p:a xmlns:p="urn:p" p:q="1">text<!--c--><?go now?></p:a>"#);
+        let mut d = doc(r#"<p:a xmlns:p="urn:p" p:q="1">text<!--c--><?go now?><b/></p:a>"#);
         assert!(!d.is_empty());
         assert!(d.len() > 1);
         assert_eq!(d.base_uri(), None);

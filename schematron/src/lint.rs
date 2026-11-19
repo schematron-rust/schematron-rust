@@ -195,6 +195,10 @@ impl Schema {
     /// assert_eq!(schema.portability().len(), 1);
     /// ```
     #[must_use]
+    // Compilation populates the expression table for every construct visited
+    // here; a missing entry is an internal invariant violation, not an input
+    // condition callers can trigger on a successfully constructed `Schema`.
+    #[allow(clippy::missing_panics_doc)]
     pub fn portability(&self) -> Vec<Lint> {
         let mut lints = Vec::new();
         let model = self.model();
@@ -228,7 +232,10 @@ impl Schema {
                 .iter()
                 .filter_map(|rule| rule.context.as_deref())
                 .filter_map(|context| {
-                    let Ok(Expr::Path(path)) = self.expression(context) else {
+                    let Expr::Path(path) = self
+                        .expression(context)
+                        .expect("rule contexts were compiled before linting")
+                    else {
                         return None;
                     };
                     let step = path.steps.last()?;
@@ -287,7 +294,10 @@ impl Schema {
         // A context selecting text, comment or processing-instruction nodes.
         // The reference walks the tree with `@*|*`, so it never offers such a
         // node to a rule and the rule silently never fires.
-        if let Ok(Expr::Path(path)) = self.expression(context) {
+        if let Expr::Path(path) = self
+            .expression(context)
+            .expect("rule contexts were compiled before linting")
+        {
             if let Some(step) = path.steps.last() {
                 let kind = match step.node_test {
                     NodeTest::Text => Some("text()"),
@@ -340,22 +350,20 @@ impl Schema {
             sources.push((assertion.test.as_str(), at.clone()));
         }
         for (source, where_) in sources {
-            if source.is_empty() {
-                continue;
-            }
-            if let Ok(expr) = self.expression(source) {
-                if following_from_an_attribute(expr) {
-                    lints.push(Lint::new(
-                        LintKind::FollowingFromAnAttribute,
-                        where_,
-                        format!("{source} takes the following axis from an attribute"),
-                        "an attribute's following nodes include its own element's \
-                         children here, which is what XPath 1.0 says and what Java's \
-                         engine gives; the ISO reference implementation excludes them. \
-                         See spec/conformance/.",
-                    ));
-                    break;
-                }
+            let expr = self
+                .expression(source)
+                .expect("rule expressions were compiled before linting");
+            if following_from_an_attribute(expr) {
+                lints.push(Lint::new(
+                    LintKind::FollowingFromAnAttribute,
+                    where_,
+                    format!("{source} takes the following axis from an attribute"),
+                    "an attribute's following nodes include its own element's \
+                     children here, which is what XPath 1.0 says and what Java's \
+                     engine gives; the ISO reference implementation excludes them. \
+                     See spec/conformance/.",
+                ));
+                break;
             }
         }
 
@@ -447,9 +455,10 @@ impl Schema {
         // matches everything it would. Comparison is pairwise, because the
         // relation is between two contexts rather than a property of one.
         for (index, rule) in pattern.rules.iter().enumerate() {
-            let Some(context) = rule.context.as_deref() else {
-                continue;
-            };
+            let context = rule
+                .context
+                .as_deref()
+                .expect("concrete rules have a context after compilation");
             let rule_location = format!("{location}/{}", rule_step(index));
 
             let duplicate = pattern.rules[..index]
@@ -499,9 +508,11 @@ impl Schema {
     }
 
     fn lint_rule(&self, rule: &Rule, location: &str, lints: &mut Vec<Lint>) {
-        if let Some(context) = rule.context.as_deref() {
-            self.lint_unprefixed(context, location, "@context", lints);
-        }
+        let context = rule
+            .context
+            .as_deref()
+            .expect("concrete rules have a context after compilation");
+        self.lint_unprefixed(context, location, "@context", lints);
 
         if rule.assertions().next().is_none() {
             lints.push(Lint::new(
@@ -571,9 +582,9 @@ impl Schema {
         if self.namespaces().is_empty() {
             return;
         }
-        let Ok(expr) = self.expression(source) else {
-            return;
-        };
+        let expr = self
+            .expression(source)
+            .expect("linted expressions were compiled with the schema");
         let Some(name) = first_unprefixed_element_name(expr) else {
             return;
         };

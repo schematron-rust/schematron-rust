@@ -2599,6 +2599,13 @@ mod tests {
             temporal_kind_of(&Value::String("a".into()), &Value::String("b".into())),
             TemporalKind::DateTime
         );
+        assert_eq!(
+            temporal_kind_of(
+                &Value::Sequence(vec![Item::String("a".into())]),
+                &Value::String("b".into()),
+            ),
+            TemporalKind::DateTime
+        );
         assert!(compare_equality(
             &Value::NodeSet(Vec::new()),
             &Value::Boolean(false),
@@ -2622,7 +2629,11 @@ mod tests {
             &bound_namespaces,
         )
         .with_version(XPathVersion::V3);
-        for source in [". instance of element(p:root)", "child::element(p:a)"] {
+        for source in [
+            ". instance of element(p:root)",
+            "child::element(p:a)",
+            "child::element(missing:a)",
+        ] {
             assert!(evaluate(&parse(source).unwrap(), &namespaced_context).is_ok());
         }
 

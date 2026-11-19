@@ -990,10 +990,11 @@ fn deep_equal_node(a: NodeId, b: NodeId, document: &Document) -> bool {
         return false;
     }
 
-    let names_match = || match (document.name(a), document.name(b)) {
-        (Some(x), Some(y)) => x.matches(y),
-        (None, None) => true,
-        _ => false,
+    let names_match = || {
+        document
+            .name(a)
+            .zip(document.name(b))
+            .is_some_and(|(x, y)| x.matches(y))
     };
 
     match kind {
@@ -1158,14 +1159,11 @@ fn items_of(
     match args.get(index) {
         Some(Value::NodeSet(nodes)) => Ok(nodes.iter().copied().map(Item::Node).collect()),
         Some(Value::Sequence(items)) => Ok(items.clone()),
-        Some(other) if version.is_v2() => Ok(match other {
-            Value::String(text) => vec![Item::String(text.clone())],
-            // Preserves the tag: an untagged scalar argument keeps whatever
-            // numeric type it already carried.
-            Value::Number(number, ty) => vec![Item::Number(*number, *ty)],
-            Value::Boolean(boolean) => vec![Item::Boolean(*boolean)],
-            Value::NodeSet(_) | Value::Sequence(_) => unreachable!("matched above"),
-        }),
+        Some(Value::String(text)) if version.is_v2() => Ok(vec![Item::String(text.clone())]),
+        // Preserves the tag: an untagged scalar argument keeps whatever
+        // numeric type it already carried.
+        Some(Value::Number(number, ty)) if version.is_v2() => Ok(vec![Item::Number(*number, *ty)]),
+        Some(Value::Boolean(boolean)) if version.is_v2() => Ok(vec![Item::Boolean(*boolean)]),
         _ => Err(EvalError::new(format!(
             "{name}() requires a node-set argument"
         ))),
@@ -1622,9 +1620,9 @@ fn id_function(args: &[Value], context: &EvalContext<'_>) -> Vec<NodeId> {
             continue;
         }
         for &attribute in document.attributes(node) {
-            let Some(name) = document.name(attribute) else {
-                continue;
-            };
+            let name = document
+                .name(attribute)
+                .expect("attributes in a parsed document are named");
             // With no DTD there is no attribute typed ID, so `id` and
             // `xml:id` are what every DTD-less processor treats as one.
             let is_id = name.local == "id"
