@@ -16,6 +16,7 @@ a rule actually fires on the wrapper.
 | Encodings | File input through the library, CLI and default resolver shares the UTF-8 and BOM-marked UTF-16 decoder. A fixture follows a relative include and an external instance through non-ASCII paths. | Schema authors can use either UTF-16 byte order. Streamed instance input requires UTF-8. |
 | Distribution | An external application consumes the crate archive with each advertised feature combination. The locked all-feature suite, Clippy and documentation checks passed locally on Apple silicon macOS and in an ARM64 Linux container. Hosted Linux, Windows and macOS jobs passed on the readiness revision. | Keep platform-specific path and CLI checks in the required hosted matrix. |
 | Test coverage | The complete all-feature Rust suite is measured with source-based LLVM coverage and CI rejects line coverage below 95%. | Treat the percentage as a regression alarm. Preserve semantic, corpus, differential and fuzz evidence rather than optimizing only for execution counts. |
+| Documentation integrity | The documentation audit verifies that every crate and repository specification directory contains an `index.md` and is linked from its tree's index. | New policy documents cannot become invisible, monorepo-only orphans. The repository-level check skips published crate archives, which intentionally exclude repository governance files. |
 
 ## Next evidence to collect
 

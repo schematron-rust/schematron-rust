@@ -28,8 +28,7 @@ track cross-platform checks and remaining operational work.
 
 Each document lives in its own directory as `index.md`, and every directory
 under `spec/` must be linked from this file — the same convention
-`schematron/spec/index.md` follows, enforced there by
-`every_spec_document_is_linked_from_the_index`. Nothing enforces it here yet:
-this repository has no test suite of its own, so a new directory added
-without a link here would go unnoticed. Keep the discipline by hand until
-that changes.
+`schematron/spec/index.md` follows. The crate's documentation audit enforces
+both trees: `every_spec_document_is_linked_from_the_index` covers the crate
+and `every_repository_spec_document_is_linked_from_the_index` covers this
+repository index whenever the crate is tested from the monorepo checkout.

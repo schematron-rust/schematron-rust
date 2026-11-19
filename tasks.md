@@ -44,3 +44,7 @@
 - [x] Confirm the Linux, Windows and macOS hosted jobs on the readiness
   revision, including the non-ASCII path fixture. All jobs passed in
   [hosted run 44513735145](https://github.com/schematron-rust/schematron-rust/actions/runs/44513735145).
+- [x] Enforce repository specification discoverability from the existing
+  documentation audit. Require every root `spec/*/` directory to contain an
+  `index.md` linked from `spec/index.md`, while allowing the published crate
+  archive to omit monorepo governance documents.
