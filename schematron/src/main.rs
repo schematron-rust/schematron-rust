@@ -187,10 +187,10 @@ impl Exit {
 }
 
 fn run(cli: &Cli) -> Result<u8, Exit> {
-    let options = SchemaOptions::new()
-        .with_allow_unknown_query_binding(cli.allow_unknown_query_binding);
-    let source = Document::from_path(&cli.schema)
-        .map_err(|e| Exit::new(EXIT_SCHEMA, e.to_string()))?;
+    let options =
+        SchemaOptions::new().with_allow_unknown_query_binding(cli.allow_unknown_query_binding);
+    let source =
+        Document::from_path(&cli.schema).map_err(|e| Exit::new(EXIT_SCHEMA, e.to_string()))?;
     let schema = Schema::from_document(&source, &options)
         .map_err(|e| Exit::new(EXIT_SCHEMA, e.to_string()))?;
 
@@ -319,9 +319,7 @@ fn validate_streaming_path(
     }
     let file = std::fs::File::open(path)
         .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("cannot read {path}: {e}")))?;
-    schema
-        .validate_streaming(file, options)
-        .map_err(classify)
+    schema.validate_streaming(file, options).map_err(classify)
 }
 
 /// Keeps only the findings whose flag is in `flags`.
@@ -391,7 +389,11 @@ fn render_lints(lints: &[Lint]) -> String {
             // Wrap the help text, labelling the first line only so that the
             // continuation reads as one paragraph rather than a list.
             for (index, line) in wrap(help, 68).into_iter().enumerate() {
-                let label = if index == 0 { "    help: " } else { "          " };
+                let label = if index == 0 {
+                    "    help: "
+                } else {
+                    "          "
+                };
                 out.push_str(&format!("{label}{line}\n"));
             }
         }
@@ -451,7 +453,10 @@ fn explain(schema: &Schema) -> String {
     }
     out.push_str(&format!(
         "query binding: {}\n",
-        schema.query_binding().as_str().unwrap_or("(default, XPath 1.0)")
+        schema
+            .query_binding()
+            .as_str()
+            .unwrap_or("(default, XPath 1.0)")
     ));
     if matches!(schema.query_binding(), QueryBinding::Other(_)) {
         out.push_str("  warning: this binding is not implemented; expressions run as XPath 1.0\n");
@@ -525,6 +530,38 @@ mod tests {
     fn explain_warns_that_later_rules_only_get_unclaimed_nodes() {
         let text = explain(&schema());
         assert!(text.contains("no earlier rule claimed"), "{text}");
+    }
+
+    #[test]
+    fn explain_names_defaults_namespaces_titles_and_forced_bindings() {
+        let default = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <title>Untyped checks</title>
+                 <pattern><rule context="a"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let text = explain(&default);
+        assert!(text.starts_with("Untyped checks\n\n"), "{text}");
+        assert!(text.contains("(default, XPath 1.0)"), "{text}");
+        assert!(text.contains("namespaces: none declared"), "{text}");
+
+        let document = Document::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="vendor-xpath">
+                 <ns prefix="p" uri="urn:products"/>
+                 <pattern><rule context="p:a"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let options = SchemaOptions::new().with_allow_unknown_query_binding(true);
+        let forced = Schema::from_document(&document, &options).unwrap();
+        let text = explain(&forced);
+        assert!(text.contains("query binding: vendor-xpath"), "{text}");
+        assert!(
+            text.contains("warning: this binding is not implemented"),
+            "{text}"
+        );
+        assert!(text.contains("namespaces: p=urn:products"), "{text}");
     }
 
     #[test]

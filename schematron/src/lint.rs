@@ -1505,4 +1505,142 @@ mod tests {
             assert!(!lint.kind.as_str().is_empty());
         }
     }
+
+    #[test]
+    fn lint_kind_identifiers_and_display_are_stable() {
+        let kinds = [
+            LintKind::VariableShadowsAnOuterScope,
+            LintKind::FollowingFromAnAttribute,
+            LintKind::CollidingAttributeContexts,
+            LintKind::SpaceBetweenInlineElements,
+            LintKind::ContextSelectsANonElementKind,
+            LintKind::FlagOrRoleOnTheRule,
+            LintKind::SubjectMovesTheLocation,
+            LintKind::UnreachableRule,
+            LintKind::DuplicateRuleContext,
+            LintKind::UnprefixedNameInNamespacedSchema,
+            LintKind::UnreferencedDiagnostic,
+            LintKind::UnreferencedProperty,
+            LintKind::EmptyMessage,
+            LintKind::ConstantTest,
+            LintKind::PatternInNoPhase,
+            LintKind::UnreferencedKey,
+            LintKind::UnreferencedVariable,
+            LintKind::RuleWithNoAssertions,
+            LintKind::PatternWithNoRules,
+            LintKind::DuplicateAssertionTest,
+            LintKind::PhaseWithNoPatterns,
+        ];
+        for kind in kinds {
+            assert!(!kind.as_str().is_empty());
+        }
+        let lint = Lint::new(LintKind::ConstantTest, "pattern[1]", "fixed", "change it");
+        assert_eq!(lint.to_string(), "pattern[1]: fixed");
+    }
+
+    #[test]
+    fn unreferenced_keys_properties_and_every_variable_scope_are_reported() {
+        let found = lints_of(
+            r#"<let name="schema-unused" value="1"/>
+               <phase id="p"><let name="phase-unused" value="1"/><active pattern="used"/></phase>
+               <key name="unused-key" match="a" use="@id"/>
+               <pattern id="used"><let name="pattern-unused" value="1"/><rule context="a">
+                 <let name="rule-unused" value="1"/><assert test="b">m</assert>
+               </rule></pattern>
+               <properties><property id="unused-property">p</property></properties>"#,
+        );
+        assert!(found.iter().any(|lint| lint.kind == LintKind::UnreferencedKey));
+        assert!(found.iter().any(|lint| lint.kind == LintKind::UnreferencedProperty));
+        let variables: Vec<&Lint> = found
+            .iter()
+            .filter(|lint| lint.kind == LintKind::UnreferencedVariable)
+            .collect();
+        assert_eq!(variables.len(), 4, "{found:?}");
+        assert!(variables.iter().any(|lint| lint.location.contains("phase[@id='p']")));
+        assert!(variables.iter().any(|lint| lint.location.contains("pattern[@id='used']")));
+        assert!(variables.iter().any(|lint| lint.location.contains("rule[1]")));
+    }
+
+    #[test]
+    fn an_unnamed_pattern_cannot_be_activated_by_a_phase() {
+        let found = kinds(
+            r#"<phase id="p"/>
+               <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>"#,
+        );
+        assert!(found.contains(&LintKind::PatternInNoPhase), "{found:?}");
+    }
+
+    #[test]
+    fn numeric_and_string_literals_are_constant_tests() {
+        for test in ["1", "'fixed'"] {
+            let found = kinds(&format!(
+                r#"<pattern><rule context="a"><assert test="{test}">m</assert></rule></pattern>"#
+            ));
+            assert!(found.contains(&LintKind::ConstantTest), "{test}: {found:?}");
+        }
+    }
+
+    #[test]
+    fn expression_walkers_reach_every_nested_xpath_shape() {
+        let expressions = [
+            "-key('k', 'x')",
+            "key('k', 'x') + 1",
+            "key('k', 'x') instance of node()*",
+            "(1, key('k', 'x'))",
+            "1 to count(key('k', 'x'))",
+            "for $x in key('k', 'x') return $x",
+            "let $x := key('k', 'x') return $x",
+            "some $x in key('k', 'x') satisfies true()",
+            "if (key('k', 'x')) then 1 else 0",
+            "function($x) { key('k', $x) }",
+            "(function($x) { $x }) (key('k', 'x'))",
+            "key('k', 'x') => count()",
+            "(key('k', 'x'))[true()]/a[key('k', 'x')]",
+        ];
+        for source in expressions {
+            let expression = crate::xpath::parse(source)
+                .unwrap_or_else(|error| panic!("{source:?} should parse: {error}"));
+            assert!(looks_up_key(&expression, "k"), "{source}");
+        }
+
+        for source in [
+            "-$v",
+            "$v + 1",
+            "$v instance of xs:integer",
+            "(1, $v)",
+            "1 to $v",
+            "for $x in $v return $x",
+            "let $x := $v return $x",
+            "some $x in $v satisfies true()",
+            "if ($v) then 1 else 0",
+            "function($x) { $v }",
+            "(function($x) { $x }) ($v)",
+            "$v => string()",
+            "($v)[true()]/a[$v]",
+        ] {
+            let expression = crate::xpath::parse(source)
+                .unwrap_or_else(|error| panic!("{source:?} should parse: {error}"));
+            assert!(references_variable(&expression, "v"), "{source}");
+        }
+
+        for source in [
+            "-a",
+            "1 + a",
+            "a instance of node()*",
+            "(1, a)",
+            "1 to count(a)",
+            "for $x in a return $x",
+            "let $x := a return $x",
+            "some $x in a satisfies true()",
+            "if (a) then 1 else 0",
+            "function($x) { a }",
+            "(function($x) { $x }) (a)",
+            "a => count()",
+            "(a)[b]/c[d]",
+        ] {
+            let expression = crate::xpath::parse(source)
+                .unwrap_or_else(|error| panic!("{source:?} should parse: {error}"));
+            assert!(first_unprefixed_element_name(&expression).is_some(), "{source}");
+        }
+    }
 }

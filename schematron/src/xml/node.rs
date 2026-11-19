@@ -246,7 +246,29 @@ mod tests {
 
     #[test]
     fn node_kind_as_str() {
-        assert_eq!(NodeKind::Element.as_str(), "element");
-        assert_eq!(NodeKind::ProcessingInstruction.as_str(), "processing-instruction");
+        for (kind, name) in [
+            (NodeKind::Root, "root"),
+            (NodeKind::Element, "element"),
+            (NodeKind::Attribute, "attribute"),
+            (NodeKind::Namespace, "namespace"),
+            (NodeKind::Text, "text"),
+            (NodeKind::Comment, "comment"),
+            (NodeKind::ProcessingInstruction, "processing-instruction"),
+        ] {
+            assert_eq!(kind.as_str(), name);
+        }
+    }
+
+    #[test]
+    fn node_ids_and_qnames_have_stable_public_forms() {
+        let id = NodeId(7);
+        assert_eq!(id.index(), 7);
+        assert_eq!(id.to_string(), "node#7");
+
+        let local = QName::local("item");
+        assert!(local.matches_parts(None, "item"));
+        assert!(!local.matches_parts(Some("urn:x"), "item"));
+        assert_eq!(local.to_string(), "item");
+        assert_eq!(QName::new(Some(""), "item", Some("urn:x")).display_name(), "item");
     }
 }

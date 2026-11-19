@@ -13,9 +13,16 @@
 | Fuzz targets | `fuzz/` | Crash and panic freedom on hostile input |
 | Differential | `tests/differential.rs` | Agreement with the ISO reference implementation |
 | Benchmarks | `benches/` | Regression tracking with criterion |
+| Coverage | `cargo llvm-cov` | Executed lines across the complete all-feature Rust suite |
 
 Assertions use the `assertables` crate, matching the house style of the
 sibling SixArm crates.
+
+Line coverage is a regression gate, not a substitute for the semantic layers
+above. The complete all-feature suite must cover at least 95% of instrumented
+Rust lines. CI and `make test-coverage` run the same command and fail below
+that threshold. Tests added to preserve the threshold must assert observable
+behaviour or an invariant rather than merely execute a line.
 
 ## Corpus tests
 

@@ -293,6 +293,19 @@ mod tests {
     }
 
     #[test]
+    fn option_builders_and_verbose_fired_rules_are_rendered() {
+        let options = TextOptions::new().with_tests(true).with_reports(true);
+        assert!(options.include_tests);
+        assert!(options.include_reports);
+
+        let output = text(
+            "<order><line qty='1'/></order>",
+            &TextOptions::verbose(),
+        );
+        assert!(output.contains("fired"), "{output}");
+    }
+
+    #[test]
     fn a_label_becomes_a_heading() {
         let options = TextOptions::new().with_label("data.xml");
         let output = text("<order><line/></order>", &options);

@@ -766,4 +766,34 @@ mod tests {
         let attr = d.attributes(b)[0];
         assert_eq!(d.location(attr), "/a[1]/b[1]/@q");
     }
+
+    #[test]
+    fn size_base_uri_and_all_location_node_kinds_are_observable() {
+        let empty = Document::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 1);
+
+        let mut d = doc(r#"<p:a xmlns:p="urn:p" p:q="1">text<!--c--><?go now?></p:a>"#);
+        assert!(!d.is_empty());
+        assert!(d.len() > 1);
+        assert_eq!(d.base_uri(), None);
+        d.set_base_uri("file:///data.xml");
+        assert_eq!(d.base_uri(), Some("file:///data.xml"));
+
+        let element = d.document_element().unwrap();
+        let attribute = d.attributes(element)[0];
+        assert!(d.location(element).contains("local-name()='a'"));
+        assert!(d.location(attribute).contains("local-name()='q'"));
+        for &child in d.children(element) {
+            let location = d.location(child);
+            match d.kind(child) {
+                NodeKind::Text => assert!(location.contains("text()")),
+                NodeKind::Comment => assert!(location.contains("comment()")),
+                NodeKind::ProcessingInstruction => {
+                    assert!(location.contains("processing-instruction()"));
+                }
+                _ => {}
+            }
+        }
+    }
 }

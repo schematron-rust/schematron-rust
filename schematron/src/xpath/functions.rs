@@ -1687,6 +1687,7 @@ fn lang(wanted: &str, document: &Document, node: NodeId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::xpath::{Namespaces, Variables};
 
     #[test]
     fn arity_is_checked() {
@@ -1938,5 +1939,127 @@ mod tests {
     fn substring_follows_the_specification_not_integer_slicing() {
         assert_eq!(round_half_up(1.5), 2.0);
         assert_eq!(normalize_space(" a "), "a");
+    }
+
+    #[test]
+    fn helper_errors_preserve_function_argument_types_and_cardinality() {
+        let scalar = [Value::String("x".into())];
+        assert!(single_function_argument("for-each", &scalar, 0)
+            .unwrap_err()
+            .message
+            .contains("function item"));
+        let one_atomic = [Value::Sequence(vec![Item::String("x".into())])];
+        assert!(single_function_argument("for-each", &one_atomic, 0)
+            .unwrap_err()
+            .message
+            .contains("string"));
+        let many = [Value::Sequence(vec![
+            Item::String("x".into()),
+            Item::String("y".into()),
+        ])];
+        assert!(single_function_argument("for-each", &many, 0)
+            .unwrap_err()
+            .message
+            .contains("there are 2"));
+    }
+
+    #[test]
+    fn regex_flags_and_sequence_numeric_helpers_cover_every_shape() {
+        assert!(build_regex("^a . b$", "imsx").unwrap().is_match("A\nB"));
+
+        let document = Document::from_str("<a><n>3</n><n>7</n></a>").unwrap();
+        let root = document.document_element().unwrap();
+        let nodes = document.children(root).to_vec();
+        assert_eq!(numbers_of(&[Value::NodeSet(nodes)], &document), vec![3.0, 7.0]);
+        assert_eq!(
+            numbers_of(
+                &[Value::Sequence(vec![
+                    Item::Number(4.0, NumericType::Double),
+                    Item::String("5".into()),
+                ])],
+                &document,
+            ),
+            vec![4.0, 5.0]
+        );
+        assert_eq!(numbers_of(&[Value::Number(6.0, NumericType::Double)], &document), vec![6.0]);
+        assert!(extreme(&[Value::Sequence(vec![])], &document, f64::min).is_nan());
+        assert!(extreme(&[Value::String("x".into())], &document, f64::max).is_nan());
+        assert_eq!(extreme(&[Value::NodeSet(document.children(root).to_vec())], &document, f64::max), 7.0);
+    }
+
+    #[test]
+    fn typed_temporal_and_duration_helpers_preserve_existing_values() {
+        let document = Document::from_str("<a/>").unwrap();
+        let date = Temporal::parse("2024-02-29", TemporalKind::Date).unwrap();
+        let duration = Duration::parse("PT90S", DurationKind::DayTime).unwrap();
+        let date_value = Value::Sequence(vec![Item::Temporal(date)]);
+        let duration_value = Value::Sequence(vec![Item::Duration(duration)]);
+        assert_eq!(cast_temporal(std::slice::from_ref(&date_value), TemporalKind::Date, &document).unwrap(), date_value);
+        assert_eq!(
+            cast_duration(std::slice::from_ref(&duration_value), DurationKind::DayTime, &document).unwrap(),
+            duration_value
+        );
+        assert_eq!(
+            timezone_of(
+                "timezone-from-date",
+                &[Value::String("2024-02-29".into())],
+                &document,
+            )
+            .unwrap(),
+            Value::Sequence(vec![])
+        );
+        let with_zone = timezone_of(
+            "timezone-from-date",
+            &[Value::String("2024-02-29+02:00".into())],
+            &document,
+        )
+        .unwrap();
+        assert!(matches!(with_zone, Value::Sequence(items) if matches!(items.as_slice(), [Item::Duration(_)])));
+    }
+
+    #[test]
+    fn edge_inputs_to_id_substring_and_lang_are_total() {
+        let document = Document::from_str("<a><b/></a>").unwrap();
+        let variables = Variables::new();
+        let namespaces = Namespaces::new();
+        let context = EvalContext::new(
+            &document,
+            document.document_element().unwrap(),
+            &variables,
+            &namespaces,
+        );
+        assert!(id_function(&[], &context).is_empty());
+        assert_eq!(
+            substring(
+                &[
+                    Value::String("abc".into()),
+                    Value::Number(1.0, NumericType::Double),
+                ],
+                &document,
+            ),
+            "abc"
+        );
+        assert_eq!(
+            substring(
+                &[
+                    Value::String("abc".into()),
+                    Value::Number(f64::NAN, NumericType::Double),
+                ],
+                &document,
+            ),
+            ""
+        );
+        assert_eq!(
+            substring(
+                &[
+                    Value::String("abc".into()),
+                    Value::Number(1.0, NumericType::Double),
+                    Value::Number(f64::NAN, NumericType::Double),
+                ],
+                &document,
+            ),
+            ""
+        );
+        assert!(!lang("en", &document, context.node));
     }
 }

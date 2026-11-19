@@ -691,6 +691,83 @@ mod tests {
     }
 
     #[test]
+    fn every_token_has_a_readable_diagnostic_spelling() {
+        let cases = vec![
+            (TokenKind::Name("a".into()), "a"),
+            (TokenKind::AxisName("child".into()), "child"),
+            (TokenKind::NodeType("text".into()), "text"),
+            (TokenKind::FunctionName("count".into()), "count()"),
+            (TokenKind::Literal("x".into()), "'x'"),
+            (TokenKind::Number(2.0, NumericType::Integer), "2"),
+            (TokenKind::Variable("v".into()), "$v"),
+            (TokenKind::Slash, "/"),
+            (TokenKind::DoubleSlash, "//"),
+            (TokenKind::Dot, "."),
+            (TokenKind::DoubleDot, ".."),
+            (TokenKind::At, "@"),
+            (TokenKind::Comma, ","),
+            (TokenKind::ColonColon, "::"),
+            (TokenKind::LeftParen, "("),
+            (TokenKind::RightParen, ")"),
+            (TokenKind::LeftBracket, "["),
+            (TokenKind::RightBracket, "]"),
+            (TokenKind::Star, "*"),
+            (TokenKind::Multiply, "*"),
+            (TokenKind::Plus, "+"),
+            (TokenKind::Minus, "-"),
+            (TokenKind::Equal, "="),
+            (TokenKind::NotEqual, "!="),
+            (TokenKind::Less, "<"),
+            (TokenKind::LessEqual, "<="),
+            (TokenKind::Greater, ">"),
+            (TokenKind::GreaterEqual, ">="),
+            (TokenKind::Pipe, "|"),
+            (TokenKind::And, "and"),
+            (TokenKind::Or, "or"),
+            (TokenKind::Div, "div"),
+            (TokenKind::Mod, "mod"),
+            (TokenKind::ValueEqual, "eq"),
+            (TokenKind::ValueNotEqual, "ne"),
+            (TokenKind::ValueLess, "lt"),
+            (TokenKind::ValueLessEqual, "le"),
+            (TokenKind::ValueGreater, "gt"),
+            (TokenKind::ValueGreaterEqual, "ge"),
+            (TokenKind::NodeIs, "is"),
+            (TokenKind::NodeBefore, "<<"),
+            (TokenKind::NodeAfter, ">>"),
+            (TokenKind::QuestionMark, "?"),
+            (TokenKind::Hash, "#"),
+            (TokenKind::LeftBrace, "{"),
+            (TokenKind::RightBrace, "}"),
+            (TokenKind::DoublePipe, "||"),
+            (TokenKind::Arrow, "=>"),
+            (TokenKind::Bang, "!"),
+            (TokenKind::Assign, ":="),
+            (
+                TokenKind::EQName(Box::new(("urn:x".into(), "a".into()))),
+                "Q{urn:x}a",
+            ),
+        ];
+        for (token, expected) in cases {
+            assert_eq!(token.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn malformed_colons_variables_and_eqnames_are_located() {
+        for (source, expected) in [
+            (":", "must be part"),
+            ("$", "variable name"),
+            ("Q{urn:x}", "local name"),
+            ("Q{urn:x", "unterminated"),
+        ] {
+            let error = tokenize(source).unwrap_err();
+            assert_eq!(error.position, 0);
+            assert!(error.message.contains(expected), "{source}: {error:?}");
+        }
+    }
+
+    #[test]
     fn star_is_a_wildcard_at_the_start() {
         assert_eq!(kinds("*"), vec![TokenKind::Star]);
     }

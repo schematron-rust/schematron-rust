@@ -38,9 +38,9 @@
   [Streaming measurements](schematron/spec/streaming/index.md#measured-peak-memory)
 - [x] Run the locked all-feature crate suite, Clippy and documentation
   checks locally on macOS and ARM64 Linux.
-
-## Pending verification
-
-- [ ] Confirm all three hosted native jobs pass on a commit containing
-  these changes. The latest hosted run covers an earlier commit.
-  [CI workflow](.github/workflows/ci.yml)
+- [x] Measure line coverage across the complete all-feature Rust suite, add
+  behavior-focused CLI tests for standard input and incompatible execution
+  modes, and enforce a 95% minimum locally and in hosted CI.
+- [x] Confirm the Linux, Windows and macOS hosted jobs on the readiness
+  revision, including the non-ASCII path fixture. All jobs passed in
+  [hosted run 44513735145](https://github.com/schematron-rust/schematron-rust/actions/runs/44513735145).

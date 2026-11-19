@@ -1149,6 +1149,53 @@ mod tests {
     }
 
     #[test]
+    fn malformed_productions_return_located_errors_instead_of_partial_trees() {
+        for source in [
+            "",
+            "1 2",
+            "for 1 in a return a",
+            "for $x a return a",
+            "for $x in a a",
+            "let 1 := a return a",
+            "let $x a return a",
+            "let $x := a a",
+            "some 1 in a satisfies true()",
+            "some $x a satisfies true()",
+            "some $x in a true()",
+            "if (a) b else c",
+            "if (a) then b c",
+            "1 instance",
+            "1 instance of",
+            "1 cast",
+            "1 cast as",
+            "1 cast as node()",
+            "1 castable as node()",
+            "1 treat as",
+            "a/",
+            "a[]",
+            "child::",
+            "processing-instruction(1)",
+            "element(,)",
+            "attribute(a b)",
+            "f(",
+            "f#",
+            "f#1.5",
+            "function(1) { 1 }",
+            "function($x) 1",
+            "$x => 1",
+            "$x => f",
+            "(1)(",
+        ] {
+            let error = match parse(source) {
+                Ok(tree) => panic!("{source:?} unexpectedly parsed as {tree:?}"),
+                Err(error) => error,
+            };
+            assert!(error.position <= source.len(), "{source}: {error:?}");
+            assert!(!error.message.is_empty(), "{source}: {error:?}");
+        }
+    }
+
+    #[test]
     fn parses_a_simple_name_step() {
         let p = path("a");
         assert_eq!(p.start, PathStart::Context);

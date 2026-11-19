@@ -538,4 +538,33 @@ mod tests {
             Some(crate::xml::XML_NAMESPACE)
         );
     }
+
+    #[test]
+    fn registries_report_size_iteration_and_clear_misses() {
+        let document = Document::from_str("<a><b/></a>").unwrap();
+        let b = document.children(document.document_element().unwrap())[0];
+
+        let documents = Documents::new();
+        assert!(documents.is_empty());
+        assert_eq!(documents.len(), 0);
+        assert_eq!(documents.lookup("missing.xml", None), None);
+        assert_eq!(documents.missing().len(), 1);
+        documents.clear_missing();
+        assert!(documents.missing().is_empty());
+
+        let mut namespaces = Namespaces::new();
+        assert!(namespaces.is_empty());
+        namespaces.insert("p", "urn:p");
+        assert_eq!(namespaces.iter().collect::<Vec<_>>(), vec![("p", "urn:p")]);
+
+        let mut keys = Keys::new();
+        assert!(keys.is_empty());
+        assert_eq!(keys.len(), 0);
+        keys.declare("empty");
+        keys.insert("parts", "x", b);
+        assert_eq!(keys.len(), 2);
+        assert!(!keys.is_empty());
+        assert!(keys.is_declared("empty"));
+        assert_eq!(keys.lookup("parts", "x"), vec![b]);
+    }
 }

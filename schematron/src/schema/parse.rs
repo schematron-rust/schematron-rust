@@ -693,4 +693,99 @@ mod tests {
         assert!(matches!(body[1], RuleChild::Extends(_)));
         assert!(matches!(body[2], RuleChild::Assertion(_)));
     }
+
+    #[test]
+    fn parses_all_metadata_and_mixed_content_forms() {
+        let m = model(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:h="urn:h">
+                 <p id="intro" class="lead" icon="i">A <emph>bold</emph> <span class="x">span</span> <dir value="rtl">right</dir></p>
+                 <phase id="quick"><let name="limit" value="1"/><p>phase note</p><active pattern="p"/></phase>
+                 <key name="by-id" match="item" use="@id"/>
+                 <pattern id="p" documents="catalog.xml"><title>Products</title><let name="x" value="1"/><p>pattern note</p>
+                   <rule context="item" id="r" flag="warning" role="business" subject="@id">
+                     <let name="y">text</let>
+                     <report test="true()" id="a" flag="error" role="fatal" subject="." diagnostics="d" properties="prop">Before <h:b>foreign</h:b> <emph>bold</emph> <span class="s">span</span> <dir value="ltr">left</dir> <name path="@id"/> <value-of/>.</report>
+                   </rule>
+                 </pattern>
+                 <diagnostics><diagnostic id="d" xml:lang="fr" role="detail">detail</diagnostic></diagnostics>
+                 <properties><property id="prop" role="r" scheme="urn:s">value</property></properties>
+               </schema>"#,
+        );
+        assert_eq!(m.paragraphs[0].id.as_deref(), Some("intro"));
+        assert_eq!(m.paragraphs[0].class.as_deref(), Some("lead"));
+        assert_eq!(m.paragraphs[0].icon.as_deref(), Some("i"));
+        assert_eq!(m.phases[0].lets.len(), 1);
+        assert_eq!(m.phases[0].paragraphs.len(), 1);
+        assert_eq!(m.keys[0].name, "by-id");
+        assert_eq!(m.patterns[0].documents.as_deref(), Some("catalog.xml"));
+        assert_eq!(m.patterns[0].title.as_deref(), Some("Products"));
+        assert_eq!(m.patterns[0].lets.len(), 1);
+        assert_eq!(m.patterns[0].paragraphs.len(), 1);
+        let rule = &m.patterns[0].rules[0];
+        assert_eq!(rule.id.as_deref(), Some("r"));
+        assert_eq!(rule.flag.as_deref(), Some("warning"));
+        assert_eq!(rule.role.as_deref(), Some("business"));
+        assert_eq!(rule.subject.as_deref(), Some("@id"));
+        let assertion = rule.assertions().next().unwrap();
+        assert_eq!(assertion.kind, AssertionKind::Report);
+        assert_eq!(assertion.id.as_deref(), Some("a"));
+        assert_eq!(assertion.diagnostics, ["d"]);
+        assert_eq!(assertion.properties, ["prop"]);
+        assert!(assertion.content.iter().any(|part| matches!(part, Content::Emph(_))));
+        assert!(assertion.content.iter().any(|part| matches!(part, Content::Span { .. })));
+        assert!(assertion.content.iter().any(|part| matches!(part, Content::Dir { .. })));
+        assert_eq!(m.diagnostics[0].lang.as_deref(), Some("fr"));
+        assert_eq!(m.properties[0].role.as_deref(), Some("r"));
+        assert_eq!(m.properties[0].scheme.as_deref(), Some("urn:s"));
+    }
+
+    #[test]
+    fn rejects_invalid_children_at_each_schema_level() {
+        for (container, expected) in [
+            ("<phase id='x'><title/></phase>", "inside <phase>"),
+            ("<pattern><diagnostics/></pattern>", "inside <pattern>"),
+            (
+                "<pattern><rule context='a'><title/></rule></pattern>",
+                "inside <rule>",
+            ),
+        ] {
+            let message = error(&format!(
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">{container}<pattern><rule context="fallback"><assert test="true()">m</assert></rule></pattern></schema>"#
+            ));
+            assert!(message.contains(expected), "{message}");
+        }
+    }
+
+    #[test]
+    fn rejects_incomplete_abstract_constructs_and_unresolved_includes() {
+        for (body, expected) in [
+            ("<pattern abstract='true'/>", "abstract pattern needs an @id"),
+            (
+                "<pattern is-a='base'><rule context='a'/></pattern>",
+                "may contain only <param>",
+            ),
+            (
+                "<pattern><rule abstract='true'/></pattern>",
+                "abstract rule needs an @id",
+            ),
+            (
+                "<pattern><rule context='a'><extends/></rule></pattern>",
+                "needs @rule or @href",
+            ),
+            ("<include href='x.sch'/>", "survived resolution"),
+        ] {
+            let message = error(&format!(
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">{body}</schema>"#
+            ));
+            assert!(message.contains(expected), "{message}");
+        }
+    }
+
+    #[test]
+    fn schematron_root_must_actually_be_schema() {
+        let message = error(
+            r#"<pattern xmlns="http://purl.oclc.org/dsdl/schematron"><rule context="a"/></pattern>"#,
+        );
+        assert!(message.contains("root element of a schema"), "{message}");
+    }
 }

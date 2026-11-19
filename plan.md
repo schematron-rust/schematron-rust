@@ -14,14 +14,12 @@ a rule actually fires on the wrapper.
 | Streaming | A wrapper assertion that tests for an `order` child now raises a streaming error. Attribute-only wrapper checks agree with whole-document validation. Positional match contexts and paths that leave a record are refused. | Use whole-document mode for batch totals, cross-record constraints and rules outside the supported streaming subset. |
 | International text | The French amount fixture exercises narrow nonbreaking space in a number and nonbreaking space before a currency symbol. It also checks an ID list through both XPath argument forms. | Preserve the author's code points wherever XML treats them as data. Compare exact results in fixtures. |
 | Encodings | File input through the library, CLI and default resolver shares the UTF-8 and BOM-marked UTF-16 decoder. A fixture follows a relative include and an external instance through non-ASCII paths. | Schema authors can use either UTF-16 byte order. Streamed instance input requires UTF-8. |
-| Distribution | An external application consumes the crate archive with each advertised feature combination. The locked all-feature suite, Clippy and documentation checks passed locally on Apple silicon macOS and in an ARM64 Linux container. The Windows job is configured in CI. | Hosted results on this revision are pending. |
+| Distribution | An external application consumes the crate archive with each advertised feature combination. The locked all-feature suite, Clippy and documentation checks passed locally on Apple silicon macOS and in an ARM64 Linux container. Hosted Linux, Windows and macOS jobs passed on the readiness revision. | Keep platform-specific path and CLI checks in the required hosted matrix. |
+| Test coverage | The complete all-feature Rust suite is measured with source-based LLVM coverage and CI rejects line coverage below 95%. | Treat the percentage as a regression alarm. Preserve semantic, corpus, differential and fuzz evidence rather than optimizing only for execution counts. |
 
 ## Next evidence to collect
 
-1. **Native runners.** Confirm the Linux, Windows and macOS jobs on this
-   revision. Each runs the same CLI fixture against a non-ASCII path with
-   spaces and compares its findings with explicit expected values.
-2. **Streaming coverage.** When users need a currently refused but
+1. **Streaming coverage.** When users need a currently refused but
    record-local pattern, capture the real schema and document. Extend the
    checker with a paired whole-document test covering findings, order and
    locations.
