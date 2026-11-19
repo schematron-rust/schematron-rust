@@ -4,7 +4,6 @@
 //! and — the piece that defines the language — first-matching-rule-wins
 //! within each pattern.
 
-
 use super::options::{PhaseSelection, ValidateOptions};
 use super::report::{
     ActivePattern, AssertionResult, DiagnosticResult, FiredRule, PropertyResult, Report, ResultKind,
@@ -310,10 +309,22 @@ fn validate_once(
 
     // Schema-scoped and phase-scoped variables are evaluated against the root
     // of the instance document, and stay bound for the whole run.
-    bind_all(run, document.root(), &model.lets, &mut variables, "schema/let")?;
+    bind_all(
+        run,
+        document.root(),
+        &model.lets,
+        &mut variables,
+        "schema/let",
+    )?;
     if let Some(phase_id) = &phase {
         if let Some(phase) = model.phase(phase_id) {
-            bind_all(run, document.root(), &phase.lets, &mut variables, "phase/let")?;
+            bind_all(
+                run,
+                document.root(),
+                &phase.lets,
+                &mut variables,
+                "phase/let",
+            )?;
         }
     }
 
@@ -354,7 +365,11 @@ fn run_patterns_sequentially(
                 &mut failures,
             )?;
             out.push(outcome);
-            if run.options.max_failures.is_some_and(|limit| failures >= limit) {
+            if run
+                .options
+                .max_failures
+                .is_some_and(|limit| failures >= limit)
+            {
                 return Ok(out);
             }
         }
@@ -435,9 +450,9 @@ fn run_patterns_in_parallel(
         handles
             .into_iter()
             .map(|handle| {
-                handle
-                    .join()
-                    .unwrap_or_else(|_| Err(Error::xpath_eval("validate", "a worker thread panicked")))
+                handle.join().unwrap_or_else(|_| {
+                    Err(Error::xpath_eval("validate", "a worker thread panicked"))
+                })
             })
             .collect::<Vec<_>>()
     });
@@ -473,8 +488,9 @@ fn build_keys(schema: &Schema, document: &Document) -> Result<Keys> {
         let matched = {
             let expr = schema.expression(&key.match_pattern)?;
             let rooted = root_match_expression(expr);
-            let context = EvalContext::new(document, document.root(), &variables, schema.namespaces())
-                .with_version(schema.version());
+            let context =
+                EvalContext::new(document, document.root(), &variables, schema.namespaces())
+                    .with_version(schema.version());
             match evaluate(&rooted, &context).map_err(|e| {
                 Error::xpath_eval(format!("key[@name='{}']/@match", key.name), e.message)
             })? {
@@ -505,11 +521,7 @@ fn build_keys(schema: &Schema, document: &Document) -> Result<Keys> {
             match value {
                 Value::NodeSet(nodes) => {
                     for value_node in nodes {
-                        keys.insert(
-                            key.name.clone(),
-                            document.string_value(value_node),
-                            node,
-                        );
+                        keys.insert(key.name.clone(), document.string_value(value_node), node);
                     }
                 }
                 other => {
@@ -584,7 +596,9 @@ fn pattern_targets(
     run: Run<'_>,
     pattern: &Pattern,
 ) -> Result<Vec<(Option<String>, Option<Document>)>> {
-    let Run { schema, document, .. } = run;
+    let Run {
+        schema, document, ..
+    } = run;
     let Some(source) = &pattern.documents else {
         return Ok(vec![(None, None)]);
     };
@@ -621,9 +635,17 @@ fn run_pattern(
     variables: &mut Variables,
     failures: &mut usize,
 ) -> Result<ActivePattern> {
-    let Run { document, options, .. } = run;
+    let Run {
+        document, options, ..
+    } = run;
     let mark = variables.mark();
-    bind_all(run, document.root(), &pattern.lets, variables, "pattern/let")?;
+    bind_all(
+        run,
+        document.root(),
+        &pattern.lets,
+        variables,
+        "pattern/let",
+    )?;
 
     let mut active = ActivePattern {
         id: pattern.id.clone(),
@@ -698,7 +720,9 @@ fn run_pattern_scoped_to_record(
     variables: &mut Variables,
     failures: &mut usize,
 ) -> Result<ActivePattern> {
-    let Run { document, options, .. } = run;
+    let Run {
+        document, options, ..
+    } = run;
     let mark = variables.mark();
     // Guaranteed empty by `Schema::streaming_eligible`, so this binds
     // nothing — kept for structural parity with `run_pattern`, so the two
@@ -762,7 +786,9 @@ const UNCLAIMED: u32 = u32::MAX;
 /// ancestor. The standard reduction is to evaluate the pattern from the root
 /// across the descendant-or-self axis; see `spec/validation/`.
 fn matched_nodes(run: Run<'_>, rule: &Rule, variables: &Variables) -> Result<Vec<NodeId>> {
-    let Run { schema, document, .. } = run;
+    let Run {
+        schema, document, ..
+    } = run;
     let Some(source) = &rule.context else {
         return Ok(Vec::new());
     };
@@ -789,9 +815,8 @@ fn matched_nodes(run: Run<'_>, rule: &Rule, variables: &Variables) -> Result<Vec
         return Ok(matched);
     }
 
-    let value = evaluate(&rooted, &context).map_err(|e| {
-        Error::xpath_eval(format!("rule/@context: {source}"), e.message)
-    })?;
+    let value = evaluate(&rooted, &context)
+        .map_err(|e| Error::xpath_eval(format!("rule/@context: {source}"), e.message))?;
     match value {
         Value::NodeSet(nodes) => Ok(nodes),
         other => Err(Error::xpath_eval(
@@ -897,7 +922,12 @@ fn fire_rule(
     variables: &mut Variables,
     failures: &mut usize,
 ) -> Result<FiredRule> {
-    let Run { schema, document, options, .. } = run;
+    let Run {
+        schema,
+        document,
+        options,
+        ..
+    } = run;
     let mark = variables.mark();
     bind_all(run, node, &rule.lets, variables, "rule/let")?;
 
@@ -1070,8 +1100,7 @@ fn instantiate(
                     None => Some(node),
                     Some(path_source) => {
                         let expr = run.rule_expression(path_source)?;
-                        let context =
-                            run.context(node, variables);
+                        let context = run.context(node, variables);
                         let value = evaluate(expr, &context).map_err(|e| {
                             Error::xpath_eval(format!("name/@path: {path_source}"), e.message)
                         })?;
@@ -1099,19 +1128,26 @@ fn instantiate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::model::{Key, Phase, RuleChild};
+    use crate::schema::{MemoryResolver, Resolver, SchemaOptions};
     use crate::xpath::parse;
+    use std::sync::Arc;
+
+    const SCHEMA: &str = r#"
+        <schema xmlns="http://purl.oclc.org/dsdl/schematron">
+          <pattern id="one"><rule context="a"><assert test="false()">m</assert></rule></pattern>
+        </schema>
+    "#;
 
     #[test]
     fn relative_patterns_become_rooted_descendant_searches() {
         let expr = parse("a/b").unwrap();
         let rooted = root_match_expression(&expr);
-        match rooted {
-            Expr::Path(path) => {
-                assert_eq!(path.start, PathStart::Root);
-                assert_eq!(path.steps[0].axis, Axis::DescendantOrSelf);
-                assert_eq!(path.steps.len(), 3);
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(rooted, Expr::Path(_)));
+        if let Expr::Path(path) = rooted {
+            assert_eq!(path.start, PathStart::Root);
+            assert_eq!(path.steps[0].axis, Axis::DescendantOrSelf);
+            assert_eq!(path.steps.len(), 3);
         }
     }
 
@@ -1124,16 +1160,361 @@ mod tests {
     #[test]
     fn unions_rewrite_each_branch() {
         let rooted = root_match_expression(&parse("a | b").unwrap());
-        match rooted {
-            Expr::Binary(BinaryOp::Union, left, right) => {
-                for branch in [*left, *right] {
-                    match branch {
-                        Expr::Path(path) => assert_eq!(path.start, PathStart::Root),
-                        other => panic!("unexpected branch: {other:?}"),
-                    }
+        assert!(matches!(rooted, Expr::Binary(BinaryOp::Union, _, _)));
+        if let Expr::Binary(BinaryOp::Union, left, right) = rooted {
+            for branch in [*left, *right] {
+                assert!(matches!(branch, Expr::Path(_)));
+                if let Expr::Path(path) = branch {
+                    assert_eq!(path.start, PathStart::Root);
                 }
             }
-            other => panic!("unexpected shape: {other:?}"),
         }
+    }
+
+    #[test]
+    fn phase_resolution_and_activation_cover_every_selection_shape() {
+        let model = SchemaModel {
+            default_phase: Some("quick".into()),
+            phases: vec![Phase {
+                id: "quick".into(),
+                actives: vec!["two".into()],
+                ..Phase::default()
+            }],
+            patterns: vec![
+                Pattern {
+                    id: Some("one".into()),
+                    ..Pattern::default()
+                },
+                Pattern {
+                    id: Some("two".into()),
+                    ..Pattern::default()
+                },
+                Pattern::default(),
+            ],
+            ..SchemaModel::default()
+        };
+
+        assert_eq!(resolve_phase(&model, &PhaseSelection::All).unwrap(), None);
+        assert_eq!(
+            resolve_phase(&model, &PhaseSelection::Default).unwrap(),
+            Some("quick".into())
+        );
+        assert_eq!(
+            resolve_phase(&model, &PhaseSelection::Named("#ALL".into())).unwrap(),
+            None
+        );
+        assert_eq!(
+            resolve_phase(&model, &PhaseSelection::Named("#DEFAULT".into())).unwrap(),
+            Some("quick".into())
+        );
+        assert_eq!(active_patterns(&model, None).len(), 3);
+        let active = active_patterns(&model, Some("quick"));
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id.as_deref(), Some("two"));
+
+        let empty = SchemaModel::default();
+        assert_eq!(
+            resolve_phase(&empty, &PhaseSelection::Default).unwrap(),
+            None
+        );
+        assert_eq!(
+            resolve_phase(&empty, &PhaseSelection::Named("#DEFAULT".into())).unwrap(),
+            None
+        );
+        let error = resolve_phase(&empty, &PhaseSelection::Named("missing".into())).unwrap_err();
+        assert!(error.to_string().contains("no phases"));
+        let error = resolve_phase(&model, &PhaseSelection::Named("missing".into())).unwrap_err();
+        assert!(error.to_string().contains("quick"));
+    }
+
+    #[test]
+    fn match_fast_path_recognises_only_its_exact_shape() {
+        let rooted = root_match_expression(&parse("a").unwrap());
+        assert!(simple_descendant_test(&rooted).is_some());
+        assert!(simple_descendant_test(&Expr::Literal("x".into())).is_none());
+        assert!(simple_descendant_test(&parse("a").unwrap()).is_none());
+        assert!(simple_descendant_test(&root_match_expression(&parse("a/b").unwrap())).is_none());
+        assert!(simple_descendant_test(&root_match_expression(&parse("a[1]").unwrap())).is_none());
+        assert!(
+            simple_descendant_test(&root_match_expression(&parse("attribute::a").unwrap()))
+                .is_none()
+        );
+        assert_eq!(
+            root_match_expression(&Expr::Literal("x".into())),
+            Expr::Literal("x".into())
+        );
+    }
+
+    #[test]
+    fn defensive_runtime_model_edges_return_contextual_errors() {
+        let document = Document::from_str("<a id='x'/>").unwrap();
+
+        let mut schema = Schema::from_str(SCHEMA).unwrap();
+        schema.model.patterns[0].rules[0].context = None;
+        assert!(schema
+            .validate(&document)
+            .unwrap()
+            .fired_rules()
+            .next()
+            .is_none());
+
+        let mut schema = Schema::from_str(SCHEMA).unwrap();
+        schema.model.patterns[0].rules[0].context = Some("forced".into());
+        schema
+            .expressions
+            .insert("forced".into(), Expr::Literal("not nodes".into()));
+        assert!(schema
+            .validate(&document)
+            .unwrap_err()
+            .to_string()
+            .contains("must select nodes"));
+
+        let mut schema = Schema::from_str(SCHEMA).unwrap();
+        assert!(matches!(
+            schema.model.patterns[0].rules[0].body[0],
+            RuleChild::Assertion(_)
+        ));
+        if let RuleChild::Assertion(assertion) = &mut schema.model.patterns[0].rules[0].body[0] {
+            assertion.subject = Some("forced".into());
+        }
+        schema
+            .expressions
+            .insert("forced".into(), parse("$missing").unwrap());
+        assert!(schema
+            .validate(&document)
+            .unwrap_err()
+            .to_string()
+            .contains("@subject"));
+    }
+
+    #[test]
+    fn key_building_covers_node_atomic_and_error_results() {
+        let document = Document::from_str("<a id='x'><value>v</value></a>").unwrap();
+        let mut schema = Schema::from_str(SCHEMA).unwrap();
+        schema.model.keys.push(Key {
+            name: "k".into(),
+            match_pattern: "forced-match".into(),
+            use_expression: "forced-use".into(),
+        });
+
+        schema
+            .expressions
+            .insert("forced-match".into(), Expr::Literal("not nodes".into()));
+        schema
+            .expressions
+            .insert("forced-use".into(), Expr::Literal("value".into()));
+        assert!(build_keys(&schema, &document)
+            .unwrap_err()
+            .to_string()
+            .contains("must select nodes"));
+
+        schema.expressions.insert(
+            "forced-match".into(),
+            root_match_expression(&parse("a").unwrap()),
+        );
+        schema
+            .expressions
+            .insert("forced-use".into(), parse("$missing").unwrap());
+        assert!(build_keys(&schema, &document)
+            .unwrap_err()
+            .to_string()
+            .contains("@use"));
+
+        schema
+            .expressions
+            .insert("forced-use".into(), Expr::Literal("constant".into()));
+        assert!(build_keys(&schema, &document).is_ok());
+        schema
+            .expressions
+            .insert("forced-use".into(), parse("value").unwrap());
+        assert!(build_keys(&schema, &document).is_ok());
+    }
+
+    #[test]
+    fn missing_diagnostic_and_property_ids_are_defensively_ignored() {
+        let mut schema = Schema::from_str(SCHEMA).unwrap();
+        assert!(matches!(
+            schema.model.patterns[0].rules[0].body[0],
+            RuleChild::Assertion(_)
+        ));
+        if let RuleChild::Assertion(assertion) = &mut schema.model.patterns[0].rules[0].body[0] {
+            assertion.diagnostics.push("missing".into());
+            assertion.properties.push("missing".into());
+        }
+        let report = schema
+            .validate(&Document::from_str("<a/>").unwrap())
+            .unwrap();
+        let finding = report.failures().next().unwrap();
+        assert!(finding.diagnostics.is_empty());
+        assert!(finding.properties.is_empty());
+    }
+
+    #[test]
+    fn parallel_external_targets_phase_and_content_bindings_work_together() {
+        let resolver = MemoryResolver::new().with("external.xml", "<external id='x'/>");
+        let options = SchemaOptions::new().with_resolver(Arc::new(resolver));
+        let schema = Schema::from_str_with(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" defaultPhase="quick">
+                 <phase id="quick"><let name="phase">ready</let><active pattern="external"/><active pattern="local"/></phase>
+                 <key name="by-id" match="external" use="@id"/>
+                 <pattern id="external" documents="'external.xml'">
+                   <rule context="external"><assert test="$phase = 'ready' and key('by-id', @id)">m</assert></rule>
+                 </pattern>
+                 <pattern id="local"><rule context="root"><assert test="$phase = 'ready'">m</assert></rule></pattern>
+               </schema>"#,
+            &options,
+        )
+        .unwrap();
+        let validate_options = ValidateOptions::new().with_parallel_patterns(true);
+        let report = schema
+            .validate_with(&Document::from_str("<root/>").unwrap(), &validate_options)
+            .unwrap();
+        assert!(report.is_valid());
+        assert_eq!(report.patterns.len(), 2);
+    }
+
+    #[test]
+    fn message_expression_errors_keep_their_construct_name() {
+        for name_content in [false, true] {
+            let mut schema = Schema::from_str(SCHEMA).unwrap();
+            assert!(matches!(
+                schema.model.patterns[0].rules[0].body[0],
+                RuleChild::Assertion(_)
+            ));
+            if let RuleChild::Assertion(assertion) = &mut schema.model.patterns[0].rules[0].body[0]
+            {
+                assertion.content = if name_content {
+                    vec![Content::Name {
+                        path: Some("forced".into()),
+                    }]
+                } else {
+                    vec![Content::ValueOf {
+                        select: "forced".into(),
+                    }]
+                };
+            }
+            schema
+                .expressions
+                .insert("forced".into(), parse("$missing").unwrap());
+            let error = schema
+                .validate(&Document::from_str("<a/>").unwrap())
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains(if name_content {
+                    "name/@path"
+                } else {
+                    "value-of/@select"
+                }),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn document_discovery_has_a_hard_pass_limit() {
+        #[derive(Debug)]
+        struct ChainResolver;
+
+        impl Resolver for ChainResolver {
+            fn resolve(&self, href: &str, _base: Option<&str>) -> Result<String> {
+                let number = href
+                    .strip_prefix("doc")
+                    .and_then(|rest| rest.strip_suffix(".xml"))
+                    .and_then(|number| number.parse::<usize>().ok())
+                    .unwrap_or(0);
+                Ok(format!("<next href='doc{}.xml'/>", number + 1))
+            }
+
+            fn rebase(&self, _href: &str, _base: Option<&str>) -> Option<String> {
+                None
+            }
+        }
+
+        let mut expression = "document('doc0.xml')/next/@href".to_string();
+        for _ in 1..=MAX_DOCUMENT_PASSES {
+            expression = format!("document({expression})/next/@href");
+        }
+        let source = format!(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="root"><assert test="count({expression}) &gt;= 0">m</assert></rule></pattern>
+               </schema>"#
+        );
+        let options = SchemaOptions::new().with_resolver(Arc::new(ChainResolver));
+        let schema = Schema::from_str_with(&source, &options).unwrap();
+        let error = schema
+            .validate(&Document::from_str("<root/>").unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("still discovering new documents"), "{error}");
+    }
+
+    #[test]
+    fn runtime_expression_errors_are_attributed_to_their_schema_constructs() {
+        let document = Document::from_str("<a>text</a>").unwrap();
+
+        let mut schema = Schema::from_str(SCHEMA).unwrap();
+        schema.model.keys.push(Key {
+            name: "k".into(),
+            match_pattern: "forced".into(),
+            use_expression: "forced-use".into(),
+        });
+        schema
+            .expressions
+            .insert("forced".into(), parse("$missing").unwrap());
+        schema
+            .expressions
+            .insert("forced-use".into(), Expr::Literal("x".into()));
+        assert!(build_keys(&schema, &document)
+            .unwrap_err()
+            .to_string()
+            .contains("/@match"));
+
+        let mut schema = Schema::from_str(SCHEMA).unwrap();
+        schema.model.patterns[0].documents = Some("forced".into());
+        schema
+            .expressions
+            .insert("forced".into(), parse("$missing").unwrap());
+        assert!(schema
+            .validate(&document)
+            .unwrap_err()
+            .to_string()
+            .contains("pattern/@documents"));
+
+        let mut schema = Schema::from_str(SCHEMA).unwrap();
+        schema.model.patterns[0].rules[0].context = Some("forced".into());
+        schema
+            .expressions
+            .insert("forced".into(), parse("$missing").unwrap());
+        assert!(schema
+            .validate(&document)
+            .unwrap_err()
+            .to_string()
+            .contains("rule/@context"));
+
+        let mut schema = Schema::from_str(SCHEMA).unwrap();
+        schema.model.lets.push(Let {
+            name: "broken".into(),
+            value: LetValue::Expression("forced".into()),
+        });
+        schema
+            .expressions
+            .insert("forced".into(), parse("$missing").unwrap());
+        assert!(schema
+            .validate(&document)
+            .unwrap_err()
+            .to_string()
+            .contains("schema/let"));
+
+        let mut schema = Schema::from_str(SCHEMA).unwrap();
+        if let RuleChild::Assertion(assertion) = &mut schema.model.patterns[0].rules[0].body[0] {
+            assertion.content = vec![Content::Name {
+                path: Some("text-node".into()),
+            }];
+        }
+        schema
+            .expressions
+            .insert("text-node".into(), parse("text()").unwrap());
+        assert!(schema.validate(&document).is_ok());
     }
 }

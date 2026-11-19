@@ -156,7 +156,10 @@ impl<R: Read> StreamingReader<R> {
             }
         }
 
-        let record_parent = builder.doc.document_element().expect("saw the document element");
+        let record_parent = builder
+            .doc
+            .document_element()
+            .expect("saw the document element");
         let skeleton_len = builder.doc.nodes.len();
 
         Ok(Self {
@@ -189,7 +192,9 @@ impl<R: Read> StreamingReader<R> {
             return Ok(None);
         }
         self.builder.doc.nodes.truncate(self.skeleton_len);
-        self.builder.doc.nodes[self.record_parent.0].children.clear();
+        self.builder.doc.nodes[self.record_parent.0]
+            .children
+            .clear();
         // The skeleton's own nodes never change, but a fresh `Vec` element
         // slot after `truncate` still needs its stale index forgotten from
         // any side table — there is none besides `children`, cleared above.
@@ -248,7 +253,8 @@ impl<R: Read> StreamingReader<R> {
             }
         }
 
-        let record = record.expect("open.len() == 2 with a record is only reached after one opened");
+        let record =
+            record.expect("open.len() == 2 with a record is only reached after one opened");
         self.builder.doc.finalize_subtree(record);
 
         let key = self.sibling_key(record);
@@ -267,7 +273,9 @@ impl<R: Read> StreamingReader<R> {
     /// Call once [`StreamingReader::next_record`] has returned `None`.
     pub(crate) fn finish(&mut self) -> Result<()> {
         if self.open.len() != 1 {
-            return Err(self.builder.error(0, "record input must be consumed before the epilog"));
+            return Err(self
+                .builder
+                .error(0, "record input must be consumed before the epilog"));
         }
         loop {
             self.buf.clear();
@@ -285,9 +293,6 @@ impl<R: Read> StreamingReader<R> {
                 break;
             }
         }
-        if self.open.len() != 1 {
-            return Err(self.builder.error(0, "unclosed element at end of input"));
-        }
         Ok(())
     }
 
@@ -302,7 +307,51 @@ impl<R: Read> StreamingReader<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::StreamingReader;
+    use super::{LineTrackingReader, StreamingReader};
+    use std::io::{BufRead, Read};
+
+    struct FailingRead;
+
+    impl Read for FailingRead {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("expected read failure"))
+        }
+    }
+
+    #[test]
+    fn line_tracking_covers_read_and_buffered_consumption() {
+        let (mut reader, position) = LineTrackingReader::new(&b"a\nbc"[..]);
+        let mut first = [0; 2];
+        assert_eq!(reader.read(&mut first).unwrap(), 2);
+        assert_eq!(position.get(), (2, 1));
+        let buffered = reader.fill_buf().unwrap().to_vec();
+        reader.consume(buffered.len());
+        assert_eq!(position.get(), (2, 3));
+
+        let (mut failing, failing_position) = LineTrackingReader::new(FailingRead);
+        failing.consume(1);
+        assert_eq!(failing_position.get(), (1, 1));
+    }
+
+    #[test]
+    fn streaming_structure_and_tail_errors_are_contextual() {
+        assert!(StreamingReader::open(&b"<"[..]).is_err());
+        assert!(StreamingReader::open(&b"<!-- no root -->"[..]).is_err());
+
+        let mut empty = StreamingReader::open(&b"<root/>"[..]).unwrap();
+        assert!(empty.next_record().unwrap().is_none());
+        empty.finish().unwrap();
+
+        let mut unclosed = StreamingReader::open(&b"<root><record>"[..]).unwrap();
+        assert!(unclosed.next_record().is_err());
+
+        let mut unread = StreamingReader::open(&b"<root><record/></root>"[..]).unwrap();
+        assert!(unread.finish().is_err());
+
+        let mut malformed_tail = StreamingReader::open(&b"<root></root><"[..]).unwrap();
+        assert!(malformed_tail.next_record().unwrap().is_none());
+        assert!(malformed_tail.finish().is_err());
+    }
 
     #[test]
     fn the_live_record_arena_has_the_same_peak_after_an_early_failure() {

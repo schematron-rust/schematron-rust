@@ -11,9 +11,7 @@ use super::ast::{
 };
 use super::context::EvalContext;
 use super::functions;
-use super::temporal::{
-    add_months, add_seconds, Duration, DurationKind, Temporal, TemporalKind,
-};
+use super::temporal::{add_months, add_seconds, Duration, DurationKind, Temporal, TemporalKind};
 use super::value::{flatten_into_sequence, FunctionItem, Item, NumericType, Value};
 use crate::xml::{Document, NodeId, NodeKind};
 
@@ -175,9 +173,7 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
             }
         }
 
-        Expr::InlineFunction { params, body } => {
-            Ok(inline_function_value(params, body, context))
-        }
+        Expr::InlineFunction { params, body } => Ok(inline_function_value(params, body, context)),
         Expr::NamedFunctionRef { name, arity } => Ok(named_function_value(name, *arity)),
         Expr::DynamicCall { function, args } => evaluate_dynamic_call(function, args, context),
         // Pure sugar — see the doc comment on `Expr::Arrow`. Whatever call
@@ -434,7 +430,11 @@ pub(crate) fn for_each_pair(
 /// bare `.` — a step needing a real axis (`child::x`, `@a`, even `..`) is
 /// a dynamic error there, precisely because there is no node to walk from,
 /// the same way it would be in real XPath 3.0.
-fn evaluate_simple_map(left: &Expr, right: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalError> {
+fn evaluate_simple_map(
+    left: &Expr,
+    right: &Expr,
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
     let _scope = SequenceScope::enter();
     let items = evaluate(left, context)?.into_items();
     spend(items.len() as u64)?;
@@ -537,7 +537,9 @@ fn evaluate_binary(
             if has_temporal(&left) || has_temporal(&right) {
                 return compare_temporals(op, &left, &right, context);
             }
-            Ok(Value::Boolean(compare_relational(op, &left, &right, document)))
+            Ok(Value::Boolean(compare_relational(
+                op, &left, &right, document,
+            )))
         }
 
         BinaryOp::Add | BinaryOp::Subtract
@@ -634,8 +636,7 @@ fn compare_equality(left: &Value, right: &Value, document: &Document, want_equal
         (Value::Sequence(_), _) | (_, Value::Sequence(_)) => {
             let a = comparable_strings(left, document);
             let b = comparable_strings(right, document);
-            a.iter()
-                .any(|left| b.iter().any(|right| test(left, right)))
+            a.iter().any(|left| b.iter().any(|right| test(left, right)))
         }
 
         (Value::NodeSet(a), Value::NodeSet(b)) => {
@@ -695,9 +696,7 @@ fn compare_relational(op: BinaryOp, left: &Value, right: &Value, document: &Docu
     // whereas an existential walk over no nodes yields false.
     let as_boolean = |value: &Value, other: &Value| -> Option<Value> {
         match (value, other) {
-            (Value::NodeSet(nodes), Value::Boolean(_)) => {
-                Some(Value::Boolean(!nodes.is_empty()))
-            }
+            (Value::NodeSet(nodes), Value::Boolean(_)) => Some(Value::Boolean(!nodes.is_empty())),
             _ => None,
         }
     };
@@ -909,9 +908,7 @@ fn scale_duration(
     };
 
     if factor.is_nan() {
-        return Err(EvalError::new(
-            "a duration can only be scaled by a number",
-        ));
+        return Err(EvalError::new("a duration can only be scaled by a number"));
     }
     let factor = if divide { 1.0 / factor } else { factor };
 
@@ -1123,7 +1120,10 @@ fn numeric_type_matches(ty: NumericType, local: &str) -> bool {
             | (NumericType::Double, "double")
             | (NumericType::Float, "float")
             | (NumericType::Decimal | NumericType::Integer, "decimal")
-            | (NumericType::Integer, "integer" | "long" | "int" | "short" | "byte")
+            | (
+                NumericType::Integer,
+                "integer" | "long" | "int" | "short" | "byte"
+            )
     )
 }
 
@@ -1131,11 +1131,7 @@ fn numeric_type_matches(ty: NumericType, local: &str) -> bool {
 ///
 /// Reading the lexical form is what XML Schema specifies for untyped input,
 /// and untyped is what a Schematron schema nearly always has in front of it.
-pub(super) fn cast_item(
-    item: &Item,
-    type_name: &str,
-    document: &Document,
-) -> Result<Item, String> {
+pub(super) fn cast_item(item: &Item, type_name: &str, document: &Document) -> Result<Item, String> {
     let local = type_name.rsplit(':').next().unwrap_or(type_name);
     let text = item.to_xpath_string(document);
     let reject = || format!("{text:?} cannot be cast to {type_name}");
@@ -1602,9 +1598,7 @@ const MAX_RANGE: f64 = 1_000_000.0;
 /// empty one.
 fn range_items(from: f64, to: f64) -> Result<Vec<Item>, EvalError> {
     if from.is_nan() || to.is_nan() {
-        return Err(EvalError::new(
-            "the bounds of a `to` range must be numbers",
-        ));
+        return Err(EvalError::new("the bounds of a `to` range must be numbers"));
     }
     let from = from.trunc();
     let to = to.trunc();
@@ -1904,9 +1898,7 @@ pub(crate) fn matches_node_test(
             kind == NodeKind::ProcessingInstruction
                 && match target {
                     None => true,
-                    Some(wanted) => {
-                        document.name(node).is_some_and(|n| &n.local == wanted)
-                    }
+                    Some(wanted) => document.name(node).is_some_and(|n| &n.local == wanted),
                 }
         }
         // A kind test names the kind outright, so unlike `*` it does not
@@ -1982,7 +1974,7 @@ pub(crate) fn matches_node_test(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::xpath::{parse, Namespaces, Variables};
+    use crate::xpath::{parse, Namespaces, Variables, XPathVersion};
 
     fn eval(source: &str, expression: &str) -> Value {
         let document = Document::from_str(source).unwrap();
@@ -2200,6 +2192,10 @@ mod tests {
             evaluate(&expr, &context).unwrap(),
             Value::Number(42.0, NumericType::Double)
         );
+
+        let missing = parse("$missing").unwrap();
+        let error = evaluate(&missing, &context).unwrap_err();
+        assert!(error.message.contains("bound here: n"));
     }
 
     #[test]
@@ -2236,7 +2232,10 @@ mod tests {
         assert_eq!(number(source, "count(comment())"), 1.0);
         assert_eq!(number(source, "count(processing-instruction())"), 1.0);
         assert_eq!(number(source, "count(processing-instruction('pi'))"), 1.0);
-        assert_eq!(number(source, "count(processing-instruction('other'))"), 0.0);
+        assert_eq!(
+            number(source, "count(processing-instruction('other'))"),
+            0.0
+        );
         assert_eq!(number(source, "count(node())"), 3.0);
     }
 
@@ -2277,10 +2276,16 @@ mod tests {
         let namespaces = Namespaces::new();
         let context = EvalContext::new(&document, document.root(), &variables, &namespaces);
 
-        for source in ["not()", "translate('a')", "substring('a')", "concat('a')", "boolean()"] {
+        for source in [
+            "not()",
+            "translate('a')",
+            "substring('a')",
+            "concat('a')",
+            "boolean()",
+        ] {
             let expr = parse(source).unwrap();
-            let error = evaluate(&expr, &context)
-                .expect_err(&format!("{source} should be an arity error"));
+            let error =
+                evaluate(&expr, &context).expect_err(&format!("{source} should be an arity error"));
             assert!(error.message.contains("argument"), "{source}: {error}");
         }
     }
@@ -2289,5 +2294,316 @@ mod tests {
     fn id_function_finds_elements_by_id_attribute() {
         assert_eq!(number(DOC, "count(id('1'))"), 1.0);
         assert_eq!(number(DOC, "count(id('1 2'))"), 2.0);
+    }
+
+    #[test]
+    fn internal_value_axis_and_temporal_edges_are_total() {
+        assert_eq!(item_to_value(Item::Boolean(true)), Value::Boolean(true));
+        assert!(range_items(f64::NAN, 1.0).is_err());
+
+        let mut document =
+            Document::from_str(r#"<a xmlns:p="urn:p" id="x"><p:b/><c/></a>"#).unwrap();
+        let root = document.root();
+        let element = document.document_element().unwrap();
+        let attribute = document.attributes(element)[0];
+        let p_element = document.children(element)[0];
+        let namespace = document.namespaces(element)[0];
+        let variables = Variables::new();
+        let mut namespaces = Namespaces::new();
+        let context = EvalContext::new(&document, element, &variables, &namespaces);
+
+        assert!(siblings(&document, attribute, true).is_empty());
+        assert!(siblings(&document, root, true).is_empty());
+        assert_eq!(
+            comparable_strings(&Value::NodeSet(vec![element]), &document),
+            [""]
+        );
+        assert!(!matches_node_test(
+            &document,
+            p_element,
+            Axis::Child,
+            &NodeTest::Name(super::super::ast::NameTest::parse("missing:b")),
+            &context,
+        ));
+        assert!(!matches_node_test(
+            &document,
+            p_element,
+            Axis::Child,
+            &NodeTest::NamespaceWildcard("missing".into()),
+            &context,
+        ));
+        assert!(matches_node_test(
+            &document,
+            namespace,
+            Axis::Namespace,
+            &NodeTest::Name(super::super::ast::NameTest::parse(
+                &document.name(namespace).unwrap().local,
+            )),
+            &context,
+        ));
+
+        namespaces.insert("p", "urn:p");
+        let context = EvalContext::new(&document, element, &variables, &namespaces);
+        assert!(matches_node_test(
+            &document,
+            p_element,
+            Axis::Child,
+            &NodeTest::NamespaceWildcard("p".into()),
+            &context,
+        ));
+
+        // A deliberately inconsistent arena exercises the defensive sibling
+        // lookup used for synthetic nodes assembled inside the crate.
+        document.nodes[element.0].children.clear();
+        assert!(siblings(&document, p_element, true).is_empty());
+
+        let day = Duration::parse("P1D", DurationKind::DayTime).unwrap();
+        let month = Duration::parse("P1M", DurationKind::YearMonth).unwrap();
+        let day_value = Value::Sequence(vec![Item::Duration(day)]);
+        let month_value = Value::Sequence(vec![Item::Duration(month)]);
+        let number = Value::Number(2.0, NumericType::Double);
+        assert!(scale_duration(BinaryOp::Multiply, &day_value, &month_value, &document).is_err());
+        assert!(scale_duration(BinaryOp::Divide, &day_value, &month_value, &document).is_err());
+        assert!(scale_duration(BinaryOp::Divide, &number, &day_value, &document).is_err());
+        assert!(scale_duration(
+            BinaryOp::Multiply,
+            &day_value,
+            &Value::String("not a number".into()),
+            &document,
+        )
+        .is_err());
+
+        assert_eq!(
+            temporal_kind_of(&Value::String("x".into()), &Value::String("y".into())),
+            TemporalKind::DateTime
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn internal_type_comparison_and_path_errors_cover_every_result_shape() {
+        let document = Document::from_str("<a><b/></a>").unwrap();
+        let variables = Variables::new();
+        let namespaces = Namespaces::new();
+        let context = EvalContext::new(
+            &document,
+            document.document_element().unwrap(),
+            &variables,
+            &namespaces,
+        );
+        let optional_string = SequenceType {
+            item_type: ItemType::Atomic("xs:string".into()),
+            occurrence: Occurrence::ZeroOrOne,
+        };
+        let required_string = SequenceType {
+            item_type: ItemType::Atomic("xs:string".into()),
+            occurrence: Occurrence::One,
+        };
+        let empty = Value::Sequence(Vec::new());
+        assert_eq!(
+            evaluate_type_op(TypeOp::CastAs, &empty, &optional_string, &context).unwrap(),
+            empty
+        );
+        assert_eq!(
+            evaluate_type_op(TypeOp::CastableAs, &empty, &optional_string, &context).unwrap(),
+            Value::Boolean(true)
+        );
+        assert!(evaluate_type_op(TypeOp::CastAs, &empty, &required_string, &context).is_err());
+        assert_eq!(
+            evaluate_type_op(TypeOp::CastableAs, &empty, &required_string, &context).unwrap(),
+            Value::Boolean(false)
+        );
+
+        let many = Value::Sequence(vec![Item::String("a".into()), Item::String("b".into())]);
+        assert!(evaluate_type_op(TypeOp::CastAs, &many, &required_string, &context).is_err());
+        assert_eq!(
+            evaluate_type_op(TypeOp::CastableAs, &many, &required_string, &context).unwrap(),
+            Value::Boolean(false)
+        );
+        let node_type = SequenceType {
+            item_type: ItemType::Node {
+                kind: Some(NodeKind::Element),
+                name: None,
+            },
+            occurrence: Occurrence::One,
+        };
+        assert!(evaluate_type_op(
+            TypeOp::CastAs,
+            &Value::String("a".into()),
+            &node_type,
+            &context,
+        )
+        .is_err());
+
+        let named_node = ItemType::Node {
+            kind: Some(NodeKind::Element),
+            name: Some(super::super::ast::NameTest::parse("missing:b")),
+        };
+        assert!(!matches_item_type(
+            &Item::String("b".into()),
+            &named_node,
+            &context
+        ));
+        assert!(!matches_item_type(
+            &Item::Node(document.root()),
+            &named_node,
+            &context
+        ));
+        assert!(!matches_item_type(
+            &Item::Node(document.children(document.document_element().unwrap())[0]),
+            &named_node,
+            &context
+        ));
+
+        for (text, ty) in [
+            ("not-a-date", "date"),
+            ("not-a-date-time", "dateTime"),
+            ("not-a-time", "time"),
+            ("not-a-duration", "dayTimeDuration"),
+            ("not-a-duration", "yearMonthDuration"),
+            ("x", "unknown"),
+        ] {
+            assert!(cast_item(&Item::String(text.into()), ty, &document).is_err());
+        }
+
+        let date = Value::Sequence(vec![Item::Temporal(
+            Temporal::parse("2024-01-01", TemporalKind::Date).unwrap(),
+        )]);
+        let later = Value::Sequence(vec![Item::Temporal(
+            Temporal::parse("2024-01-02", TemporalKind::Date).unwrap(),
+        )]);
+        for op in [
+            BinaryOp::Equal,
+            BinaryOp::NotEqual,
+            BinaryOp::Less,
+            BinaryOp::LessEqual,
+            BinaryOp::Greater,
+            BinaryOp::GreaterEqual,
+        ] {
+            assert!(compare_temporals(op, &date, &later, &context).is_ok());
+        }
+        assert!(std::panic::catch_unwind(|| {
+            let _ = compare_temporals(BinaryOp::Add, &date, &later, &context);
+        })
+        .is_err());
+
+        let time = Value::Sequence(vec![Item::Temporal(
+            Temporal::parse("12:00:00", TemporalKind::Time).unwrap(),
+        )]);
+        assert!(temporal_arithmetic(BinaryOp::Add, &date, &later).is_err());
+        assert!(temporal_arithmetic(BinaryOp::Subtract, &date, &time).is_err());
+        let day = Value::Sequence(vec![Item::Duration(Duration::from_seconds(86_400.0))]);
+        let month = Value::Sequence(vec![Item::Duration(Duration::from_months(1))]);
+        assert!(temporal_arithmetic(BinaryOp::Add, &day, &month).is_err());
+        assert!(temporal_arithmetic(BinaryOp::Subtract, &day, &date).is_err());
+        assert!(temporal_arithmetic(BinaryOp::Add, &day, &date).is_ok());
+
+        assert!(std::panic::catch_unwind(|| {
+            let _ = compare_by_node(
+                BinaryOp::Add,
+                &Value::NodeSet(vec![document.root()]),
+                &Value::NodeSet(vec![document.root()]),
+                &document,
+            );
+        })
+        .is_err());
+        assert!(std::panic::catch_unwind(|| {
+            let _ = compare_by_value(
+                BinaryOp::Add,
+                &Value::String("a".into()),
+                &Value::String("b".into()),
+                &document,
+                0,
+            );
+        })
+        .is_err());
+        assert!(std::panic::catch_unwind(|| {
+            compare_relational(
+                BinaryOp::Add,
+                &Value::Number(1.0, NumericType::Double),
+                &Value::Number(2.0, NumericType::Double),
+                &document,
+            )
+        })
+        .is_err());
+
+        let non_node_path = PathExpr {
+            start: PathStart::Expr(Box::new(Expr::Literal("x".into())), Vec::new()),
+            steps: Vec::new(),
+        };
+        assert!(evaluate_path(&non_node_path, &context).is_err());
+        let mut atomic_context = context;
+        atomic_context.context_item = Some(Item::String("x".into()));
+        let walking = PathExpr {
+            start: PathStart::Context,
+            steps: vec![Step {
+                axis: Axis::Child,
+                node_test: NodeTest::Wildcard,
+                predicates: Vec::new(),
+            }],
+        };
+        assert!(evaluate_path_or_context_item(&walking, &atomic_context).is_err());
+    }
+
+    #[test]
+    fn nested_expression_errors_propagate_from_every_composite_shape() {
+        let document = Document::from_str("<root/>").unwrap();
+        let variables = Variables::new();
+        let namespaces = Namespaces::new();
+        let context = EvalContext::new(
+            &document,
+            document.document_element().unwrap(),
+            &variables,
+            &namespaces,
+        )
+        .with_version(XPathVersion::V3);
+
+        for source in [
+            "-$missing",
+            "($missing, 1)",
+            "$missing to 1",
+            "1 to $missing",
+            "let $x := $missing return $x",
+            "if ($missing) then 1 else 2",
+            "($missing)(1)",
+            "concat#2($missing, 'x')",
+            "$missing and true()",
+            "$missing or false()",
+            "1 ! $missing",
+            "for $x in $missing return $x",
+            "some $x in $missing satisfies true()",
+            "(.)[$missing]/child",
+        ] {
+            let expression = parse(source).unwrap();
+            assert!(evaluate(&expression, &context).is_err(), "{source}");
+        }
+
+        for source in [
+            "1 instance of empty-sequence()",
+            "xs:yearMonthDuration('P1M') + xs:date('2024-01-01')",
+            "child::missing:root",
+        ] {
+            let expression = parse(source).unwrap();
+            assert!(evaluate(&expression, &context).is_ok(), "{source}");
+        }
+
+        let date = Value::Sequence(vec![Item::Temporal(
+            Temporal::parse("2024-01-01", TemporalKind::Date).unwrap(),
+        )]);
+        assert_eq!(
+            temporal_kind_of(&Value::String("2024-01-01".into()), &date),
+            TemporalKind::Date
+        );
+
+        // These reach the effective-boolean-value error paths after their
+        // condition/predicate has evaluated successfully to a function item.
+        for source in [
+            "if ((1, 2)) then 1 else 2",
+            "some $x in (1) satisfies (1, 2)",
+            "filter((1), function($x) { (1, 2) })",
+        ] {
+            let expression = parse(source).unwrap();
+            assert!(evaluate(&expression, &context).is_err(), "{source}");
+        }
     }
 }

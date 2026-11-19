@@ -567,4 +567,21 @@ mod tests {
         assert!(keys.is_declared("empty"));
         assert_eq!(keys.lookup("parts", "x"), vec![b]);
     }
+
+    #[test]
+    fn variable_names_and_poisoned_document_miss_tracking_are_total() {
+        let mut variables = Variables::new();
+        variables.bind("outer", Value::String("x".into()));
+        variables.bind("inner", Value::String("y".into()));
+        assert_eq!(variables.names().collect::<Vec<_>>(), vec!["outer", "inner"]);
+
+        let documents = Documents::new();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = documents.missing.lock().unwrap();
+            panic!("poison the miss registry for its recovery contract");
+        }));
+        assert_eq!(documents.lookup("missing.xml", None), None);
+        assert!(documents.missing().is_empty());
+        documents.clear_missing();
+    }
 }

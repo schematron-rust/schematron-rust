@@ -13,9 +13,7 @@ use std::sync::Arc;
 
 use super::expand::expand;
 use super::include::resolve_includes;
-use super::model::{
-    Assertion, Content, Let, LetValue, Pattern, QueryBinding, Rule, SchemaModel,
-};
+use super::model::{Assertion, Content, Let, LetValue, Pattern, QueryBinding, Rule, SchemaModel};
 use super::parse::parse_schema;
 use super::resolver::{FileResolver, SharedResolver};
 use crate::error::{Error, Result};
@@ -227,11 +225,7 @@ impl Schema {
 
         if !model.query_binding.is_supported() && !options.allow_unknown_query_binding {
             return Err(Error::UnsupportedQueryBinding {
-                binding: model
-                    .query_binding
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_string(),
+                binding: model.query_binding.as_str().unwrap_or_default().to_string(),
             });
         }
 
@@ -255,10 +249,7 @@ impl Schema {
         schema.streaming_ineligible_reason = streaming_ineligibility_reason(&schema);
         schema.compile_expressions()?;
         schema.check_references()?;
-        schema.uses_document_function = schema
-            .expressions
-            .values()
-            .any(calls_document_function);
+        schema.uses_document_function = schema.expressions.values().any(calls_document_function);
         Ok(schema)
     }
 
@@ -355,6 +346,9 @@ impl Schema {
     /// `enclosing` carries the variables an XPath 2.0 `for`, `some` or
     /// `every` binds around this point, which are scoped to the expression
     /// rather than to the schema.
+    // Keeping the exhaustive expression walk together makes new AST variants
+    // fail compilation here instead of silently escaping scope validation.
+    #[allow(clippy::too_many_lines)]
     fn check_variables(
         expr: &Expr,
         source: &str,
@@ -370,8 +364,7 @@ impl Schema {
                 if bindable.contains(&name) || enclosing.contains(&name) {
                     return Ok(());
                 }
-                let mut known: Vec<&str> =
-                    bindable.iter().map(String::as_str).collect();
+                let mut known: Vec<&str> = bindable.iter().map(String::as_str).collect();
                 known.extend(enclosing.iter().map(String::as_str));
                 known.sort_unstable();
                 return Err(Error::xpath_syntax(
@@ -431,14 +424,18 @@ impl Schema {
                 input,
                 body,
             } => {
-                Schema::check_binding(input, variable, body, source, location, bindable, enclosing)?;
+                Schema::check_binding(
+                    input, variable, body, source, location, bindable, enclosing,
+                )?;
             }
             Expr::Let {
                 variable,
                 value,
                 body,
             } => {
-                Schema::check_binding(value, variable, body, source, location, bindable, enclosing)?;
+                Schema::check_binding(
+                    value, variable, body, source, location, bindable, enclosing,
+                )?;
             }
             Expr::Quantified {
                 variable,
@@ -446,7 +443,9 @@ impl Schema {
                 test,
                 ..
             } => {
-                Schema::check_binding(input, variable, test, source, location, bindable, enclosing)?;
+                Schema::check_binding(
+                    input, variable, test, source, location, bindable, enclosing,
+                )?;
             }
 
             Expr::InlineFunction { .. } | Expr::DynamicCall { .. } | Expr::Arrow(_) => {
@@ -554,9 +553,8 @@ impl Schema {
                 self.check_expression(right, source, location)?;
             }
             Expr::Function { name, args } => {
-                check_function(name, args.len(), self.version).map_err(|message| {
-                    Error::xpath_syntax(location, source, 0, message)
-                })?;
+                check_function(name, args.len(), self.version)
+                    .map_err(|message| Error::xpath_syntax(location, source, 0, message))?;
                 check_literal_regex(name, args, source, location)?;
                 for arg in args {
                     self.check_expression(arg, source, location)?;
@@ -611,7 +609,9 @@ impl Schema {
                 self.check_expression(input, source, location)?;
                 self.check_expression(test, source, location)?;
             }
-            Expr::InlineFunction { .. } | Expr::NamedFunctionRef { .. } | Expr::DynamicCall { .. } => {
+            Expr::InlineFunction { .. }
+            | Expr::NamedFunctionRef { .. }
+            | Expr::DynamicCall { .. } => {
                 self.check_v3_expression(expr, source, location)?;
             }
             // The wrapper's own gate, checked before recursing into the
@@ -777,7 +777,12 @@ impl Schema {
         if self.namespaces.resolve(prefix).is_some() {
             return Ok(());
         }
-        let declared: Vec<&str> = self.model.namespaces.iter().map(|n| n.prefix.as_str()).collect();
+        let declared: Vec<&str> = self
+            .model
+            .namespaces
+            .iter()
+            .map(|n| n.prefix.as_str())
+            .collect();
         Err(Error::xpath_syntax(
             location,
             source,
@@ -836,7 +841,10 @@ impl Schema {
         }
         // Key names must be unique, or a lookup would be ambiguous.
         for (index, key) in self.model.keys.iter().enumerate() {
-            if self.model.keys[..index].iter().any(|earlier| earlier.name == key.name) {
+            if self.model.keys[..index]
+                .iter()
+                .any(|earlier| earlier.name == key.name)
+            {
                 return Err(Error::schema(
                     "key",
                     Some(format!("key[@name='{}']", key.name)),
@@ -1098,7 +1106,11 @@ fn collect_content(content: &[Content], location: &str, work: &mut Vec<(String, 
             // Literal text and a bare `<name/>` hold no expression to compile.
             Content::Text(_) | Content::Name { path: None } => {}
             Content::ValueOf { select } => {
-                work.push((select.clone(), format!("{location}/value-of/@select"), false));
+                work.push((
+                    select.clone(),
+                    format!("{location}/value-of/@select"),
+                    false,
+                ));
             }
             Content::Name { path: Some(path) } => {
                 work.push((path.clone(), format!("{location}/name/@path"), false));
@@ -1116,12 +1128,7 @@ fn collect_content(content: &[Content], location: &str, work: &mut Vec<(String, 
 ///
 /// A pattern computed at runtime cannot be checked here, and is validated
 /// when it is evaluated.
-fn check_literal_regex(
-    name: &str,
-    args: &[Expr],
-    source: &str,
-    location: &str,
-) -> Result<()> {
+fn check_literal_regex(name: &str, args: &[Expr], source: &str, location: &str) -> Result<()> {
     // `matches(input, pattern, flags?)` and `replace(input, pattern, replacement, flags?)`.
     let (pattern_index, flags_index) = match name {
         "matches" => (1, 2),
@@ -1166,9 +1173,7 @@ fn calls_document_function(expr: &Expr) -> bool {
         }
         Expr::TypeOp { value, .. } => calls_document_function(value),
         Expr::Sequence(members) => members.iter().any(calls_document_function),
-        Expr::Range(from, to) => {
-            calls_document_function(from) || calls_document_function(to)
-        }
+        Expr::Range(from, to) => calls_document_function(from) || calls_document_function(to),
         Expr::For { input, body, .. } => {
             calls_document_function(input) || calls_document_function(body)
         }
@@ -1187,8 +1192,7 @@ fn calls_document_function(expr: &Expr) -> bool {
         Expr::Path(path) => {
             let start = match &path.start {
                 PathStart::Expr(expr, predicates) => {
-                    calls_document_function(expr)
-                        || predicates.iter().any(calls_document_function)
+                    calls_document_function(expr) || predicates.iter().any(calls_document_function)
                 }
                 PathStart::Root | PathStart::Context => false,
             };
@@ -1422,10 +1426,12 @@ fn streaming_unsafe_construct(expr: &Expr) -> Option<&'static str> {
                     .or_else(|| predicates.iter().find_map(streaming_unsafe_construct)),
                 PathStart::Context => None,
             };
-            start.or_else(|| path.steps.iter().find_map(|step| {
-                axis_reason(step.axis)
-                    .or_else(|| step.predicates.iter().find_map(streaming_unsafe_construct))
-            }))
+            start.or_else(|| {
+                path.steps.iter().find_map(|step| {
+                    axis_reason(step.axis)
+                        .or_else(|| step.predicates.iter().find_map(streaming_unsafe_construct))
+                })
+            })
         }
     }
 }
@@ -1448,7 +1454,9 @@ fn function_reason(name: &'static str) -> &'static str {
         "document" => "document()",
         "id" => "id()",
         "key" => "key()",
-        "function-lookup" => "function-lookup(), which can select document-wide functions dynamically",
+        "function-lookup" => {
+            "function-lookup(), which can select document-wide functions dynamically"
+        }
         _ => unreachable!("only called with a name from UNSAFE_FUNCTIONS"),
     }
 }
@@ -1594,8 +1602,7 @@ mod tests {
                      <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>
                    </schema>"#
             );
-            let schema = Schema::from_str(&source)
-                .unwrap_or_else(|e| panic!("{binding} should compile: {e}"));
+            let schema = Schema::from_str(&source).expect("XPath 2.0 binding should compile");
             assert_eq!(schema.version(), crate::xpath::XPathVersion::V2);
         }
     }
@@ -1608,8 +1615,7 @@ mod tests {
                      <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>
                    </schema>"#
             );
-            let schema = Schema::from_str(&source)
-                .unwrap_or_else(|e| panic!("{binding} should compile: {e}"));
+            let schema = Schema::from_str(&source).expect("XPath 3.0 binding should compile");
             assert_eq!(schema.version(), crate::xpath::XPathVersion::V3);
         }
     }
@@ -1633,18 +1639,26 @@ mod tests {
                  <pattern><rule context="ancestor::a"><assert test="b">m</assert></rule></pattern>
                </schema>"#,
         );
-        assert!(message.contains("not allowed in a rule context"), "{message}");
+        assert!(
+            message.contains("not allowed in a rule context"),
+            "{message}"
+        );
     }
 
     #[test]
     fn accepts_the_usual_match_pattern_shapes() {
-        for context in ["a", "a/b", "//a", "/a", "@x", "a[@x]", "a | b", "*", "text()"] {
+        for context in [
+            "a", "a/b", "//a", "/a", "@x", "a[@x]", "a | b", "*", "text()",
+        ] {
             let source = format!(
                 r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
                      <pattern><rule context="{context}"><assert test="true()">m</assert></rule></pattern>
                    </schema>"#
             );
-            assert!(Schema::from_str(&source).is_ok(), "rejected context {context:?}");
+            assert!(
+                Schema::from_str(&source).is_ok(),
+                "rejected context {context:?}"
+            );
         }
     }
 
@@ -1700,5 +1714,140 @@ mod tests {
     fn schema_is_send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Schema>();
+    }
+
+    #[test]
+    fn schema_options_builders_debug_and_base_uri_path_are_observable() {
+        let options = SchemaOptions::new()
+            .with_base_uri("/schemas/main.sch")
+            .with_max_include_depth(7);
+        assert_eq!(options.base_uri.as_deref(), Some("/schemas/main.sch"));
+        assert_eq!(options.max_include_depth, 7);
+        let debug = format!("{options:?}");
+        assert!(debug.contains("/schemas/main.sch"));
+        assert!(debug.contains("max_include_depth"));
+        assert!(Schema::from_str_with(MINIMAL, &options).is_ok());
+    }
+
+    #[test]
+    fn compile_reports_missing_properties_and_non_path_contexts() {
+        let missing_property = error(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="a"><assert test="b" properties="nope">m</assert></rule></pattern>
+               </schema>"#,
+        );
+        assert!(missing_property.contains("no <property>"));
+
+        let bad_context = error(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="true()"><assert test="b">m</assert></rule></pattern>
+               </schema>"#,
+        );
+        assert!(bad_context.contains("location path or a union"));
+    }
+
+    #[test]
+    fn compile_checks_named_references_kind_prefixes_and_declared_prefix_lists() {
+        let unknown_reference = error(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt3">
+                 <pattern><rule context="a"><assert test="unknown#1">m</assert></rule></pattern>
+               </schema>"#,
+        );
+        assert!(unknown_reference.contains("unknown function"));
+
+        let kind_prefix = error(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+                 <ns prefix="q" uri="urn:q"/>
+                 <pattern><rule context="a"><assert test="b/element(p:x)">m</assert></rule></pattern>
+               </schema>"#,
+        );
+        assert!(kind_prefix.contains("which declares: q"));
+    }
+
+    #[test]
+    fn compile_collects_content_lets_and_computed_regex_flags() {
+        let source = r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+            <let name="message">hello <value-of select="'world'"/></let>
+            <let name="flags" value="'i'"/>
+            <pattern><rule context="a">
+              <assert test="matches('X', 'x', $flags) and string($message)">m</assert>
+            </rule></pattern>
+          </schema>"#;
+        assert!(Schema::from_str(source).is_ok());
+    }
+
+    #[test]
+    fn internal_expression_and_streaming_helpers_cover_every_shape() {
+        let schema = Schema::from_str(MINIMAL).unwrap();
+        assert!(schema
+            .expression("not compiled")
+            .unwrap_err()
+            .to_string()
+            .contains("bug"));
+
+        let parse = crate::xpath::parse;
+        assert_eq!(
+            streaming_context_reason(&parse("true()").unwrap()),
+            Some("a non-path rule context")
+        );
+        assert_eq!(
+            streaming_context_reason(&parse("(a)[1]/b").unwrap()),
+            Some("a filtered context expression")
+        );
+        assert!(streaming_context_reason(&parse("a[following::x]").unwrap()).is_some());
+        assert!(streaming_context_reason(&parse("a[1]").unwrap()).is_some());
+        assert!(attribute_predicate(&parse("boolean(@id)").unwrap()));
+        assert!(!attribute_predicate(&parse("concat('a', 'b')").unwrap()));
+        assert!(wrapper_expression(&parse("-1 + @id").unwrap()));
+        assert!(wrapper_expression(&parse("string(@id)").unwrap()));
+        assert!(!wrapper_expression(&parse("child::a").unwrap()));
+        assert!(!wrapper_expression(&parse("unknown(@id)").unwrap()));
+        assert_eq!(
+            streaming_unsafe_construct(&parse("resolve-uri#1").unwrap()),
+            Some("resolve-uri#1 without an explicit base URI")
+        );
+        assert_eq!(
+            streaming_unsafe_construct(&parse("/a").unwrap()),
+            Some("an absolute path outside a rule context")
+        );
+        assert!(streaming_unsafe_construct(&parse("(a)[/b]/c").unwrap()).is_some());
+
+        let mut work = Vec::new();
+        collect_rule(&Rule::default(), "pattern[1]", &mut work);
+        assert!(work.is_empty());
+
+        let bindable = std::collections::HashSet::new();
+        let variables_panic = std::panic::catch_unwind(|| {
+            let mut enclosing = Vec::new();
+            let _ = Schema::check_variables_v3(
+                &Expr::Literal("x".into()),
+                "'x'",
+                "test",
+                &bindable,
+                &mut enclosing,
+            );
+        });
+        assert!(variables_panic.is_err());
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = schema.check_v3_expression(&Expr::Literal("x".into()), "'x'", "test");
+        }))
+        .is_err());
+
+        for axis in [
+            Axis::Parent,
+            Axis::Ancestor,
+            Axis::AncestorOrSelf,
+            Axis::Following,
+            Axis::Preceding,
+            Axis::FollowingSibling,
+            Axis::PrecedingSibling,
+        ] {
+            assert!(axis_reason(axis).is_some());
+        }
+        assert!(axis_reason(Axis::Child).is_none());
+        for name in ["document", "id", "key", "function-lookup"] {
+            assert!(!function_reason(name).is_empty());
+        }
+        assert!(std::panic::catch_unwind(|| function_reason("unknown")).is_err());
     }
 }

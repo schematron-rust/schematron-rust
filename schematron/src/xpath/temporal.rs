@@ -146,31 +146,8 @@ impl Duration {
             Some(time) => parse_duration_fields(time, "HMS").ok_or_else(reject)?,
             None => Vec::new(),
         };
-        if date_fields.is_empty() && time_fields.is_empty() {
-            return Err(reject());
-        }
-
-        // `M` means months before the `T` and minutes after it, so the two
-        // parts are summed separately rather than by unit letter.
-        let mut months = 0_i64;
-        let mut seconds = 0.0_f64;
-        #[allow(clippy::cast_possible_truncation)] // Year and month counts are small.
-        for (value, unit) in &date_fields {
-            match unit {
-                'Y' => months += *value as i64 * 12,
-                'M' => months += *value as i64,
-                'D' => seconds += value * 86_400.0,
-                _ => return Err(reject()),
-            }
-        }
-        for (value, unit) in &time_fields {
-            match unit {
-                'H' => seconds += value * 3_600.0,
-                'M' => seconds += value * 60.0,
-                'S' => seconds += value,
-                _ => return Err(reject()),
-            }
-        }
+        let (months, seconds) =
+            duration_totals(&date_fields, &time_fields).ok_or_else(reject)?;
 
         // Each subtype accepts only its own fields.
         match kind {
@@ -302,6 +279,30 @@ fn parse_duration_fields(text: &str, units: &str) -> Option<Vec<(f64, char)>> {
         return None;
     }
     Some(fields)
+}
+
+/// Converts the already ordered lexical fields into the two stored totals.
+#[allow(clippy::cast_possible_truncation)] // Year and month counts are small.
+fn duration_totals(date_fields: &[(f64, char)], time_fields: &[(f64, char)]) -> Option<(i64, f64)> {
+    let mut months = 0_i64;
+    let mut seconds = 0.0_f64;
+    for (value, unit) in date_fields {
+        match unit {
+            'Y' => months += *value as i64 * 12,
+            'M' => months += *value as i64,
+            'D' => seconds += value * 86_400.0,
+            _ => return None,
+        }
+    }
+    for (value, unit) in time_fields {
+        match unit {
+            'H' => seconds += value * 3_600.0,
+            'M' => seconds += value * 60.0,
+            'S' => seconds += value,
+            _ => return None,
+        }
+    }
+    Some((months, seconds))
 }
 
 /// Adds a number of months to a date, clamping the day.
@@ -1035,6 +1036,24 @@ mod tests {
     }
 
     #[test]
+    fn lexical_edges_cover_fractional_seconds_negative_years_and_zero_offsets() {
+        let fractional =
+            Temporal::parse("2026-08-21T10:30:05.25-01:30", TemporalKind::DateTime).unwrap();
+        assert_eq!(fractional.to_string(), "2026-08-21T10:30:05.250000-01:30");
+        assert_eq!(
+            Temporal::parse("-0044-03-15", TemporalKind::Date)
+                .unwrap()
+                .to_lexical(),
+            "-044-03-15"
+        );
+        assert!(Temporal::parse("10:00:00+15:00", TemporalKind::Time).is_err());
+        assert!(Temporal::parse("+01:00", TemporalKind::Time).is_err());
+        assert!(Temporal::parse("10:00:0x", TemporalKind::Time).is_err());
+        assert!(Temporal::parse("10:00:00.0.0", TemporalKind::Time).is_err());
+        assert_eq!(days_in_month(2026, 13), 0);
+    }
+
+    #[test]
     fn parse_any_picks_the_right_type() {
         assert_eq!(
             Temporal::parse_any("2026-08-21").unwrap().kind(),
@@ -1159,6 +1178,16 @@ mod duration_tests {
             let parsed = Duration::parse(text, kind).unwrap();
             assert_eq!(parsed.to_lexical(), text, "{text}");
         }
+    }
+
+    #[test]
+    fn duration_lexical_edges_cover_zero_fractional_and_display_forms() {
+        assert_eq!(Duration::from_seconds(0.0).to_lexical(), "PT0S");
+        assert_eq!(Duration::from_seconds(0.5).to_lexical(), "PT0.5S");
+        assert_eq!(Duration::from_seconds(3_600.0).to_lexical(), "PT1H");
+        assert_eq!(Duration::from_months(12).to_string(), "P1Y");
+        assert!(duration_totals(&[(1.0, 'X')], &[]).is_none());
+        assert!(duration_totals(&[], &[(1.0, 'X')]).is_none());
     }
 
     #[test]

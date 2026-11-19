@@ -143,12 +143,13 @@ impl Report {
 
                     // The flag column carries severity when the schema sets
                     // one; otherwise fall back to the kind of finding.
-                    let label = assertion.flag.clone().unwrap_or_else(|| {
-                        match assertion.kind {
+                    let label = assertion
+                        .flag
+                        .clone()
+                        .unwrap_or_else(|| match assertion.kind {
                             ResultKind::FailedAssert => "error".to_string(),
                             ResultKind::SuccessfulReport => "report".to_string(),
-                        }
-                    });
+                        });
 
                     out.push_str(&format!("  {label:<8} {}\n", assertion.location));
                     for line in assertion.text.lines() {
@@ -244,10 +245,13 @@ mod tests {
         <schema xmlns="http://purl.oclc.org/dsdl/schematron">
           <pattern>
             <rule context="line">
-              <assert test="@qty" flag="error">Needs a qty.</assert>
+              <assert test="@qty" flag="error" see="https://example.com/qty" diagnostics="qty-help">Needs a qty.</assert>
               <report test="@free">Free line.</report>
             </rule>
           </pattern>
+          <diagnostics>
+            <diagnostic id="qty-help">Quantity is required.</diagnostic>
+          </diagnostics>
         </schema>
     "#;
 
@@ -269,6 +273,8 @@ mod tests {
         assert!(output.contains("error"), "{output}");
         assert!(output.contains("/order[1]/line[1]"), "{output}");
         assert!(output.contains("Needs a qty."), "{output}");
+        assert!(output.contains("- Quantity is required."), "{output}");
+        assert!(output.contains("see: https://example.com/qty"), "{output}");
     }
 
     #[test]
@@ -293,16 +299,37 @@ mod tests {
     }
 
     #[test]
+    fn diagnostics_can_be_suppressed() {
+        let mut options = TextOptions::new();
+        options.include_diagnostics = false;
+        let output = text("<order><line/></order>", &options);
+        assert!(!output.contains("Quantity is required."), "{output}");
+    }
+
+    #[test]
     fn option_builders_and_verbose_fired_rules_are_rendered() {
         let options = TextOptions::new().with_tests(true).with_reports(true);
         assert!(options.include_tests);
         assert!(options.include_reports);
 
-        let output = text(
-            "<order><line qty='1'/></order>",
-            &TextOptions::verbose(),
-        );
+        let output = text("<order><line qty='1'/></order>", &TextOptions::verbose());
         assert!(output.contains("fired"), "{output}");
+    }
+
+    #[test]
+    fn whitespace_only_message_lines_are_not_rendered() {
+        let schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="a"><assert test="false()">&#32;
+                 </assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let report = schema
+            .validate(&Document::from_str("<a/>").unwrap())
+            .unwrap();
+        let output = report.to_text();
+        assert!(output.contains("error"), "{output}");
     }
 
     #[test]

@@ -463,7 +463,7 @@ impl<'a> Lexer<'a> {
                         self.position += 2;
                         self.push(TokenKind::DoubleDot, start);
                     } else if self.peek_at(1).is_some_and(|b| b.is_ascii_digit()) {
-                        self.lex_number(start)?;
+                        self.lex_number(start);
                     } else {
                         self.position += 1;
                         self.push(TokenKind::Dot, start);
@@ -471,7 +471,7 @@ impl<'a> Lexer<'a> {
                 }
                 b'\'' | b'"' => self.lex_literal(start)?,
                 b'$' => self.lex_variable(start)?,
-                c if c.is_ascii_digit() => self.lex_number(start)?,
+                c if c.is_ascii_digit() => self.lex_number(start),
                 // `Q{uri}local` — an XPath 3.0 EQName. `Q` directly
                 // followed by `{`, no whitespace, is unambiguous: `{`
                 // never otherwise follows a name character in this
@@ -507,7 +507,7 @@ impl<'a> Lexer<'a> {
         Err(Lexer::error(start, "unterminated string literal"))
     }
 
-    fn lex_number(&mut self, start: usize) -> Result<(), LexError> {
+    fn lex_number(&mut self, start: usize) {
         while self.peek().is_some_and(|c| c.is_ascii_digit()) {
             self.position += 1;
         }
@@ -528,9 +528,8 @@ impl<'a> Lexer<'a> {
         let text = &self.input[start..self.position];
         let value = text
             .parse::<f64>()
-            .map_err(|_| Lexer::error(start, format!("invalid number {text:?}")))?;
+            .expect("the numeric-token grammar only admits valid f64 syntax");
         self.push(TokenKind::Number(value, numeric_type), start);
-        Ok(())
     }
 
     fn lex_variable(&mut self, start: usize) -> Result<(), LexError> {

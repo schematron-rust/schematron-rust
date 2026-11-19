@@ -224,8 +224,10 @@ impl Parser {
         // follows them, which is what tells them apart from an element
         // called `for`.
         if let Some(TokenKind::Name(name) | TokenKind::FunctionName(name)) = self.peek().cloned() {
-            let binds_a_variable =
-                matches!(self.tokens.get(self.index + 1).map(|t| &t.kind), Some(TokenKind::Variable(_)));
+            let binds_a_variable = matches!(
+                self.tokens.get(self.index + 1).map(|t| &t.kind),
+                Some(TokenKind::Variable(_))
+            );
             if binds_a_variable {
                 match name.as_str() {
                     "for" => return self.parse_for(),
@@ -476,10 +478,7 @@ impl Parser {
             }
             // The keyword is only a keyword when its partner follows; `cast`
             // on its own is an ordinary name.
-            let partner = self
-                .tokens
-                .get(self.index + 1)
-                .map(|token| &token.kind);
+            let partner = self.tokens.get(self.index + 1).map(|token| &token.kind);
             let follows = matches!(
                 partner,
                 Some(TokenKind::Name(name) | TokenKind::FunctionName(name)) if name == second
@@ -561,9 +560,7 @@ impl Parser {
                     "processing-instruction" => Some(NodeKind::ProcessingInstruction),
                     "document-node" => Some(NodeKind::Root),
                     "namespace-node" => Some(NodeKind::Namespace),
-                    other => {
-                        return self.error(format!("{other}() is not a known item type"))
-                    }
+                    other => return self.error(format!("{other}() is not a known item type")),
                 };
                 // `element(name)` and `attribute(name)` narrow by name.
                 let named = if let Some(TokenKind::Name(name)) = self.peek().cloned() {
@@ -581,8 +578,8 @@ impl Parser {
 
             other => {
                 self.index = self.index.saturating_sub(1);
-                let found = other
-                    .map_or_else(|| "end of expression".to_string(), |kind| kind.to_string());
+                let found =
+                    other.map_or_else(|| "end of expression".to_string(), |kind| kind.to_string());
                 self.error(format!("expected a type but found {found}"))
             }
         }
@@ -659,10 +656,8 @@ impl Parser {
             }
             other => {
                 self.index = self.index.saturating_sub(1);
-                let found = other.map_or_else(
-                    || "end of expression".to_string(),
-                    |kind| kind.to_string(),
-                );
+                let found =
+                    other.map_or_else(|| "end of expression".to_string(), |kind| kind.to_string());
                 self.error(format!(
                     "expected a function name, a variable, or a parenthesized \
                      expression after '=>', but found {found}"
@@ -957,10 +952,8 @@ impl Parser {
             other => {
                 // Rewind so the offset points at the offending token.
                 self.index = self.index.saturating_sub(1);
-                let found = other.map_or_else(
-                    || "end of expression".to_string(),
-                    |kind| kind.to_string(),
-                );
+                let found =
+                    other.map_or_else(|| "end of expression".to_string(), |kind| kind.to_string());
                 self.error(format!(
                     "expected a node test after {}:: but found {found}",
                     axis.as_str()
@@ -1062,10 +1055,8 @@ impl Parser {
             }
             other => {
                 self.index = self.index.saturating_sub(1);
-                let found = other.map_or_else(
-                    || "end of expression".to_string(),
-                    |kind| kind.to_string(),
-                );
+                let found =
+                    other.map_or_else(|| "end of expression".to_string(), |kind| kind.to_string());
                 self.error(format!("expected an expression but found {found}"))
             }
         }
@@ -1152,7 +1143,12 @@ mod tests {
     fn malformed_productions_return_located_errors_instead_of_partial_trees() {
         for source in [
             "",
+            "'",
+            "1 instance of mystery()",
+            "bogus::node()",
             "1 2",
+            "a and",
+            "foo $x",
             "for 1 in a return a",
             "for $x a return a",
             "for $x in a a",
@@ -1184,15 +1180,37 @@ mod tests {
             "function($x) 1",
             "$x => 1",
             "$x => f",
+            "$x =>",
+            "child::",
+            "child::unknown()",
             "(1)(",
         ] {
-            let error = match parse(source) {
-                Ok(tree) => panic!("{source:?} unexpectedly parsed as {tree:?}"),
-                Err(error) => error,
-            };
+            let result = parse(source);
+            assert!(result.is_err(), "{source:?} unexpectedly parsed");
+            let error = result.unwrap_err();
             assert!(error.position <= source.len(), "{source}: {error:?}");
             assert!(!error.message.is_empty(), "{source}: {error:?}");
+            assert!(error.to_string().contains("offset"));
         }
+    }
+
+    #[test]
+    fn uncommon_item_types_filters_and_empty_functions_parse() {
+        for source in [
+            "1 instance of processing-instruction()",
+            "1 instance of document-node()",
+            "1 instance of namespace-node()",
+        ] {
+            assert!(parse(source).is_ok(), "{source}");
+        }
+        assert!(matches!(
+            parse("('x')[1]").unwrap(),
+            Expr::Path(path) if matches!(path.start, PathStart::Expr(_, _)) && path.steps.is_empty()
+        ));
+        assert!(matches!(
+            parse("function() {}").unwrap(),
+            Expr::InlineFunction { body, .. } if matches!(*body, Expr::Sequence(ref items) if items.is_empty())
+        ));
     }
 
     #[test]
@@ -1265,34 +1283,28 @@ mod tests {
     fn respects_operator_precedence() {
         // `1 + 2 * 3` must group as `1 + (2 * 3)`.
         let expr = parse("1 + 2 * 3").unwrap();
-        match expr {
-            Expr::Binary(BinaryOp::Add, _, right) => {
-                assert!(matches!(*right, Expr::Binary(BinaryOp::Multiply, _, _)));
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Binary(BinaryOp::Add, _, _)));
+        if let Expr::Binary(BinaryOp::Add, _, right) = expr {
+            assert!(matches!(*right, Expr::Binary(BinaryOp::Multiply, _, _)));
         }
     }
 
     #[test]
     fn or_binds_looser_than_and() {
         let expr = parse("a or b and c").unwrap();
-        match expr {
-            Expr::Binary(BinaryOp::Or, _, right) => {
-                assert!(matches!(*right, Expr::Binary(BinaryOp::And, _, _)));
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Binary(BinaryOp::Or, _, _)));
+        if let Expr::Binary(BinaryOp::Or, _, right) = expr {
+            assert!(matches!(*right, Expr::Binary(BinaryOp::And, _, _)));
         }
     }
 
     #[test]
     fn parses_function_calls_with_arguments() {
         let expr = parse("concat('a', 'b', 'c')").unwrap();
-        match expr {
-            Expr::Function { name, args } => {
-                assert_eq!(name, "concat");
-                assert_eq!(args.len(), 3);
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Function { .. }));
+        if let Expr::Function { name, args } = expr {
+            assert_eq!(name, "concat");
+            assert_eq!(args.len(), 3);
         }
     }
 
@@ -1385,7 +1397,10 @@ mod tests {
                 error.message
             );
 
-            let shallow = format!("a{}", format!(" {operator} a").repeat(MAX_RECURSION_DEPTH / 2));
+            let shallow = format!(
+                "a{}",
+                format!(" {operator} a").repeat(MAX_RECURSION_DEPTH / 2)
+            );
             assert!(parse(&shallow).is_ok(), "operator {operator:?}");
         }
     }
@@ -1403,21 +1418,17 @@ mod tests {
         // `'a' || 'b' = 'ab'` must group as `('a' || 'b') = 'ab'` — `||`
         // binds inside `=`.
         let expr = parse("'a' || 'b' = 'ab'").unwrap();
-        match expr {
-            Expr::Binary(BinaryOp::Equal, left, _) => {
-                assert!(matches!(*left, Expr::Binary(BinaryOp::Concat, _, _)));
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Binary(BinaryOp::Equal, _, _)));
+        if let Expr::Binary(BinaryOp::Equal, left, _) = expr {
+            assert!(matches!(*left, Expr::Binary(BinaryOp::Concat, _, _)));
         }
 
         // `1 || 2 + 3` must group as `1 || (2 + 3)` — additive binds inside
         // `||`.
         let expr = parse("1 || 2 + 3").unwrap();
-        match expr {
-            Expr::Binary(BinaryOp::Concat, _, right) => {
-                assert!(matches!(*right, Expr::Binary(BinaryOp::Add, _, _)));
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Binary(BinaryOp::Concat, _, _)));
+        if let Expr::Binary(BinaryOp::Concat, _, right) = expr {
+            assert!(matches!(*right, Expr::Binary(BinaryOp::Add, _, _)));
         }
     }
 
@@ -1425,16 +1436,14 @@ mod tests {
     fn parses_an_arrow_call_to_a_named_function() {
         // `$x => f(1)` is sugar for `f($x, 1)`.
         let expr = parse("$x => f(1)").unwrap();
-        match expr {
-            Expr::Arrow(called) => match *called {
-                Expr::Function { name, args } => {
-                    assert_eq!(name, "f");
-                    assert_eq!(args.len(), 2);
-                    assert!(matches!(args[0], Expr::Variable(_)));
-                }
-                other => panic!("unexpected call shape: {other:?}"),
-            },
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Arrow(_)));
+        if let Expr::Arrow(called) = expr {
+            assert!(matches!(*called, Expr::Function { .. }));
+            if let Expr::Function { name, args } = *called {
+                assert_eq!(name, "f");
+                assert_eq!(args.len(), 2);
+                assert!(matches!(args[0], Expr::Variable(_)));
+            }
         }
     }
 
@@ -1442,11 +1451,9 @@ mod tests {
     fn parses_an_arrow_call_to_a_dynamic_target() {
         for source in ["$x => $f(1)", "$x => (g#1)(1)"] {
             let expr = parse(source).unwrap();
-            match expr {
-                Expr::Arrow(called) => {
-                    assert!(matches!(*called, Expr::DynamicCall { .. }), "{source}");
-                }
-                other => panic!("unexpected shape for {source}: {other:?}"),
+            assert!(matches!(expr, Expr::Arrow(_)), "{source}");
+            if let Expr::Arrow(called) = expr {
+                assert!(matches!(*called, Expr::DynamicCall { .. }), "{source}");
             }
         }
     }
@@ -1455,15 +1462,13 @@ mod tests {
     fn arrow_calls_chain() {
         // `$x => f() => g()` is sugar for `g(f($x))`.
         let expr = parse("$x => f() => g()").unwrap();
-        match expr {
-            Expr::Arrow(outer) => match *outer {
-                Expr::Function { name, args } => {
-                    assert_eq!(name, "g");
-                    assert!(matches!(args[0], Expr::Arrow(_)));
-                }
-                other => panic!("unexpected shape: {other:?}"),
-            },
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Arrow(_)));
+        if let Expr::Arrow(outer) = expr {
+            assert!(matches!(*outer, Expr::Function { .. }));
+            if let Expr::Function { name, args } = *outer {
+                assert_eq!(name, "g");
+                assert!(matches!(args[0], Expr::Arrow(_)));
+            }
         }
     }
 
@@ -1472,11 +1477,9 @@ mod tests {
         // `$x => f() cast as xs:string` must group as
         // `($x => f()) cast as xs:string`.
         let expr = parse("$x => f() cast as xs:string").unwrap();
-        match expr {
-            Expr::TypeOp { value, .. } => {
-                assert!(matches!(*value, Expr::Arrow(_)));
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::TypeOp { .. }));
+        if let Expr::TypeOp { value, .. } = expr {
+            assert!(matches!(*value, Expr::Arrow(_)));
         }
     }
 
@@ -1502,11 +1505,9 @@ mod tests {
     fn simple_map_chains_left_associatively() {
         // `a ! b ! c` is `(a ! b) ! c`.
         let expr = parse("a ! b ! c").unwrap();
-        match expr {
-            Expr::Binary(BinaryOp::SimpleMap, left, _) => {
-                assert!(matches!(*left, Expr::Binary(BinaryOp::SimpleMap, _, _)));
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Binary(BinaryOp::SimpleMap, _, _)));
+        if let Expr::Binary(BinaryOp::SimpleMap, left, _) = expr {
+            assert!(matches!(*left, Expr::Binary(BinaryOp::SimpleMap, _, _)));
         }
     }
 
@@ -1515,11 +1516,9 @@ mod tests {
         // `a ! b | c` must group as `(a ! b) | c` — real XPath 3.0's grammar
         // nests `UnionExpr` around `SimpleMapExpr`, not the other way round.
         let expr = parse("a ! b | c").unwrap();
-        match expr {
-            Expr::Binary(BinaryOp::Union, left, _) => {
-                assert!(matches!(*left, Expr::Binary(BinaryOp::SimpleMap, _, _)));
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Binary(BinaryOp::Union, _, _)));
+        if let Expr::Binary(BinaryOp::Union, left, _) = expr {
+            assert!(matches!(*left, Expr::Binary(BinaryOp::SimpleMap, _, _)));
         }
     }
 
@@ -1529,11 +1528,9 @@ mod tests {
         // `!` in this grammar exactly as `RangeExpr` sits above
         // `SimpleMapExpr` in real XPath 3.0's.
         let expr = parse("1 to 2 ! f()").unwrap();
-        match expr {
-            Expr::Range(_, right) => {
-                assert!(matches!(*right, Expr::Binary(BinaryOp::SimpleMap, _, _)));
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Range(_, _)));
+        if let Expr::Range(_, right) = expr {
+            assert!(matches!(*right, Expr::Binary(BinaryOp::SimpleMap, _, _)));
         }
     }
 
@@ -1556,17 +1553,16 @@ mod tests {
     #[test]
     fn parses_a_let_expression() {
         let expr = parse("let $x := 1 return $x").unwrap();
-        match expr {
-            Expr::Let {
-                variable,
-                value,
-                body,
-            } => {
-                assert_eq!(variable.to_string(), "x");
-                assert!(matches!(*value, Expr::Number(1.0, _)));
-                assert!(matches!(*body, Expr::Variable(_)));
-            }
-            other => panic!("unexpected shape: {other:?}"),
+        assert!(matches!(expr, Expr::Let { .. }));
+        if let Expr::Let {
+            variable,
+            value,
+            body,
+        } = expr
+        {
+            assert_eq!(variable.to_string(), "x");
+            assert!(matches!(*value, Expr::Number(1.0, _)));
+            assert!(matches!(*body, Expr::Variable(_)));
         }
     }
 

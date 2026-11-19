@@ -7,9 +7,9 @@
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
+use std::cell::Cell;
 use std::path::Path;
 use std::rc::Rc;
-use std::cell::Cell;
 
 use super::document::Document;
 use super::node::{NodeData, NodeId, NodeKind, QName, XML_NAMESPACE};
@@ -79,7 +79,9 @@ impl<'a> Builder<'a> {
     pub(crate) fn push_node(&mut self, kind: NodeKind, parent: NodeId) -> NodeId {
         let order = self.next_order();
         let id = NodeId(self.doc.nodes.len());
-        self.doc.nodes.push(NodeData::new(kind, Some(parent), order));
+        self.doc
+            .nodes
+            .push(NodeData::new(kind, Some(parent), order));
         self.doc.nodes[parent.0].children.push(id);
         id
     }
@@ -142,8 +144,8 @@ impl<'a> Builder<'a> {
     /// the caller has already recorded the stack mark.
     fn declare_namespaces(&mut self, start: &BytesStart<'_>, position: usize) -> Result<()> {
         for attribute in start.attributes().with_checks(false) {
-            let attribute = attribute
-                .map_err(|e| self.error(position, format!("malformed attribute: {e}")))?;
+            let attribute =
+                attribute.map_err(|e| self.error(position, format!("malformed attribute: {e}")))?;
             let key = attribute.key.as_ref();
             let prefix = if key == "xmlns" {
                 ""
@@ -152,8 +154,8 @@ impl<'a> Builder<'a> {
             } else {
                 continue;
             };
-            let uri = decode_value(&attribute.value)
-                .map_err(|message| self.error(position, message))?;
+            let uri =
+                decode_value(&attribute.value).map_err(|message| self.error(position, message))?;
             self.ns_stack.push(NsFrame {
                 prefix: prefix.to_string(),
                 uri,
@@ -190,17 +192,22 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn attach_attributes(&mut self, element: NodeId, start: &BytesStart<'_>, position: usize) -> Result<()> {
+    fn attach_attributes(
+        &mut self,
+        element: NodeId,
+        start: &BytesStart<'_>,
+        position: usize,
+    ) -> Result<()> {
         for attribute in start.attributes().with_checks(false) {
-            let attribute = attribute
-                .map_err(|e| self.error(position, format!("malformed attribute: {e}")))?;
+            let attribute =
+                attribute.map_err(|e| self.error(position, format!("malformed attribute: {e}")))?;
             let key = attribute.key.as_ref().to_string();
             if key == "xmlns" || key.starts_with("xmlns:") {
                 continue;
             }
             let name = self.qname(&key, true, position)?;
-            let value = decode_value(&attribute.value)
-                .map_err(|message| self.error(position, message))?;
+            let value =
+                decode_value(&attribute.value).map_err(|message| self.error(position, message))?;
             let order = self.next_order();
             let id = NodeId(self.doc.nodes.len());
             let mut data = NodeData::new(NodeKind::Attribute, Some(element), order);
@@ -271,13 +278,14 @@ fn resolve_entity(name: &str) -> std::result::Result<char, String> {
         "quot" => Ok('"'),
         "apos" => Ok('\''),
         _ => {
-            let code = if let Some(hex) = name.strip_prefix("#x").or_else(|| name.strip_prefix("#X")) {
-                u32::from_str_radix(hex, 16).ok()
-            } else if let Some(dec) = name.strip_prefix('#') {
-                dec.parse::<u32>().ok()
-            } else {
-                None
-            };
+            let code =
+                if let Some(hex) = name.strip_prefix("#x").or_else(|| name.strip_prefix("#X")) {
+                    u32::from_str_radix(hex, 16).ok()
+                } else if let Some(dec) = name.strip_prefix('#') {
+                    dec.parse::<u32>().ok()
+                } else {
+                    None
+                };
             code.and_then(char::from_u32).ok_or_else(|| {
                 format!(
                     "unknown entity reference &{name};: only the predefined entities and \
@@ -356,16 +364,24 @@ impl Document {
             path: path.display().to_string(),
             source,
         })?;
-        let mut doc = Document::from_bytes(&bytes).map_err(|error| match error {
-            Error::XmlParse { line, column, message } => Error::XmlParse {
-                line,
-                column,
-                message: format!("{}: {message}", path.display()),
-            },
-            other => other,
-        })?;
+        let mut doc = Document::from_bytes(&bytes).map_err(|error| add_path(error, path))?;
         doc.set_base_uri(path.display().to_string());
         Ok(doc)
+    }
+}
+
+fn add_path(error: Error, path: &Path) -> Error {
+    match error {
+        Error::XmlParse {
+            line,
+            column,
+            message,
+        } => Error::XmlParse {
+            line,
+            column,
+            message: format!("{}: {message}", path.display()),
+        },
+        other => other,
     }
 }
 
@@ -404,8 +420,7 @@ pub(crate) fn decode_bytes(bytes: &[u8]) -> Result<String> {
                 }
             })
             .collect();
-        return String::from_utf16(&units)
-            .map_err(|e| parse_error(format!("invalid UTF-16: {e}")));
+        return String::from_utf16(&units).map_err(|e| parse_error(format!("invalid UTF-16: {e}")));
     }
     String::from_utf8(bytes.to_vec()).map_err(|e| parse_error(format!("invalid UTF-8: {e}")))
 }
@@ -509,10 +524,9 @@ pub(crate) fn handle_event(
             // Whitespace outside the document element is not a text node.
             if parent == builder.doc.root {
                 if !decoded.chars().all(super::is_xml_space) {
-                    return Err(builder.error(
-                        position,
-                        "character data outside the document element",
-                    ));
+                    return Err(
+                        builder.error(position, "character data outside the document element")
+                    );
                 }
             } else {
                 builder.push_text(parent, &decoded);
@@ -557,10 +571,7 @@ pub(crate) fn handle_event(
             // Mirrors Event::Text: character data, including a reference
             // to it, cannot appear outside the document element.
             if parent == builder.doc.root {
-                return Err(builder.error(
-                    position,
-                    "character data outside the document element",
-                ));
+                return Err(builder.error(position, "character data outside the document element"));
             }
             let mut buf = [0u8; 4];
             builder.push_text(parent, c.encode_utf8(&mut buf));
@@ -678,8 +689,8 @@ mod tests {
 
     #[test]
     fn expands_predefined_entities() {
-        let d = doc("<a>&lt;&amp;&gt;&#65;&#x42;</a>");
-        assert_eq!(d.string_value(d.document_element().unwrap()), "<&>AB");
+        let d = doc("<a>&lt;&amp;&gt;&quot;&apos;&#65;&#x42;&#X43;</a>");
+        assert_eq!(d.string_value(d.document_element().unwrap()), "<&>\"'ABC");
     }
 
     #[test]
@@ -697,7 +708,7 @@ mod tests {
 
     #[test]
     fn keeps_comments_and_processing_instructions() {
-        let d = doc("<a><!--c--><?target \t\u{a0}data?></a>");
+        let d = doc("<a><!--c--><?target \t\u{a0}data?><?empty?></a>");
         let a = d.document_element().unwrap();
         assert_eq!(d.kind(d.children(a)[0]), NodeKind::Comment);
         assert_eq!(d.value(d.children(a)[0]), "c");
@@ -705,6 +716,8 @@ mod tests {
         assert_eq!(d.kind(pi), NodeKind::ProcessingInstruction);
         assert_eq!(d.name(pi).unwrap().local, "target");
         assert_eq!(d.value(pi), "\u{a0}data");
+        let empty = d.children(a)[2];
+        assert_eq!(d.value(empty), "");
     }
 
     #[test]
@@ -772,5 +785,89 @@ mod tests {
         // panic instead of rounding down to the boundary at 0.
         let source = "\u{85}x";
         assert_eq!(line_column(source, 1), (1, 1));
+    }
+
+    #[test]
+    fn byte_decoding_reports_each_encoding_failure() {
+        assert!(decode_bytes(&[0xEF, 0xBB, 0xBF, 0xFF]).is_err());
+        assert!(decode_bytes(&[0xFF]).is_err());
+        assert!(decode_bytes(&[0xFF, 0xFE, 0x00]).is_err());
+        assert!(decode_bytes(&[0xFF, 0xFE, 0x00, 0xD8]).is_err());
+
+        let text = "<a>z</a>";
+        let mut big_endian = vec![0xFE, 0xFF];
+        for unit in text.encode_utf16() {
+            big_endian.extend_from_slice(&unit.to_be_bytes());
+        }
+        let document = Document::from_bytes(&big_endian).unwrap();
+        assert_eq!(
+            document.string_value(document.document_element().unwrap()),
+            "z"
+        );
+    }
+
+    #[test]
+    fn path_context_preserves_non_parse_errors_defensively() {
+        let error = Error::Resolve {
+            href: "x".into(),
+            message: "failed".into(),
+        };
+        assert!(matches!(
+            add_path(error, Path::new("input.xml")),
+            Error::Resolve { .. }
+        ));
+        let parse = add_path(
+            Error::XmlParse {
+                line: 2,
+                column: 3,
+                message: "bad".into(),
+            },
+            Path::new("input.xml"),
+        );
+        assert!(parse.to_string().contains("input.xml"));
+    }
+
+    #[test]
+    fn entity_and_attribute_failures_are_contextual() {
+        assert!(unescape("before &amp")
+            .unwrap_err()
+            .contains("unterminated"));
+        for entity in ["#", "#x", "#x110000", "#not-a-number", "unknown"] {
+            assert!(resolve_entity(entity).is_err(), "{entity}");
+        }
+        assert!(Document::from_str(r#"<a x="&unknown;"/>"#).is_err());
+        assert!(Document::from_str(r#"<a xmlns:p="&unknown;"><p:b/></a>"#).is_err());
+    }
+
+    #[test]
+    fn document_level_structure_errors_are_rejected() {
+        assert!(Document::from_str("<a/><b/>").is_err());
+        assert!(Document::from_str("<a/><?xml version='1.0'?>").is_err());
+        assert!(Document::from_str("<a/><!DOCTYPE b>").is_err());
+        assert!(Document::from_str("<![CDATA[x]]><a/>").is_err());
+        assert!(Document::from_str("&amp;<a/>").is_err());
+        assert!(Document::from_str("<!-- only a comment -->").is_err());
+    }
+
+    #[test]
+    fn nesting_limit_empty_text_and_live_positions_are_bounded() {
+        let mut source = "<a>".repeat(MAX_DEPTH + 2);
+        source.push_str(&"</a>".repeat(MAX_DEPTH + 2));
+        assert!(Document::from_str(&source).is_err());
+
+        let live = Rc::new(Cell::new((7, 11)));
+        let mut builder = Builder::new(PositionSource::Streaming(Rc::clone(&live)));
+        assert!(matches!(
+            builder.error(0, "x"),
+            Error::XmlParse {
+                line: 7,
+                column: 11,
+                ..
+            }
+        ));
+        let root = builder.doc.root;
+        builder.push_text(root, "");
+        assert!(builder.doc.children(root).is_empty());
+        end_element(&mut builder);
     }
 }

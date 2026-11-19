@@ -374,11 +374,9 @@ pub(crate) fn call(
         }
         "substring-after" => {
             let (haystack, needle) = two_strings(args, document);
-            Ok(Value::String(
-                haystack
-                    .find(&needle)
-                    .map_or_default(|i| haystack[i + needle.len()..].to_string()),
-            ))
+            Ok(Value::String(haystack.find(&needle).map_or_default(|i| {
+                haystack[i + needle.len()..].to_string()
+            })))
         }
         "substring" => Ok(Value::String(substring(args, document))),
         "string-length" => Ok(double(as_f64(
@@ -414,7 +412,10 @@ pub(crate) fn call(
         "sum" => {
             let items = items_of(name, args, 0, context.version)?;
             Ok(double(
-                items.iter().map(|item| item.to_number(document)).fold(0.0, |a, b| a + b),
+                items
+                    .iter()
+                    .map(|item| item.to_number(document))
+                    .fold(0.0, |a, b| a + b),
             ))
         }
         "floor" => Ok(double(args[0].to_number(document).floor())),
@@ -438,7 +439,8 @@ pub(crate) fn call(
 /// mirrors its own signature table.
 fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
     let document = context.document;
-    match name {        "matches" => {
+    match name {
+        "matches" => {
             let regex = compile_regex(&args[1].to_xpath_string(document), args.get(2), document)?;
             Ok(Value::Boolean(
                 regex.is_match(&args[0].to_xpath_string(document)),
@@ -452,14 +454,19 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
                 regex.replace_all(&input, replacement.as_str()).into_owned(),
             ))
         }
-        "upper-case" => Ok(Value::String(args[0].to_xpath_string(document).to_uppercase())),
-        "lower-case" => Ok(Value::String(args[0].to_xpath_string(document).to_lowercase())),
+        "upper-case" => Ok(Value::String(
+            args[0].to_xpath_string(document).to_uppercase(),
+        )),
+        "lower-case" => Ok(Value::String(
+            args[0].to_xpath_string(document).to_lowercase(),
+        )),
         "ends-with" => {
             let (haystack, needle) = two_strings(args, document);
             Ok(Value::Boolean(haystack.ends_with(&needle)))
         }
-        "xs:string" | "xs:boolean" | "xs:integer" | "xs:decimal" | "xs:float"
-        | "xs:double" => atomic_constructor(name, args, context),
+        "xs:string" | "xs:boolean" | "xs:integer" | "xs:decimal" | "xs:float" | "xs:double" => {
+            atomic_constructor(name, args, context)
+        }
         "abs" => Ok(double(args[0].to_number(document).abs())),
         "min" => Ok(double(extreme(args, document, f64::min))),
         "max" => Ok(double(extreme(args, document, f64::max))),
@@ -477,8 +484,12 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             let count = numbers.len() as f64;
             Ok(double(total / count))
         }
-        "exists" => Ok(Value::Boolean(!items_of(name, args, 0, context.version)?.is_empty())),
-        "empty" => Ok(Value::Boolean(items_of(name, args, 0, context.version)?.is_empty())),
+        "exists" => Ok(Value::Boolean(
+            !items_of(name, args, 0, context.version)?.is_empty(),
+        )),
+        "empty" => Ok(Value::Boolean(
+            items_of(name, args, 0, context.version)?.is_empty(),
+        )),
         "string-join" => {
             let items = items_of(name, args, 0, context.version)?;
             let separator = args[1].to_xpath_string(document);
@@ -826,7 +837,8 @@ fn call_v3(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
         "function-lookup" => function_lookup_call(args, context),
         "function-arity" => {
             let f = single_function_argument(name, args, 0)?;
-            #[allow(clippy::cast_precision_loss)] // No function item has anywhere near 2^52 parameters.
+            #[allow(clippy::cast_precision_loss)]
+            // No function item has anywhere near 2^52 parameters.
             Ok(double(f.arity() as f64))
         }
         "function-name" => {
@@ -993,7 +1005,12 @@ fn deep_equal_node(a: NodeId, b: NodeId, document: &Document) -> bool {
                 document
                     .attributes(id)
                     .iter()
-                    .map(|&attr| (document.name(attr).expect("attributes are named"), document.string_value(attr)))
+                    .map(|&attr| {
+                        (
+                            document.name(attr).expect("attributes are named"),
+                            document.string_value(attr),
+                        )
+                    })
                     .collect()
             };
             let (attrs_a, attrs_b) = (attrs_of(a), attrs_of(b));
@@ -1109,7 +1126,9 @@ fn concat_function(args: &[Value], document: &Document) -> Result<Value, EvalErr
         reject_function_item("concat()", arg)?;
     }
     Ok(Value::String(
-        args.iter().map(|a| a.to_xpath_string(document)).collect::<String>(),
+        args.iter()
+            .map(|a| a.to_xpath_string(document))
+            .collect::<String>(),
     ))
 }
 
@@ -1240,11 +1259,7 @@ fn cast_duration(
 ///
 /// XPath 2.0 defines each as the component it would occupy in the normalised
 /// lexical form, so the days of `P1DT36H` are two, not one.
-fn duration_component(
-    name: &str,
-    args: &[Value],
-    document: &Document,
-) -> Result<Value, EvalError> {
+fn duration_component(name: &str, args: &[Value], document: &Document) -> Result<Value, EvalError> {
     let component = name
         .strip_suffix("-from-duration")
         .ok_or_else(|| EvalError::new(format!("unknown function {name}()")))?;
@@ -1259,8 +1274,9 @@ fn duration_component(
         _ => None,
     }) {
         Some(duration) => duration,
-        None => Duration::parse(&args[0].to_xpath_string(document), kind)
-            .map_err(EvalError::new)?,
+        None => {
+            Duration::parse(&args[0].to_xpath_string(document), kind).map_err(EvalError::new)?
+        }
     };
 
     if duration.kind() != kind {
@@ -1315,8 +1331,9 @@ fn timezone_of(name: &str, args: &[Value], document: &Document) -> Result<Value,
         _ => None,
     }) {
         Some(temporal) => temporal,
-        None => Temporal::parse(&args[0].to_xpath_string(document), kind)
-            .map_err(EvalError::new)?,
+        None => {
+            Temporal::parse(&args[0].to_xpath_string(document), kind).map_err(EvalError::new)?
+        }
     };
 
     Ok(match temporal.offset_minutes() {
@@ -1328,11 +1345,7 @@ fn timezone_of(name: &str, args: &[Value], document: &Document) -> Result<Value,
 }
 
 /// The `*-from-date`, `*-from-dateTime` and `*-from-time` accessors.
-fn component_of(
-    name: &str,
-    args: &[Value],
-    document: &Document,
-) -> Result<Value, EvalError> {
+fn component_of(name: &str, args: &[Value], document: &Document) -> Result<Value, EvalError> {
     let (component, type_name) = name
         .split_once("-from-")
         .ok_or_else(|| EvalError::new(format!("unknown function {name}()")))?;
@@ -1349,8 +1362,9 @@ fn component_of(
         _ => None,
     }) {
         Some(temporal) => temporal,
-        None => Temporal::parse(&args[0].to_xpath_string(document), kind)
-            .map_err(EvalError::new)?,
+        None => {
+            Temporal::parse(&args[0].to_xpath_string(document), kind).map_err(EvalError::new)?
+        }
     };
 
     let value = match component {
@@ -1418,8 +1432,7 @@ fn compile_regex(
     flags: Option<&Value>,
     document: &Document,
 ) -> Result<regex::Regex, EvalError> {
-    let flags = flags
-        .map_or_default(|value| value.to_xpath_string(document));
+    let flags = flags.map_or_default(|value| value.to_xpath_string(document));
     build_regex(pattern, &flags).map_err(EvalError::new)
 }
 
@@ -1704,7 +1717,9 @@ fn lang(wanted: &str, document: &Document, node: NodeId) -> bool {
                     let actual = document.value(attribute).to_lowercase();
                     let wanted = wanted.to_lowercase();
                     return actual == wanted
-                        || actual.strip_prefix(&wanted).is_some_and(|r| r.starts_with('-'));
+                        || actual
+                            .strip_prefix(&wanted)
+                            .is_some_and(|r| r.starts_with('-'));
                 }
             }
         }
@@ -1716,7 +1731,7 @@ fn lang(wanted: &str, document: &Document, node: NodeId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::xpath::{Namespaces, Variables};
+    use crate::xpath::{Documents, Namespaces, Variables};
 
     #[test]
     fn arity_is_checked() {
@@ -2005,7 +2020,10 @@ mod tests {
         let document = Document::from_str("<a><n>3</n><n>7</n></a>").unwrap();
         let root = document.document_element().unwrap();
         let nodes = document.children(root).to_vec();
-        assert_eq!(numbers_of(&[Value::NodeSet(nodes)], &document), vec![3.0, 7.0]);
+        assert_eq!(
+            numbers_of(&[Value::NodeSet(nodes)], &document),
+            vec![3.0, 7.0]
+        );
         assert_eq!(
             numbers_of(
                 &[Value::Sequence(vec![
@@ -2016,10 +2034,20 @@ mod tests {
             ),
             vec![4.0, 5.0]
         );
-        assert_eq!(numbers_of(&[Value::Number(6.0, NumericType::Double)], &document), vec![6.0]);
+        assert_eq!(
+            numbers_of(&[Value::Number(6.0, NumericType::Double)], &document),
+            vec![6.0]
+        );
         assert!(extreme(&[Value::Sequence(vec![])], &document, f64::min).is_nan());
         assert!(extreme(&[Value::String("x".into())], &document, f64::max).is_nan());
-        assert_eq!(extreme(&[Value::NodeSet(document.children(root).to_vec())], &document, f64::max), 7.0);
+        assert_eq!(
+            extreme(
+                &[Value::NodeSet(document.children(root).to_vec())],
+                &document,
+                f64::max
+            ),
+            7.0
+        );
     }
 
     #[test]
@@ -2029,9 +2057,22 @@ mod tests {
         let duration = Duration::parse("PT90S", DurationKind::DayTime).unwrap();
         let date_value = Value::Sequence(vec![Item::Temporal(date)]);
         let duration_value = Value::Sequence(vec![Item::Duration(duration)]);
-        assert_eq!(cast_temporal(std::slice::from_ref(&date_value), TemporalKind::Date, &document).unwrap(), date_value);
         assert_eq!(
-            cast_duration(std::slice::from_ref(&duration_value), DurationKind::DayTime, &document).unwrap(),
+            cast_temporal(
+                std::slice::from_ref(&date_value),
+                TemporalKind::Date,
+                &document
+            )
+            .unwrap(),
+            date_value
+        );
+        assert_eq!(
+            cast_duration(
+                std::slice::from_ref(&duration_value),
+                DurationKind::DayTime,
+                &document
+            )
+            .unwrap(),
             duration_value
         );
         assert_eq!(
@@ -2049,7 +2090,9 @@ mod tests {
             &document,
         )
         .unwrap();
-        assert!(matches!(with_zone, Value::Sequence(items) if matches!(items.as_slice(), [Item::Duration(_)])));
+        assert!(
+            matches!(with_zone, Value::Sequence(items) if matches!(items.as_slice(), [Item::Duration(_)]))
+        );
     }
 
     #[test]
@@ -2096,5 +2139,216 @@ mod tests {
             ""
         );
         assert!(!lang("en", &document, context.node));
+    }
+
+    #[test]
+    fn defensive_dispatch_and_helper_errors_name_the_bad_shape() {
+        let document = Document::from_str("<root><a x='1'/><a/><b/></root>").unwrap();
+        let variables = Variables::new();
+        let namespaces = Namespaces::new();
+        let context = EvalContext::new(
+            &document,
+            document.document_element().unwrap(),
+            &variables,
+            &namespaces,
+        )
+        .with_version(XPathVersion::V2);
+        let string = [Value::String("2024-01-01".into())];
+
+        assert!(call_v2("not-a-function", &[], &context).is_err());
+        assert!(call_v2_temporal("not-a-function", &[], &context).is_err());
+        assert!(adjust_to_timezone_call("adjust-wrong-to-timezone", &string, &context).is_err());
+        assert!(duration_component("not-a-component", &string, &document).is_err());
+        assert!(timezone_of("not-a-timezone-function", &string, &document).is_err());
+        assert!(timezone_of("timezone-from-wrong", &string, &document).is_err());
+        assert!(component_of("not-a-component", &string, &document).is_err());
+        assert!(component_of("year-from-wrong", &string, &document).is_err());
+        assert!(component_of("wrong-from-date", &string, &document).is_err());
+        assert!(node_argument("name", &[Value::String("x".into())], &context).is_err());
+        assert_eq!(string_argument(&[], &context), "");
+
+        let context_v3 = context.with_version(XPathVersion::V3);
+        assert!(call_v3("not-a-function", &[], &context_v3).is_err());
+
+        let root = document.document_element().unwrap();
+        let children = document.children(root);
+        assert!(!deep_equal_node(children[0], children[2], &document));
+        assert!(!deep_equal_node(children[0], children[1], &document));
+        assert!(!deep_equal_node(
+            children[0],
+            document.attributes(children[0])[0],
+            &document
+        ));
+
+        let day = Value::Sequence(vec![Item::Duration(
+            Duration::parse("P1D", DurationKind::DayTime).unwrap(),
+        )]);
+        assert!(duration_component("years-from-duration", &[day], &document).is_err());
+    }
+
+    #[test]
+    fn temporal_document_and_deep_equal_helpers_cover_edge_values() {
+        let document =
+            Document::from_str("<root><a x='1'/><a x='2'/><a y='1'/><b xml:lang='en-GB'/></root>")
+                .unwrap();
+        let variables = Variables::new();
+        let namespaces = Namespaces::new();
+        let documents = Documents::new();
+        let context = EvalContext::new(
+            &document,
+            document.document_element().unwrap(),
+            &variables,
+            &namespaces,
+        )
+        .with_documents(&documents)
+        .with_version(XPathVersion::V2)
+        .with_current_time(1_700_000_000.0);
+
+        assert!(call_v2_temporal("current-time", &[], &context).is_ok());
+        let date = Value::String("2024-01-01".into());
+        assert_eq!(
+            adjust_to_timezone_call(
+                "adjust-date-to-timezone",
+                &[date.clone(), Value::Sequence(Vec::new())],
+                &context,
+            )
+            .unwrap(),
+            Value::Sequence(vec![Item::Temporal(
+                Temporal::parse("2024-01-01", TemporalKind::Date).unwrap()
+            )])
+        );
+        let too_large =
+            Value::Sequence(vec![Item::Duration(Duration::from_seconds(15.0 * 3_600.0))]);
+        assert!(
+            adjust_to_timezone_call("adjust-date-to-timezone", &[date, too_large], &context,)
+                .is_err()
+        );
+
+        assert!(cast_duration(
+            &[Value::String("not a duration".into())],
+            DurationKind::DayTime,
+            &document,
+        )
+        .is_err());
+        for (name, lexical) in [
+            ("years-from-duration", "P14M"),
+            ("months-from-duration", "P14M"),
+            ("days-from-duration", "P2DT3H4M5S"),
+            ("hours-from-duration", "P2DT3H4M5S"),
+            ("minutes-from-duration", "P2DT3H4M5S"),
+            ("seconds-from-duration", "P2DT3H4M5S"),
+        ] {
+            assert!(duration_component(name, &[Value::String(lexical.into())], &document).is_ok());
+        }
+
+        assert_eq!(
+            document_function(
+                &[
+                    Value::String("unused.xml".into()),
+                    Value::NodeSet(Vec::new()),
+                ],
+                &context,
+            )
+            .unwrap(),
+            Value::NodeSet(Vec::new())
+        );
+
+        let root = document.document_element().unwrap();
+        let children = document.children(root);
+        assert!(!deep_equal_node(children[0], children[1], &document));
+        assert!(!deep_equal_node(children[0], children[2], &document));
+        assert!(lang("en", &document, children[3]));
+    }
+
+    #[test]
+    fn sequence_library_executes_success_empty_and_error_shapes() {
+        let document = Document::from_str("<root><a>1</a><a>2</a></root>").unwrap();
+        let variables = Variables::new();
+        let namespaces = Namespaces::new();
+        let context = EvalContext::new(
+            &document,
+            document.document_element().unwrap(),
+            &variables,
+            &namespaces,
+        )
+        .with_version(XPathVersion::V2);
+        let sequence = Value::Sequence(vec![
+            Item::String("a".into()),
+            Item::String("b".into()),
+            Item::String("a".into()),
+        ]);
+        let number = |value| Value::Number(value, NumericType::Double);
+
+        assert!(call(
+            "index-of",
+            &[sequence.clone(), Value::String("a".into())],
+            &context
+        )
+        .is_ok());
+        assert!(call("reverse", std::slice::from_ref(&sequence), &context).is_ok());
+        assert!(call("unordered", std::slice::from_ref(&sequence), &context).is_ok());
+        assert!(call("subsequence", &[sequence.clone(), number(2.0)], &context).is_ok());
+        assert!(call(
+            "subsequence",
+            &[sequence.clone(), number(2.0), number(1.0)],
+            &context,
+        )
+        .is_ok());
+        assert!(call(
+            "insert-before",
+            &[sequence.clone(), number(0.0), Value::String("z".into())],
+            &context,
+        )
+        .is_ok());
+        assert!(call("remove", &[sequence.clone(), number(2.0)], &context).is_ok());
+        assert!(call("remove", &[sequence.clone(), number(f64::NAN)], &context).is_ok());
+        assert!(call("zero-or-one", &[Value::Sequence(Vec::new())], &context).is_ok());
+        assert!(call("zero-or-one", std::slice::from_ref(&sequence), &context).is_err());
+        assert!(call("one-or-more", &[Value::Sequence(Vec::new())], &context).is_err());
+        assert!(call("exactly-one", std::slice::from_ref(&sequence), &context).is_err());
+        assert!(call("data", std::slice::from_ref(&sequence), &context).is_ok());
+        assert!(call(
+            "deep-equal",
+            &[sequence.clone(), sequence.clone()],
+            &context
+        )
+        .is_ok());
+        assert!(call("resolve-uri", &[Value::Sequence(Vec::new())], &context).is_ok());
+        assert!(call("resolve-uri", &[Value::String("x".into())], &context).is_err());
+        assert!(call(
+            "not-a-function",
+            &[],
+            &context.clone().with_version(XPathVersion::V1)
+        )
+        .is_err());
+
+        assert!(atomic_constructor("xs:string", &[Value::Sequence(Vec::new())], &context,).is_ok());
+        assert!(
+            atomic_constructor("xs:string", std::slice::from_ref(&sequence), &context).is_err()
+        );
+
+        let date = Value::Sequence(vec![Item::Temporal(
+            Temporal::parse("2024-01-01", TemporalKind::Date).unwrap(),
+        )]);
+        assert!(cast_temporal(
+            std::slice::from_ref(&date),
+            TemporalKind::DateTime,
+            &document
+        )
+        .is_err());
+        let day = Value::Sequence(vec![Item::Duration(Duration::from_seconds(60.0))]);
+        assert!(cast_duration(
+            std::slice::from_ref(&day),
+            DurationKind::YearMonth,
+            &document
+        )
+        .is_err());
+        assert!(timezone_of("timezone-from-date", &[date], &document).is_ok());
+        assert!(component_of(
+            "year-from-date",
+            &[Value::String("2024-01-01".into())],
+            &document,
+        )
+        .is_ok());
     }
 }

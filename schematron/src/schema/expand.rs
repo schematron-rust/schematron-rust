@@ -154,10 +154,7 @@ fn expand_patterns(model: &mut SchemaModel) -> Result<()> {
             instance.title.clone_from(&base.title);
         }
         if instance.documents.is_none() {
-            instance.documents = base
-                .documents
-                .as_ref()
-                .map(|d| substitute(d, &parameters));
+            instance.documents = base.documents.as_ref().map(|d| substitute(d, &parameters));
         }
     }
 
@@ -207,10 +204,7 @@ fn substitute_assertion(
     assertion
 }
 
-fn substitute_content(
-    content: Vec<Content>,
-    parameters: &HashMap<String, String>,
-) -> Vec<Content> {
+fn substitute_content(content: Vec<Content>, parameters: &HashMap<String, String>) -> Vec<Content> {
     content
         .into_iter()
         .map(|fragment| match fragment {
@@ -381,7 +375,10 @@ mod tests {
                </schema>"#,
         );
         assert_eq!(model.patterns.len(), 2);
-        assert_eq!(model.patterns[0].rules[0].context.as_deref(), Some("invoice"));
+        assert_eq!(
+            model.patterns[0].rules[0].context.as_deref(),
+            Some("invoice")
+        );
         assert_eq!(model.patterns[1].rules[0].context.as_deref(), Some("order"));
     }
 
@@ -484,5 +481,88 @@ mod tests {
             &assertion.content[1],
             Content::ValueOf { select } if select == "b"
         ));
+    }
+
+    #[test]
+    fn depth_limit_and_direct_substitution_helpers_cover_defensive_edges() {
+        let rule = Rule {
+            id: Some("deep".into()),
+            ..Rule::default()
+        };
+        let mut chain = vec!["base".to_string(); MAX_EXTENDS_DEPTH + 1];
+        assert!(splice(rule, &HashMap::new(), &mut chain)
+            .unwrap_err()
+            .to_string()
+            .contains("deeper"));
+
+        let p = parameters(&[("x", "node")]);
+        assert_eq!(substitute("plain", &p), "plain");
+        assert_eq!(substitute("$x", &HashMap::new()), "$x");
+        assert_eq!(substitute("é$x", &p), "énode");
+
+        let rule = Rule {
+            body: vec![RuleChild::Extends("base".into())],
+            lets: vec![Let {
+                name: "expression".into(),
+                value: LetValue::Expression("$x".into()),
+            }],
+            ..Rule::default()
+        };
+        let substituted = substitute_rule(rule, &p);
+        assert!(matches!(&substituted.body[0], RuleChild::Extends(id) if id == "base"));
+        assert!(
+            matches!(&substituted.lets[0].value, LetValue::Expression(value) if value == "node")
+        );
+    }
+
+    #[test]
+    fn abstract_pattern_substitution_reaches_metadata_lets_and_rich_content() {
+        let model = expanded(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern abstract="true" id="template" documents="$doc">
+                   <title>Inherited title</title>
+                   <let name="expression" value="$value"/>
+                   <rule context="$parent" subject="$subject">
+                     <let name="content"><emph><value-of select="$value"/></emph><span><name path="$subject"/></span><dir>literal $value</dir></let>
+                     <assert test="$value" subject="$subject">m</assert>
+                   </rule>
+                 </pattern>
+                 <pattern is-a="template" id="instance">
+                   <param name="doc" value="catalog.xml"/>
+                   <param name="value" value="@id"/>
+                   <param name="parent" value="item"/>
+                   <param name="subject" value="."/>
+                 </pattern>
+               </schema>"#,
+        );
+        let pattern = &model.patterns[0];
+        assert_eq!(pattern.title.as_deref(), Some("Inherited title"));
+        assert_eq!(pattern.documents.as_deref(), Some("catalog.xml"));
+        assert!(matches!(&pattern.lets[0].value, LetValue::Expression(value) if value == "@id"));
+        let rule = &pattern.rules[0];
+        assert_eq!(rule.subject.as_deref(), Some("."));
+        assert!(
+            matches!(&rule.lets[0].value, LetValue::Content(content) if matches!(&content[0], Content::Emph(_)) && matches!(&content[1], Content::Span { .. }) && matches!(&content[2], Content::Dir { .. }))
+        );
+        assert_eq!(
+            rule.assertions().next().unwrap().subject.as_deref(),
+            Some(".")
+        );
+    }
+
+    #[test]
+    fn concrete_pattern_metadata_overrides_abstract_defaults() {
+        let model = expanded(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern abstract="true" id="template" documents="base.xml">
+                   <title>Base</title><rule context="a"><assert test="true()">m</assert></rule>
+                 </pattern>
+                 <pattern is-a="template" id="instance" documents="own.xml">
+                   <title>Own</title>
+                 </pattern>
+               </schema>"#,
+        );
+        assert_eq!(model.patterns[0].title.as_deref(), Some("Own"));
+        assert_eq!(model.patterns[0].documents.as_deref(), Some("own.xml"));
     }
 }

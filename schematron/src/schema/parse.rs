@@ -8,8 +8,8 @@
 
 use super::model::{
     Assertion, AssertionKind, Content, Diagnostic, Key, Let, LetValue, Ns, Paragraph, Param,
-    Pattern, Phase, Property, QueryBinding, Rule, RuleChild, SchemaModel,
-    SCHEMATRON_1_5_NAMESPACE, SCHEMATRON_NAMESPACE,
+    Pattern, Phase, Property, QueryBinding, Rule, RuleChild, SchemaModel, SCHEMATRON_1_5_NAMESPACE,
+    SCHEMATRON_NAMESPACE,
 };
 use crate::error::{Error, Result};
 use crate::xml::{Document, NodeId, NodeKind};
@@ -20,7 +20,7 @@ use crate::xml::{Document, NodeId, NodeKind};
 pub(crate) fn parse_schema(document: &Document) -> Result<SchemaModel> {
     let root = document
         .document_element()
-        .ok_or_else(|| Error::schema("schema", None, "the document has no root element"))?;
+        .expect("the XML parser accepts only documents with a root element");
 
     let parser = Parser { document };
     if !parser.is_schematron(root) {
@@ -107,12 +107,7 @@ impl Parser<'_> {
             .map(|a| self.document.value(a).to_string())
     }
 
-    fn required_attribute(
-        &self,
-        node: NodeId,
-        name: &str,
-        location: &str,
-    ) -> Result<String> {
+    fn required_attribute(&self, node: NodeId, name: &str, location: &str) -> Result<String> {
         self.attribute(node, name).ok_or_else(|| {
             Error::schema(
                 self.local_name(node),
@@ -452,9 +447,8 @@ impl Parser<'_> {
             match self.document.kind(child) {
                 NodeKind::Text => {
                     let text = self.document.value(child);
-                    if !text.is_empty() {
-                        out.push(Content::Text(text.to_string()));
-                    }
+                    // The XML parser never creates empty text nodes.
+                    out.push(Content::Text(text.to_string()));
                 }
                 NodeKind::Element if self.is_schematron(child) => {
                     match self.local_name(child).as_str() {
@@ -704,11 +698,11 @@ mod tests {
                  <pattern id="p" documents="catalog.xml"><title>Products</title><let name="x" value="1"/><p>pattern note</p>
                    <rule context="item" id="r" flag="warning" role="business" subject="@id">
                      <let name="y">text</let>
-                     <report test="true()" id="a" flag="error" role="fatal" subject="." diagnostics="d" properties="prop">Before <h:b>foreign</h:b> <emph>bold</emph> <span class="s">span</span> <dir value="ltr">left</dir> <name path="@id"/> <value-of/>.</report>
+                     <report test="true()" id="a" flag="error" role="fatal" subject="." diagnostics="d" properties="prop">Before <h:b>foreign</h:b> <title>nested</title><!-- note --><?check now?> <emph>bold</emph> <span class="s">span</span> <dir value="ltr">left</dir> <name path="@id"/> <value-of/>.</report>
                    </rule>
                  </pattern>
-                 <diagnostics><diagnostic id="d" xml:lang="fr" role="detail">detail</diagnostic></diagnostics>
-                 <properties><property id="prop" role="r" scheme="urn:s">value</property></properties>
+                 <diagnostics><title>ignored</title><diagnostic id="d" xml:lang="fr" role="detail">detail</diagnostic></diagnostics>
+                 <properties><title>ignored</title><property id="prop" role="r" scheme="urn:s">value</property></properties>
                </schema>"#,
         );
         assert_eq!(m.paragraphs[0].id.as_deref(), Some("intro"));
@@ -731,9 +725,22 @@ mod tests {
         assert_eq!(assertion.id.as_deref(), Some("a"));
         assert_eq!(assertion.diagnostics, ["d"]);
         assert_eq!(assertion.properties, ["prop"]);
-        assert!(assertion.content.iter().any(|part| matches!(part, Content::Emph(_))));
-        assert!(assertion.content.iter().any(|part| matches!(part, Content::Span { .. })));
-        assert!(assertion.content.iter().any(|part| matches!(part, Content::Dir { .. })));
+        assert!(assertion
+            .content
+            .iter()
+            .any(|part| matches!(part, Content::Emph(_))));
+        assert!(assertion
+            .content
+            .iter()
+            .any(|part| matches!(part, Content::Span { .. })));
+        assert!(assertion
+            .content
+            .iter()
+            .any(|part| matches!(part, Content::Dir { .. })));
+        assert!(assertion
+            .content
+            .iter()
+            .any(|part| { matches!(part, Content::Text(text) if text.contains("nested")) }));
         assert_eq!(m.diagnostics[0].lang.as_deref(), Some("fr"));
         assert_eq!(m.properties[0].role.as_deref(), Some("r"));
         assert_eq!(m.properties[0].scheme.as_deref(), Some("urn:s"));
@@ -759,7 +766,10 @@ mod tests {
     #[test]
     fn rejects_incomplete_abstract_constructs_and_unresolved_includes() {
         for (body, expected) in [
-            ("<pattern abstract='true'/>", "abstract pattern needs an @id"),
+            (
+                "<pattern abstract='true'/>",
+                "abstract pattern needs an @id",
+            ),
             (
                 "<pattern is-a='base'><rule context='a'/></pattern>",
                 "may contain only <param>",

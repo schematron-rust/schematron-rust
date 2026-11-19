@@ -497,7 +497,15 @@ pub fn format_number(value: f64) -> String {
     // `{}` gives the shortest representation that round-trips, which is what
     // XPath wants, but it switches to exponential notation for extreme
     // magnitudes, which XPath forbids.
-    let shortest = format!("{value}");
+    // Request exponential notation at the magnitudes where a formatter may
+    // choose it implicitly. Expanding that known shape is stable across Rust
+    // releases; relying on Display to make the choice made this path dormant
+    // when its formatting policy changed.
+    let shortest = if value.abs() >= 1e21 || value.abs() < 1e-6 {
+        format!("{value:e}")
+    } else {
+        format!("{value}")
+    };
     if !shortest.contains('e') && !shortest.contains('E') {
         return shortest;
     }
@@ -543,9 +551,6 @@ fn expand_exponential(input: &str) -> String {
                 out.push_str(tail);
             }
         }
-    }
-    if out.is_empty() || out == "-" {
-        out.push('0');
     }
     out
 }
@@ -658,6 +663,7 @@ mod tests {
         assert_eq!(function_item.to_xpath_string(&document), "");
         assert!(function_item.to_number(&document).is_nan());
         assert_eq!(function_item.type_name(), "function item");
+        assert_eq!(Item::Boolean(false).to_xpath_string(&document), "false");
     }
 
     #[test]
@@ -706,6 +712,7 @@ mod tests {
         }
 
         assert_eq!(Value::Boolean(false).to_xpath_string_scalar(), "false");
+        assert_eq!(Value::Boolean(false).to_xpath_string(&document), "false");
         assert_eq!(Value::Number(2.0, NumericType::Double).to_xpath_string_scalar(), "2");
         assert_eq!(Value::String("s".into()).to_xpath_string_scalar(), "s");
         assert_eq!(Value::NodeSet(vec![element]).to_xpath_string_scalar(), "");
@@ -756,5 +763,17 @@ mod tests {
         assert_eq!(format_number(1.25e-7), "0.000000125");
         assert_eq!(format_number(-1.25e-7), "-0.000000125");
         assert_eq!(format_number(1.234e22), "12340000000000000000000");
+    }
+
+    #[test]
+    fn exponential_expansion_covers_each_decimal_point_position() {
+        // Rust's current Display implementation already chooses plain decimal
+        // notation for finite f64 values. Exercise the normalizer directly so
+        // a future formatter change cannot expose an untested conversion path.
+        assert_eq!(expand_exponential("1e3"), "1000");
+        assert_eq!(expand_exponential("12.5e-1"), "1.25");
+        assert_eq!(expand_exponential("-1.25e-7"), "-0.000000125");
+        assert_eq!(expand_exponential("1.20e1"), "12");
+        assert_eq!(expand_exponential("1E2"), "100");
     }
 }

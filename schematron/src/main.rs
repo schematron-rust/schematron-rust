@@ -172,6 +172,7 @@ fn main() -> ExitCode {
 }
 
 /// A fatal error, paired with the exit code it should produce.
+#[derive(Debug)]
 struct Exit {
     code: u8,
     message: String,
@@ -580,5 +581,96 @@ mod tests {
         assert_eq!(report.count_failures(), 2);
         retain_flags(&mut report, &["error".to_string()]);
         assert_eq!(report.count_failures(), 1);
+    }
+
+    #[test]
+    fn renderers_wrapping_and_file_output_cover_cli_helpers() {
+        let schema = schema();
+        let document = Document::from_str("<a/>").unwrap();
+        let report = schema.validate(&document).unwrap();
+        let mut cli =
+            Cli::try_parse_from(["schematron", "--schema", "rules.sch", "data.xml"]).unwrap();
+
+        cli.format = Format::Svrl;
+        assert!(render(&report, &cli, "data.xml").contains("schematron-output"));
+        #[cfg(feature = "serde")]
+        {
+            cli.format = Format::Json;
+            assert!(render(&report, &cli, "data.xml").contains("patterns"));
+        }
+
+        assert!(wrap("", 10).is_empty());
+        assert_eq!(wrap("one two three", 7), ["one two", "three"]);
+
+        let path =
+            std::env::temp_dir().join(format!("schematron-cli-output-{}.txt", std::process::id()));
+        assert!(write_output(path.to_str(), "result").is_ok());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "result");
+        std::fs::remove_file(path).unwrap();
+        assert!(write_output(Some("missing-parent/output.txt"), "result").is_err());
+    }
+
+    #[test]
+    fn run_covers_schema_only_batch_and_streaming_cli_modes() {
+        let directory = std::env::temp_dir().join(format!(
+            "schematron-cli-modes-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let schema_path = directory.join("rules.sch");
+        let document_path = directory.join("data.xml");
+        let output_path = directory.join("lints.txt");
+        std::fs::write(
+            &schema_path,
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" defaultPhase="quick">
+                 <phase id="quick"><active pattern="p"/></phase>
+                 <pattern id="p"><rule context="item"><assert test="@ok">missing</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        std::fs::write(&document_path, "<root><item ok='yes'/></root>").unwrap();
+        let schema_arg = schema_path.to_str().unwrap();
+        let document_arg = document_path.to_str().unwrap();
+
+        for extra in ["--list-phases", "--explain"] {
+            let cli = Cli::try_parse_from(["schematron", "-s", schema_arg, extra]).unwrap();
+            assert_eq!(run(&cli).unwrap(), EXIT_VALID);
+        }
+        let cli = Cli::try_parse_from([
+            "schematron",
+            "-s",
+            schema_arg,
+            "--lint",
+            "--output",
+            output_path.to_str().unwrap(),
+        ])
+        .unwrap();
+        assert!(matches!(run(&cli).unwrap(), EXIT_VALID | EXIT_INVALID));
+        let cli = Cli::try_parse_from(["schematron", "-s", schema_arg, "--portability", "--quiet"])
+            .unwrap();
+        assert!(matches!(run(&cli).unwrap(), EXIT_VALID | EXIT_INVALID));
+
+        for stream in [false, true] {
+            let mut args = vec!["schematron", "-s", schema_arg, "--quiet"];
+            if stream {
+                args.push("--stream");
+            }
+            args.push(document_arg);
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert_eq!(run(&cli).unwrap(), EXIT_VALID);
+        }
+
+        let missing = directory.join("missing.xml");
+        let cli = Cli::try_parse_from([
+            "schematron",
+            "-s",
+            schema_arg,
+            "--stream",
+            missing.to_str().unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(run(&cli).unwrap_err().code, EXIT_DOCUMENT);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

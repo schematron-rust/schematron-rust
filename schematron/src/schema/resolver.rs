@@ -162,6 +162,28 @@ mod tests {
     }
 
     #[test]
+    fn file_resolver_reports_a_missing_local_file() {
+        let error = FileResolver::new()
+            .resolve("this-path-must-not-exist/schematron.sch", None)
+            .unwrap_err();
+        assert!(error.to_string().contains("this-path-must-not-exist"));
+    }
+
+    #[test]
+    fn file_resolver_reports_invalid_document_encoding() {
+        let path = std::env::temp_dir().join(format!(
+            "schematron-invalid-encoding-{}.sch",
+            std::process::id()
+        ));
+        std::fs::write(&path, [0xFF]).unwrap();
+        let error = FileResolver::new()
+            .resolve(path.to_str().unwrap(), None)
+            .unwrap_err();
+        std::fs::remove_file(&path).unwrap();
+        assert!(error.to_string().contains("UTF-8"), "{error}");
+    }
+
+    #[test]
     fn relative_hrefs_join_the_base_directory() {
         assert_eq!(
             join("b.sch", Some("/schemas/a.sch")),
