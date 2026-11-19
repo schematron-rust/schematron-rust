@@ -4,7 +4,7 @@
   import { ThemePicker } from 'lily-design-system-svelte-theme-picker';
   import { TextSizePicker } from 'lily-design-system-svelte-text-size-picker';
   import { SharePicker } from 'lily-design-system-svelte-share-picker';
-  import { REPO } from '#lib/site.js';
+  import { REPO, SITE } from '#lib/site.js';
 
   let { children } = $props();
 
@@ -13,8 +13,7 @@
   // parameters this list would otherwise pass:
   // - LinkedIn's share-offsite endpoint only ever accepts `url`; a `title`
   //   or `summary` parameter is silently ignored; what LinkedIn shows
-  //   instead comes from the target page's own Open Graph tags (which this
-  //   site does not yet set).
+  //   instead comes from the target page's own Open Graph tags.
   // - Bluesky's compose intent has one `text` field, not separate
   //   title/url fields, so the URL is folded into it.
   // Mastodon has no single share endpoint — it is federated, so there is
@@ -74,6 +73,14 @@
     return page.url.pathname === href;
   }
 </script>
+
+<svelte:head>
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="schematron" />
+  <meta property="og:title" content={page.data.title} />
+  <meta property="og:url" content={`${SITE}${page.url.pathname}`} />
+  <link rel="canonical" href={`${SITE}${page.url.pathname}`} />
+</svelte:head>
 
 <SkipLink href="#main" label="Skip to main content" />
 

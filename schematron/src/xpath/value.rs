@@ -54,18 +54,19 @@ pub enum Value {
 /// to it is computed. Arithmetic (`+ - * div mod`), every function in the
 /// XPath function library, and `for`'s `to` ranges always produce
 /// [`NumericType::Double`] — exactly the single-double behaviour the crate
-/// had before this type existed. Only two things carry a more specific tag:
+/// had before this type existed. Only three things carry a more specific tag:
 /// a numeric literal as written (`1` is [`NumericType::Integer`], `1.5` is
 /// [`NumericType::Decimal`] — XPath 2.0 assigns these types lexically, not
 /// by value, so `1.0` is a decimal even though it equals the integer `1`),
-/// and the result of an explicit `cast as`/`castable as`.
+/// an explicit `cast as`/`castable as`, and the equivalent atomic constructor
+/// such as `xs:decimal()`.
 ///
 /// `xs:integer` derives from `xs:decimal` by restriction in XML Schema, so
 /// `instance of xs:decimal` also matches [`NumericType::Integer`].
 /// `xs:float` and `xs:double` are separate primitive types with no
 /// derivation between them or `xs:decimal`, so they match nothing but
 /// themselves. See `spec/xpath2/` for the full account, including the
-/// deliberate limit that only literals and casts are tracked.
+/// deliberate limit that only literals, casts, and constructors are tracked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum NumericType {

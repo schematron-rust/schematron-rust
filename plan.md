@@ -17,6 +17,8 @@ a rule actually fires on the wrapper.
 | Distribution | An external application consumes the crate archive with each advertised feature combination. The locked all-feature suite, Clippy and documentation checks passed locally on Apple silicon macOS and in an ARM64 Linux container. Hosted Linux, Windows and macOS jobs passed on the readiness revision. | Keep platform-specific path and CLI checks in the required hosted matrix. |
 | Test coverage | The complete all-feature Rust suite is measured with source-based LLVM coverage and CI rejects line coverage below 95%. | Treat the percentage as a regression alarm. Preserve semantic, corpus, differential and fuzz evidence rather than optimizing only for execution counts. |
 | Documentation integrity | The documentation audit verifies that every crate and repository specification directory contains an `index.md` and is linked from its tree's index. | New policy documents cannot become invisible, monorepo-only orphans. The repository-level check skips published crate archives, which intentionally exclude repository governance files. |
+| Governance | Complete license texts ship in the crate archive; the root license index records the four-way choice; maintainer ownership and private vulnerability reporting are explicit. | Downstream legal and security reviews no longer have to infer these facts from Cargo metadata or commit history. |
+| Website | SvelteKit 3 migration findings are resolved, the displayed crate version is checked against `Cargo.toml`, and every route emits canonical Open Graph title and URL metadata. | Release and sharing metadata cannot silently drift in the monorepo CI path. |
 
 ## Next evidence to collect
 
@@ -24,6 +26,18 @@ a rule actually fires on the wrapper.
    record-local pattern, capture the real schema and document. Extend the
    checker with a paired whole-document test covering findings, order and
    locations.
+
+## Deferred by external prerequisites
+
+There is no remaining actionable repository or GitHub issue backlog in this
+assessment. These recorded items need evidence or state outside the checkout:
+
+| Item | Prerequisite before work resumes |
+|---|---|
+| Broader streaming eligibility | A real refused-but-record-local schema and document whose semantics can define the extension |
+| Open Collective | The maintainer creates and verifies the external collective account before repository links may advertise it |
+| Trusted publishing | Codeberg/Forgejo gains a trustworthy crates.io OIDC path, or the repository policy deliberately changes its all-forges requirement |
+| `no_std` core | Evidence justifies replacing the heavily fuzzed `quick-xml` parser, which requires `std` |
 
 The streaming measurement isolates report retention in a million-order run.
 Peak resident memory was 279 MiB for full SVRL, 24 MiB for findings-only

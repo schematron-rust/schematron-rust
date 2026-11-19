@@ -3,6 +3,12 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
+## Unreleased
+
+- Add the XPath 2.0 atomic constructors `xs:string()`, `xs:boolean()`,
+  `xs:integer()`, `xs:decimal()`, `xs:float()`, and `xs:double()`, using the
+  same lexical conversions and numeric type tags as `cast as`.
+
 ## 0.17.0
 
 - **MSRV raised to 1.98** (current stable 1.100 minus two, up from 1.96).

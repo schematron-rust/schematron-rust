@@ -1131,7 +1131,11 @@ fn numeric_type_matches(ty: NumericType, local: &str) -> bool {
 ///
 /// Reading the lexical form is what XML Schema specifies for untyped input,
 /// and untyped is what a Schematron schema nearly always has in front of it.
-fn cast_item(item: &Item, type_name: &str, document: &Document) -> Result<Item, String> {
+pub(super) fn cast_item(
+    item: &Item,
+    type_name: &str,
+    document: &Document,
+) -> Result<Item, String> {
     let local = type_name.rsplit(':').next().unwrap_or(type_name);
     let text = item.to_xpath_string(document);
     let reject = || format!("{text:?} cannot be cast to {type_name}");

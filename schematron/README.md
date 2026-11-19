@@ -408,9 +408,9 @@ does and does not mean.
 
 Licensed under any of:
 
-- MIT License
-- Apache License, Version 2.0
-- GNU General Public License version 2 only
-- GNU General Public License version 3 only
+- [MIT License](licenses/MIT.txt)
+- [Apache License, Version 2.0](licenses/Apache-2.0.txt)
+- [GNU General Public License version 2 only](licenses/GPL-2.0-only.txt)
+- [GNU General Public License version 3 only](licenses/GPL-3.0-only.txt)
 
 at your option.

@@ -79,7 +79,8 @@
 - XPath 2.0 phase 4: the numeric hierarchy — `instance of` and its
   companions now recognize `xs:integer`, `xs:decimal` and `xs:float` as well
   as `xs:double`, tracked for numeric literals (lexically: `1` is an
-  integer, `1.0` a decimal) and for explicit `cast as`/`castable as`.
+  integer, `1.0` a decimal), explicit `cast as`/`castable as`, and the
+  equivalent atomic constructors.
   Arithmetic, every function in the library, and `to` ranges are
   deliberately left untracked and stay `xs:double`, which is what keeps the
   XPath 1.0 arithmetic this crate's most-exercised code path — and an
@@ -88,6 +89,12 @@
   `1 instance of xs:double` was recorded as agreeing with real XPath 2.0;
   it does not, since `1` is an `xs:integer` and does not derive from
   `xs:double`.
+- **XPath 2.0 atomic constructor completion.** `xs:string()`, `xs:boolean()`,
+  `xs:integer()`, `xs:decimal()`, `xs:float()`, and `xs:double()` now expose
+  the lexical conversions phase 4 had already implemented for `cast as`.
+  They preserve the named numeric type tag, propagate an empty sequence, and
+  reject a multi-item argument. This closes the gap where a cast worked but
+  the equivalent standard constructor was reported as an unknown function.
 - XPath 2.0 phase 5: the remaining sequence-manipulating functions —
   `reverse()`, `subsequence()`, `insert-before()`, `remove()`, and
   `unordered()`. None were blocked on the sequence type, which phase 2a

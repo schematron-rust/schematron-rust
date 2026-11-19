@@ -133,4 +133,20 @@ test.describe('SharePicker', () => {
       page.locator('.share-picker-target', { hasText: 'Email' })
     ).toHaveAttribute('href', /^mailto:\?subject=Reports/);
   });
+
+  test('publishes canonical Open Graph metadata for share crawlers', async ({ page }) => {
+    await page.goto('/reports/');
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
+      'content',
+      'Reports — schematron'
+    );
+    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+      'content',
+      'https://schematron-rust.github.io/reports/'
+    );
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      'https://schematron-rust.github.io/reports/'
+    );
+  });
 });

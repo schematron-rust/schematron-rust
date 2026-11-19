@@ -48,3 +48,15 @@
   documentation audit. Require every root `spec/*/` directory to contain an
   `index.md` linked from `spec/index.md`, while allowing the published crate
   archive to omit monorepo governance documents.
+- [x] Close GitHub issue #25 by adding the XPath 2.0 atomic constructor
+  functions already supported through `cast as`, including empty-sequence,
+  cardinality, invalid lexical form, type-tag and XPath 1.0 refusal tests.
+- [x] Finish the SvelteKit 3 migration audit. Confirm `page.url` is only read,
+  confirm the site does not require cross-origin development assets, clear all
+  migration markers, and pass typecheck, static build, and browser tests.
+- [x] Close the disclosed repository-governance gaps with complete license
+  texts included in crate archives, a root license index, a formal maintainer
+  record, and a private vulnerability-reporting policy.
+- [x] Remove website metadata drift: synchronize the displayed crate version
+  with `Cargo.toml`, enforce it in the monorepo site tests, and publish
+  canonical Open Graph title and URL metadata for share crawlers.

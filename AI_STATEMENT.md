@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Version | 1.2.0 |
-| Effective date | 2026-09-06 |
+| Version | 1.3.0 |
+| Effective date | 2026-11-19 |
 | Status | Active |
 | Author and owner | Joel Parker Henderson, maintainer |
 | Canonical location | `AI_STATEMENT.md` at the repository root |
@@ -197,9 +197,9 @@ What these controls do **not** prove is §12.
 
 `Cargo.toml` declares `license = "MIT OR Apache-2.0 OR GPL-2.0-only OR
 GPL-3.0-only"`, matching [`CONTRIBUTING.md`](CONTRIBUTING.md)'s License
-section. This repository does not yet carry the license text as a
-`LICENSE.md` file at the root — that is a repository gap, not an AI-practice
-one, and is named in §12 rather than glossed over here.
+section. [`LICENSE.md`](LICENSE.md) records the choice and links all four
+complete texts under `schematron/licenses/`; the packaged-feature gate checks
+that every text is present in the published crate archive.
 
 The position taken on AI output follows the reasoning the Apache Software
 Foundation and LLVM have published rather than a wishful shortcut: an AI
@@ -264,8 +264,8 @@ This section exists because a disclosure without one is marketing.
   differential, and fuzz suites demonstrate the behaviors and inputs they
   cover; coverage is real and ratchets upward, and it is still a boundary.
 - **Review depth is one person's.** This repository has a single human
-  maintainer, and no separate `MAINTAINERS.md` yet names that formally —
-  `Cargo.toml`'s `authors` field and the git history are the checkable
+  maintainer, named in [`MAINTAINERS.md`](MAINTAINERS.md).
+  `Cargo.toml`'s `authors` field and the git history are the other checkable
   facts. "The maintainer understands and can explain every committed
   change" is the honest claim; "every line was independently re-derived"
   would not be. That claim is about the *content* of a change, made in a
@@ -273,13 +273,6 @@ This section exists because a disclosure without one is marketing.
   tool deciding the *timing* of a release under §5's autonomous row — the
   code being released was still reviewed and committed by the maintainer
   before the release decision was ever made.
-- **No `LICENSE.md` file yet.** `Cargo.toml`'s `license` field and
-  `CONTRIBUTING.md` state the four-way choice; the license texts themselves
-  are not yet in the tree as a root file. Named here so it is not
-  discovered instead of disclosed.
-- **No `SECURITY.md` or `MAINTAINERS.md` yet.** §14's reporting route is
-  therefore a public issue, not a private one; that is a real limitation,
-  not a stylistic choice.
 - **Retroactivity.** Commits predating this statement carry the trailers
   described in §10 but no other disclosure marker. This document describes
   the practice, not a per-commit audit trail.
@@ -308,9 +301,8 @@ commit.
 
 A suspected provenance, licensing, or quality problem in this repository —
 including a claim in this document that does not survive checking — is a
-report this project wants. Open an issue and cite this file. There is no
-private security route yet (see §12); that is itself a named limitation,
-not an oversight papered over.
+report this project wants. Open an issue and cite this file. Report an
+undisclosed vulnerability privately through [`SECURITY.md`](SECURITY.md).
 
 ## 15. References
 
@@ -340,6 +332,7 @@ this repository's actual files rather than copied from theirs.
 | 1.0.1 | 2026-09-02 | §4 corrected: the first issue's "shall not be named as the author of, or a signer of" was imprecise about the `Co-Authored-By:` trailer §10 already documents, echoing wording an earlier sibling-workspace draft got wrong (a blanket "no co-author" rule that its own commit history contradicted). Restated precisely: git's `Author:`/`Committer:` field is always the human, and is what §4 prohibits a tool from occupying; a trailer naming the tool as co-author is disclosure, not a violation. `CONTRIBUTING.md` gained a matching "Using AI tools" section, so the same mistake cannot be reintroduced there either. |
 | 1.1.0 | 2026-09-02 | The autonomous release-decision row (§5) and §6 now point to [`spec/release-process/`](spec/release-process/index.md), a new, fuller normative document — [`spec/trusted-publishing/`](spec/trusted-publishing/index.md)'s "Governance" note is kept short and points there rather than duplicating the bounds. §5's row wording tightened to say plainly what it authorizes: deciding that a specific release is *ready*, not only executing one already decided, and explicitly bounded to *whether and when* rather than *what a release claims*. `schematron/README.md` and `schematron/AGENTS.md` gained matching pointers. |
 | 1.2.0 | 2026-09-06 | At the maintainer's explicit direction ("revise spec: automate commit, merge into main, push, publish"), the autonomous release-decision row (§5) and §6 widened from *publish alone* to the whole release pipeline: committing, merging into `main`, and pushing `main` and the release tag to `origin`, alongside `cargo publish`. Before this date, the git side of a release was still a step a human had to run separately, and [`spec/release-process/`](spec/release-process/index.md)'s §3 said so in as many words ("bounded to crates.io... if that changes, the bound does not automatically extend with it") — that bound is what changed, deliberately and by name, not by drift. Annex B's `autonomous-use` field updated to match. [`schematron/agents/tasks.md`](schematron/agents/tasks.md#release), `schematron/README.md`, and `schematron/AGENTS.md` updated in the same commit. |
+| 1.3.0 | 2026-11-19 | Closed the disclosed repository-governance gaps: added the four complete license texts and a root license index, formally named the maintainer, and established a private security reporting route. §8, §12, and §14 now describe the resulting state rather than the former absence. |
 
 ## Annex B. Machine-readable summary
 
@@ -348,8 +341,8 @@ is authoritative where the two could ever disagree.
 
 ```yaml
 ai-statement:
-  version: 1.2.0
-  last-updated: 2026-09-06
+  version: 1.3.0
+  last-updated: 2026-11-19
   vocabulary: w3c-ai-content-disclosure
   disclosure-default: ai-generated
   tools:

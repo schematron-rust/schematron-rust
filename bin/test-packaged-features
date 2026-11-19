@@ -51,6 +51,9 @@ fn main() {
 }
 ''', encoding="utf-8")
     shipped = root / archive_name
+    for license_name in ["MIT.txt", "Apache-2.0.txt", "GPL-2.0-only.txt", "GPL-3.0-only.txt"]:
+        if not (shipped / "licenses" / license_name).is_file():
+            raise SystemExit(f"Published crate is missing licenses/{license_name}")
     inputs = [shipped / "examples/invoice.sch", shipped / "examples/invoice-bad.xml"]
     env = dict(os.environ, CARGO_TARGET_DIR=str(target / "consumer"))
     baseline = None

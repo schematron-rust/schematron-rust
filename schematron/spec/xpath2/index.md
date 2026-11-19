@@ -42,7 +42,8 @@ configurable implicit timezone.
 
 **Phase 4** adds the **numeric type hierarchy**: `instance of` and its
 companions now recognize `xs:integer`, `xs:decimal`, and `xs:float` as well
-as `xs:double`, tracked for numeric literals and explicit casts. See
+as `xs:double`, tracked for numeric literals, explicit casts, and atomic
+constructors. See
 "Numbers, and what `instance of` reports" below for exactly what is, and
 deliberately is not, tracked.
 
@@ -190,6 +191,8 @@ cannot accidentally acquire 2.0 behaviour.
 | `year-from-dateTime`, `month-from-dateTime`, `day-from-dateTime` | Components of a dateTime |
 | `hours-from-dateTime`, `minutes-from-dateTime`, `seconds-from-dateTime` | Components of a dateTime |
 | `hours-from-time`, `minutes-from-time`, `seconds-from-time` | Components of a time |
+| `xs:string()`, `xs:boolean()` | Atomic constructors using the same lexical conversion rules as `cast as` |
+| `xs:integer()`, `xs:decimal()`, `xs:float()`, `xs:double()` | Numeric constructors; the result retains the named numeric type tag |
 | `xs:date()`, `xs:dateTime()`, `xs:time()` | Constructors, when a prefix is bound to the XML Schema namespace |
 | `xs:dayTimeDuration()`, `xs:yearMonthDuration()` | Duration constructors |
 | `days-from-duration`, `hours-from-duration`, `minutes-from-duration`, `seconds-from-duration` | Components of a dayTimeDuration |
@@ -337,7 +340,8 @@ as the whole engine's arithmetic is built on — that never changes. What
 *does* change, since phase 4, is that a number also carries a static
 `xs:integer`/`xs:decimal`/`xs:float`/`xs:double` tag, tracked wherever XPath
 2.0 defines it unambiguously and lexically: a numeric literal as written, and
-the result of an explicit `cast as`/`castable as`.
+the result of an explicit `cast as`/`castable as`, or the matching atomic
+constructor function.
 
 A literal's type is lexical, not by value: `1` is `xs:integer` because it has
 no decimal point; `1.0` is `xs:decimal` even though it equals the integer
@@ -369,7 +373,7 @@ never the operand's own type — this crate does not implement XPath 2.0's
 full numeric type promotion (where, say, `1 + 1` would stay `xs:integer`).
 Threading a type lattice through every arithmetic operation and every
 numeric function is the risk [roadmap/](../roadmap/index.md) weighs phase 4
-against; tracking only literals and casts closes the concrete gap above
+against; tracking only literals, casts, and constructors closes the concrete gap above
 without taking it on:
 
 | Expression | Result |
@@ -381,6 +385,12 @@ without taking it on:
 Casting and `castable as` themselves are unaffected by any of this, because
 they still read the lexical form rather than a tracked type — lexical is the
 right reading for the untyped values a schema actually inspects.
+
+The matching constructor functions use those same conversions. They accept
+zero or one item: an empty argument stays empty, one item is converted, and a
+sequence of two or more items is an evaluation error. For example,
+`xs:decimal('10.50')` is tagged `xs:decimal`, while
+`xs:integer('10.5')` is rejected rather than rounded.
 
 ## Node comparisons
 

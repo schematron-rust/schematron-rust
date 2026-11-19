@@ -99,7 +99,7 @@ and ship no CSS.
 - `SharePicker`'s `targets` array (`+layout.svelte`) is real share/compose
   endpoints, not a generic template — each network's URL contract differs
   (LinkedIn's `share-offsite` ignores a title parameter entirely and reads
-  Open Graph tags instead, which this site does not yet set; Bluesky's
+  the page title from the Open Graph tags in `+layout.svelte`; Bluesky's
   compose intent has one `text` field, not separate url/title; Mastodon is
   federated and has no single endpoint, hence the third-party
   `mastodonshare.com` redirector). Adding a network means reading that

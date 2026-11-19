@@ -8,7 +8,7 @@
 //! validated, so `contains(@x)` is an error the moment the schema loads.
 
 use super::context::EvalContext;
-use super::eval::EvalError;
+use super::eval::{cast_item, EvalError};
 use super::temporal::{
     adjust_to_timezone, from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind,
 };
@@ -99,6 +99,12 @@ const SIGNATURES_V2: &[(&str, usize, Option<usize>)] = &[
     ("hours-from-time", 1, Some(1)),
     ("minutes-from-time", 1, Some(1)),
     ("seconds-from-time", 1, Some(1)),
+    ("xs:string", 1, Some(1)),
+    ("xs:boolean", 1, Some(1)),
+    ("xs:integer", 1, Some(1)),
+    ("xs:decimal", 1, Some(1)),
+    ("xs:float", 1, Some(1)),
+    ("xs:double", 1, Some(1)),
     ("xs:date", 1, Some(1)),
     ("xs:dateTime", 1, Some(1)),
     ("xs:time", 1, Some(1)),
@@ -452,6 +458,8 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             let (haystack, needle) = two_strings(args, document);
             Ok(Value::Boolean(haystack.ends_with(&needle)))
         }
+        "xs:string" | "xs:boolean" | "xs:integer" | "xs:decimal" | "xs:float"
+        | "xs:double" => atomic_constructor(name, args, context),
         "abs" => Ok(double(args[0].to_number(document).abs())),
         "min" => Ok(double(extreme(args, document, f64::min))),
         "max" => Ok(double(extreme(args, document, f64::max))),
@@ -512,6 +520,27 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
 
         _ => call_v2_temporal(name, args, context),
     }
+}
+
+/// Applies one of the atomic constructor functions backed by `cast as`.
+fn atomic_constructor(
+    name: &str,
+    args: &[Value],
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let items = items_of(name, args, 0, context.version)?;
+    let [item] = items.as_slice() else {
+        if items.is_empty() {
+            return Ok(Value::Sequence(Vec::new()));
+        }
+        return Err(EvalError::new(format!(
+            "{name}() requires zero or one item, but {} were given",
+            items.len()
+        )));
+    };
+    let type_name = name.strip_prefix("xs:").unwrap_or(name);
+    let converted = cast_item(item, type_name, context.document).map_err(EvalError::new)?;
+    Ok(Value::Sequence(vec![converted]))
 }
 
 /// The XPath 2.0 date, time and duration functions, split out so that each
@@ -1848,7 +1877,7 @@ mod tests {
         // list and the documentation move together, which
         // `tests/docs.rs::the_xpath_two_function_list_in_the_spec_matches_the_engine`
         // enforces.
-        assert_eq!(names.len(), 59, "{names:?}");
+        assert_eq!(names.len(), 65, "{names:?}");
         for expected in [
             "matches",
             "replace",
@@ -1874,6 +1903,12 @@ mod tests {
             "unordered",
             "current-date",
             "year-from-date",
+            "xs:string",
+            "xs:boolean",
+            "xs:integer",
+            "xs:decimal",
+            "xs:float",
+            "xs:double",
             "xs:date",
             "xs:dayTimeDuration",
             "xs:yearMonthDuration",

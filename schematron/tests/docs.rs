@@ -191,6 +191,35 @@ fn every_repository_spec_document_is_linked_from_the_index() {
     }
 }
 
+#[test]
+fn repository_governance_and_license_files_are_present() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let Some(repository_root) = crate_root.parent() else {
+        return;
+    };
+    if !repository_root.join("spec/index.md").is_file() {
+        return;
+    }
+
+    for name in ["LICENSE.md", "SECURITY.md", "MAINTAINERS.md"] {
+        assert!(
+            repository_root.join(name).is_file(),
+            "the monorepo must contain {name}"
+        );
+    }
+    for name in [
+        "MIT.txt",
+        "Apache-2.0.txt",
+        "GPL-2.0-only.txt",
+        "GPL-3.0-only.txt",
+    ] {
+        assert!(
+            crate_root.join("licenses").join(name).is_file(),
+            "the crate must ship licenses/{name}"
+        );
+    }
+}
+
 /// The declared MSRV, read out of `Cargo.toml`.
 fn declared_msrv() -> String {
     let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))

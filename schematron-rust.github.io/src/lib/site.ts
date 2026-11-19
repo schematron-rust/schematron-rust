@@ -5,8 +5,9 @@
 // schematron-rust and must be kept in step with it. See AGENTS.md.
 
 export const CRATE = 'schematron';
-export const VERSION = '0.16.0';
+export const VERSION = '0.17.0';
 export const MSRV = '1.98';
+export const SITE = 'https://schematron-rust.github.io';
 export const REPO = 'https://github.com/schematron-rust/schematron-rust';
 export const CRATES_IO = 'https://crates.io/crates/schematron';
 export const DOCS_RS = 'https://docs.rs/schematron';

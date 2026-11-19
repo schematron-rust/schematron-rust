@@ -80,4 +80,7 @@ is planned but not yet live.
 
 By contributing, you agree your contribution is licensed under the same
 terms as the crate: MIT, Apache-2.0, GPL-2.0-only, or GPL-3.0-only, at the
-user's option.
+user's option. [LICENSE.md](LICENSE.md) links the complete license texts.
+
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md),
+not in a public issue.
