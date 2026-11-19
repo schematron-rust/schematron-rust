@@ -766,23 +766,44 @@ mod tests {
     #[test]
     fn rejects_incomplete_abstract_constructs_and_unresolved_includes() {
         for (body, expected) in [
+            ("<ns uri='urn:x'/>", "@prefix"),
+            ("<ns prefix='x'/>", "@uri"),
+            ("<let value='1'/>", "@name"),
+            ("<phase><active pattern='p'/></phase>", "@id"),
+            ("<phase id='p'><active/></phase>", "@pattern"),
+            ("<phase id='p'><let value='1'/></phase>", "@name"),
             (
                 "<pattern abstract='true'/>",
                 "abstract pattern needs an @id",
             ),
             (
+                "<pattern is-a='base'><param value='x'/></pattern>",
+                "@name",
+            ),
+            (
+                "<pattern is-a='base'><param name='x'/></pattern>",
+                "@value",
+            ),
+            (
                 "<pattern is-a='base'><rule context='a'/></pattern>",
                 "may contain only <param>",
             ),
+            ("<pattern><let value='1'/></pattern>", "@name"),
             (
                 "<pattern><rule abstract='true'/></pattern>",
                 "abstract rule needs an @id",
+            ),
+            (
+                "<pattern><rule context='a'><let value='1'/></rule></pattern>",
+                "@name",
             ),
             (
                 "<pattern><rule context='a'><extends/></rule></pattern>",
                 "needs @rule or @href",
             ),
             ("<include href='x.sch'/>", "survived resolution"),
+            ("<diagnostics><diagnostic/></diagnostics>", "@id"),
+            ("<properties><property/></properties>", "@id"),
         ] {
             let message = error(&format!(
                 r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">{body}</schema>"#

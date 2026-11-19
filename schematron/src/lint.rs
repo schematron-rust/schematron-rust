@@ -1684,6 +1684,30 @@ mod tests {
         assert!(looks_up_key(&late_key, "k"));
         let late_variable = crate::xpath::parse("if (false()) then 0 else $v").unwrap();
         assert!(references_variable(&late_variable, "v"));
+        for source in [
+            "1 + count(key('k', 'x'))",
+            "for $x in 1 return key('k', 'x')",
+            "let $x := 1 return key('k', 'x')",
+            "some $x in 1 satisfies key('k', 'x')",
+            "(1)[key('k', 'x')]/a",
+            "(1)[false()]/a[key('k', 'x')]",
+        ] {
+            assert!(looks_up_key(&crate::xpath::parse(source).unwrap(), "k"));
+        }
+        for source in [
+            "1 + $v",
+            "1 to $v",
+            "for $x in 1 return $v",
+            "let $x := 1 return $v",
+            "some $x in 1 satisfies $v",
+            "(1)[$v]/a",
+            "(1)[false()]/a[$v]",
+        ] {
+            assert!(references_variable(
+                &crate::xpath::parse(source).unwrap(),
+                "v"
+            ));
+        }
         let predicate_name = crate::xpath::parse("(1)[a]/b").unwrap();
         assert_eq!(
             first_unprefixed_element_name(&predicate_name).as_deref(),
@@ -1694,6 +1718,18 @@ mod tests {
             value: None,
             content: vec![Content::Text("  ".into())],
         }]));
+
+        let schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern>
+                   <rule context="a | b"><assert test="true()">m</assert></rule>
+                   <rule context="/"><assert test="true()">m</assert></rule>
+                 </pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let _ = schema.lint();
+        assert!(constant_test(&schema, "not compiled").is_none());
     }
 
     #[test]

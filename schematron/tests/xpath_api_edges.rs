@@ -58,6 +58,9 @@ fn optional_core_arguments_and_runtime_errors_are_total() {
     assert!(evaluate_source("sum(1)", &document, &variables, &namespaces, XPathVersion::V1)
         .unwrap_err()
         .contains("node-set"));
+    assert!(evaluate_source("count(1)", &document, &variables, &namespaces, XPathVersion::V1)
+        .unwrap_err()
+        .contains("node-set"));
 
     let unknown = Expr::Function {
         name: "unknown-at-runtime".into(),
@@ -254,4 +257,51 @@ fn xpath_two_function_failures_preserve_argument_contracts() {
         .unwrap()
         .to_boolean());
     }
+}
+
+#[test]
+fn direct_function_dispatch_propagates_each_helper_error() {
+    let document = Document::from_str("<a/>").unwrap();
+    let variables = Variables::new();
+    let namespaces = Namespaces::new();
+
+    for expression in [
+        "local-name('not-a-node-set')",
+        "namespace-uri('not-a-node-set')",
+        "replace('a', '[', 'x')",
+        "tokenize('a', '[')",
+        "for-each((1), 1)",
+        "filter((1), 1)",
+        "fold-left((1), 0, 1)",
+        "fold-right((1), 0, 1)",
+        "for-each-pair((1), (2), 1)",
+        "function-arity(1)",
+        "function-name(1)",
+        "function-lookup('string', string#1)",
+        "years-from-duration('bad')",
+        "timezone-from-date('bad')",
+        "year-from-date('bad')",
+    ] {
+        assert!(
+            evaluate_source(
+                expression,
+                &document,
+                &variables,
+                &namespaces,
+                XPathVersion::V3,
+            )
+            .is_err(),
+            "{expression} unexpectedly succeeded"
+        );
+    }
+
+    assert!(!evaluate_source(
+        "lang('en')",
+        &document,
+        &variables,
+        &namespaces,
+        XPathVersion::V1,
+    )
+    .unwrap()
+    .to_boolean());
 }

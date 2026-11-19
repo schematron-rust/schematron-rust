@@ -334,7 +334,7 @@ pub(crate) fn call(
         "last" => Ok(double(as_f64(context.size))),
         "position" => Ok(double(as_f64(context.position))),
         "count" => Ok(double(as_f64(
-            items_of(name, args, 0, context.version)?.len(),
+            aggregate_items(name, &args[0], context.version)?.len(),
         ))),
         "id" => Ok(Value::NodeSet(id_function(args, context))),
 
@@ -410,7 +410,7 @@ pub(crate) fn call(
         // invisible until something divides by it, and then `1 div sum(none)`
         // is -Infinity instead of Infinity.
         "sum" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = aggregate_items(name, &args[0], context.version)?;
             Ok(double(
                 items
                     .iter()
@@ -485,13 +485,13 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             Ok(double(total / count))
         }
         "exists" => Ok(Value::Boolean(
-            !items_of(name, args, 0, context.version)?.is_empty(),
+            !sequence_items(&args[0]).is_empty(),
         )),
         "empty" => Ok(Value::Boolean(
-            items_of(name, args, 0, context.version)?.is_empty(),
+            sequence_items(&args[0]).is_empty(),
         )),
         "string-join" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             let separator = args[1].to_xpath_string(document);
             let parts: Vec<String> = items
                 .iter()
@@ -512,7 +512,7 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
         }
 
         "distinct-values" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             // Compared by string value, and first-seen order is kept, which
             // is what makes the result predictable. XPath 2.0 leaves the
             // order implementation-defined.
@@ -539,7 +539,7 @@ fn atomic_constructor(
     args: &[Value],
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
-    let items = items_of(name, args, 0, context.version)?;
+    let items = sequence_items(&args[0]);
     let [item] = items.as_slice() else {
         if items.is_empty() {
             return Ok(Value::Sequence(Vec::new()));
@@ -622,7 +622,7 @@ fn adjust_to_timezone_call(
         _ => return Err(EvalError::new(format!("unknown function {name}()"))),
     };
 
-    if items_of(name, args, 0, context.version)?.is_empty() {
+    if sequence_items(&args[0]).is_empty() {
         return Ok(Value::Sequence(Vec::new()));
     }
 
@@ -638,7 +638,7 @@ fn adjust_to_timezone_call(
 
     let target = match args.get(1) {
         None => Some(context.implicit_timezone),
-        Some(_) => match items_of(name, args, 1, context.version)?.as_slice() {
+        Some(_) => match sequence_items(&args[1]).as_slice() {
             [] => None,
             [Item::Duration(duration)] if duration.kind() == DurationKind::DayTime => {
                 #[allow(clippy::cast_possible_truncation)]
@@ -669,7 +669,7 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
     let document = context.document;
     match name {
         "index-of" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             let wanted = args[1].to_xpath_string(document);
             let positions = items
                 .iter()
@@ -682,7 +682,7 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
         }
 
         "reverse" => {
-            let mut items = items_of(name, args, 0, context.version)?;
+            let mut items = sequence_items(&args[0]);
             items.reverse();
             Ok(Value::Sequence(items))
         }
@@ -691,13 +691,13 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
         // point of the name is that a caller may not rely on it. Returning
         // the input unchanged is a conformant choice, and a deterministic
         // one is easier to write a test against than any other.
-        "unordered" => Ok(Value::Sequence(items_of(name, args, 0, context.version)?)),
+        "unordered" => Ok(Value::Sequence(sequence_items(&args[0]))),
 
-        "subsequence" => Ok(Value::Sequence(subsequence(name, args, context)?)),
+        "subsequence" => Ok(Value::Sequence(subsequence(args, context))),
 
         "insert-before" => {
-            let mut items = items_of(name, args, 0, context.version)?;
-            let inserts = items_of(name, args, 2, context.version)?;
+            let mut items = sequence_items(&args[0]);
+            let inserts = sequence_items(&args[2]);
             // Per the F&O definition: a position before the start clamps to
             // the front, and one past the end appends. `round_half_up`
             // mirrors `fn:round`'s own tie-breaking, so this agrees with
@@ -720,7 +720,7 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
         }
 
         "remove" => {
-            let mut items = items_of(name, args, 0, context.version)?;
+            let mut items = sequence_items(&args[0]);
             let position = round_half_up(args[1].to_number(document));
             // Out of range — including NaN, for which every comparison
             // below is false — leaves the sequence unchanged, per the F&O
@@ -740,7 +740,7 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
         // reason: guessing which item to keep would be a wrong answer
         // wearing the shape of a right one.
         "zero-or-one" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             if items.len() > 1 {
                 return Err(EvalError::new(format!(
                     "zero-or-one() requires a sequence of at most one item, but got {} items",
@@ -750,7 +750,7 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
             Ok(Value::Sequence(items))
         }
         "one-or-more" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             if items.is_empty() {
                 return Err(EvalError::new(
                     "one-or-more() requires a sequence of at least one item, but got 0",
@@ -759,7 +759,7 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
             Ok(Value::Sequence(items))
         }
         "exactly-one" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             if items.len() != 1 {
                 return Err(EvalError::new(format!(
                     "exactly-one() requires a sequence of exactly one item, but got {} items",
@@ -775,7 +775,7 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
         // value elsewhere in this engine (see the divergences table in
         // spec/xpath2/), is represented as a plain string.
         "data" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             Ok(Value::Sequence(
                 items
                     .iter()
@@ -790,9 +790,9 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
         // Structural equality: same length, and each pair of items
         // deep-equal — never an error, unlike `eq`, because mismatched
         // types or counts are simply not equal rather than a type error.
-        "deep-equal" => deep_equal_call(name, args, context),
+        "deep-equal" => Ok(deep_equal_call(args, context)),
 
-        "resolve-uri" => resolve_uri_call(name, args, context),
+        "resolve-uri" => resolve_uri_call(args, context),
 
         // XPath 3.0. Reachable only under a 3.0 query binding, because
         // `check_function` above gates on the version — same pattern as
@@ -807,30 +807,30 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
 fn call_v3(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
     match name {
         "for-each" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             let action = single_function_argument(name, args, 1)?;
             super::eval::for_each(items, action, context)
         }
         "filter" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             let predicate = single_function_argument(name, args, 1)?;
             super::eval::filter(items, predicate, context)
         }
         "fold-left" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             let zero = args[1].clone();
             let f = single_function_argument(name, args, 2)?;
             super::eval::fold_left(items, zero, f, context)
         }
         "fold-right" => {
-            let items = items_of(name, args, 0, context.version)?;
+            let items = sequence_items(&args[0]);
             let zero = args[1].clone();
             let f = single_function_argument(name, args, 2)?;
             super::eval::fold_right(items, zero, f, context)
         }
         "for-each-pair" => {
-            let a = items_of(name, args, 0, context.version)?;
-            let b = items_of(name, args, 1, context.version)?;
+            let a = sequence_items(&args[0]);
+            let b = sequence_items(&args[1]);
             let f = single_function_argument(name, args, 2)?;
             super::eval::for_each_pair(a, b, f, context)
         }
@@ -917,13 +917,9 @@ fn single_function_argument<'a>(
 /// URI — this crate has no other notion of "the static base URI of the
 /// query" to fall back to — and errors, naming what's missing, when the
 /// document doesn't have one rather than resolving against nothing.
-fn resolve_uri_call(
-    name: &str,
-    args: &[Value],
-    context: &EvalContext<'_>,
-) -> Result<Value, EvalError> {
+fn resolve_uri_call(args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
     let document = context.document;
-    if items_of(name, args, 0, context.version)?.is_empty() {
+    if sequence_items(&args[0]).is_empty() {
         return Ok(Value::Sequence(Vec::new()));
     }
     let relative = args[0].to_xpath_string(document);
@@ -944,19 +940,15 @@ fn resolve_uri_call(
 
 /// `deep-equal($sequence, $sequence)`, split out to keep `call_v2_rest`
 /// short.
-fn deep_equal_call(
-    name: &str,
-    args: &[Value],
-    context: &EvalContext<'_>,
-) -> Result<Value, EvalError> {
-    let a = items_of(name, args, 0, context.version)?;
-    let b = items_of(name, args, 1, context.version)?;
-    Ok(Value::Boolean(
+fn deep_equal_call(args: &[Value], context: &EvalContext<'_>) -> Value {
+    let a = sequence_items(&args[0]);
+    let b = sequence_items(&args[1]);
+    Value::Boolean(
         a.len() == b.len()
             && a.iter()
                 .zip(b.iter())
                 .all(|(x, y)| deep_equal_item(x, y, context.document)),
-    ))
+    )
 }
 
 /// Whether two items are deep-equal, per `fn:deep-equal`.
@@ -1058,19 +1050,15 @@ fn deep_equal_node(a: NodeId, b: NodeId, document: &Document) -> bool {
 /// `NaN` start or length excludes every item, because every comparison
 /// against `NaN` is false, and a `-INF` start includes everything from
 /// position 1, because every finite position is greater.
-fn subsequence(
-    name: &str,
-    args: &[Value],
-    context: &EvalContext<'_>,
-) -> Result<Vec<Item>, EvalError> {
+fn subsequence(args: &[Value], context: &EvalContext<'_>) -> Vec<Item> {
     let document = context.document;
-    let items = items_of(name, args, 0, context.version)?;
+    let items = sequence_items(&args[0]);
     let start = round_half_up(args[1].to_number(document));
     let end = match args.get(2) {
         Some(length) => start + round_half_up(length.to_number(document)),
         None => f64::INFINITY,
     };
-    Ok(items
+    items
         .into_iter()
         .enumerate()
         .filter(|(index, _)| {
@@ -1079,7 +1067,7 @@ fn subsequence(
             position >= start && position < end
         })
         .map(|(_, item)| item)
-        .collect())
+        .collect()
 }
 
 /// Converts a count to `f64` for XPath, which has only one numeric type.
@@ -1144,29 +1132,36 @@ fn number_function(args: &[Value], context: &EvalContext<'_>) -> Result<Value, E
     }))
 }
 
-/// The items of an argument that may be a node-set or an XPath 2.0 sequence.
-///
-/// Under XPath 2.0 every value *is* a sequence, so a scalar counts as a
-/// one-item one and `exists(1)` is true. Under XPath 1.0 a sequence is
-/// unreachable and a scalar is an error, exactly as the node-set accessor
-/// this replaced behaved — so the 1.0 functions are unaffected.
-fn items_of(
+/// The items in an XPath 2.0 value. Every value is a sequence in that data
+/// model; scalars are singleton sequences and node-sets retain document order.
+fn sequence_items(value: &Value) -> Vec<Item> {
+    match value {
+        Value::NodeSet(nodes) => nodes.iter().copied().map(Item::Node).collect(),
+        Value::Sequence(items) => items.clone(),
+        Value::String(text) => vec![Item::String(text.clone())],
+        // Preserve the numeric tag rather than atomizing every number to a
+        // double: constructors and `instance of` depend on it.
+        Value::Number(number, ty) => vec![Item::Number(*number, *ty)],
+        Value::Boolean(boolean) => vec![Item::Boolean(*boolean)],
+    }
+}
+
+/// Extracts `count()` and `sum()` input. XPath 1.0 requires a node-set;
+/// XPath 2.0 generalises both functions to arbitrary sequences.
+fn aggregate_items(
     name: &str,
-    args: &[Value],
-    index: usize,
+    value: &Value,
     version: XPathVersion,
 ) -> Result<Vec<Item>, EvalError> {
-    match args.get(index) {
-        Some(Value::NodeSet(nodes)) => Ok(nodes.iter().copied().map(Item::Node).collect()),
-        Some(Value::Sequence(items)) => Ok(items.clone()),
-        Some(Value::String(text)) if version.is_v2() => Ok(vec![Item::String(text.clone())]),
-        // Preserves the tag: an untagged scalar argument keeps whatever
-        // numeric type it already carried.
-        Some(Value::Number(number, ty)) if version.is_v2() => Ok(vec![Item::Number(*number, *ty)]),
-        Some(Value::Boolean(boolean)) if version.is_v2() => Ok(vec![Item::Boolean(*boolean)]),
-        _ => Err(EvalError::new(format!(
+    if version.is_v2() {
+        return Ok(sequence_items(value));
+    }
+    if let Value::NodeSet(nodes) = value {
+        Ok(nodes.iter().copied().map(Item::Node).collect())
+    } else {
+        Err(EvalError::new(format!(
             "{name}() requires a node-set argument"
-        ))),
+        )))
     }
 }
 

@@ -1527,6 +1527,14 @@ mod tests {
 
     #[test]
     fn reports_syntax_errors_at_compile_time_with_a_location() {
+        assert!(Schema::from_str("<").is_err());
+        assert!(Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern is-a="missing" id="instance"/>
+               </schema>"#,
+        )
+        .is_err());
+
         let message = error(
             r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
                  <pattern><rule context="a"><assert test="count(b">m</assert></rule></pattern>
@@ -1634,15 +1642,17 @@ mod tests {
 
     #[test]
     fn rejects_reverse_axes_in_a_rule_context() {
-        let message = error(
-            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
-                 <pattern><rule context="ancestor::a"><assert test="b">m</assert></rule></pattern>
-               </schema>"#,
-        );
-        assert!(
-            message.contains("not allowed in a rule context"),
-            "{message}"
-        );
+        for context in ["ancestor::a", "a | ancestor::b"] {
+            let message = error(&format!(
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                     <pattern><rule context="{context}"><assert test="b">m</assert></rule></pattern>
+                   </schema>"#,
+            ));
+            assert!(
+                message.contains("not allowed in a rule context"),
+                "{message}"
+            );
+        }
     }
 
     #[test]
@@ -1784,6 +1794,7 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("bug"));
+        assert!(schema.streaming_wrapper_expression("not compiled").is_err());
 
         let parse = crate::xpath::parse;
         assert_eq!(
@@ -1876,5 +1887,97 @@ mod tests {
                </schema>"#,
         );
         assert!(wrong_version.contains("XPath 3.0"), "{wrong_version}");
+    }
+    #[test]
+    fn nested_variable_errors_propagate_from_every_expression_position() {
+        let bindable = std::collections::HashSet::new();
+        let expressions = [
+            "-$missing",
+            "$missing + 1",
+            "1 + $missing",
+            "string($missing)",
+            "$missing instance of item()",
+            "(1, $missing)",
+            "$missing to 2",
+            "1 to $missing",
+            "if ($missing) then 1 else 2",
+            "if (true()) then $missing else 2",
+            "if (true()) then 1 else $missing",
+            "for $v in $missing return $v",
+            "for $v in 1 return $missing",
+            "let $v := $missing return $v",
+            "let $v := 1 return $missing",
+            "some $v in $missing satisfies true()",
+            "some $v in 1 satisfies $missing",
+            "function($v) { $missing }",
+            "$missing(1)",
+            "function($v) { $v }($missing)",
+            "$missing => string()",
+            "($missing)/a",
+            "('x')[$missing]/a",
+            "a[$missing]",
+        ];
+
+        for source in expressions {
+            let expr = crate::xpath::parse(source).expect("coverage expression must parse");
+            let mut enclosing = Vec::new();
+            let error = Schema::check_variables(
+                &expr,
+                source,
+                "test",
+                &bindable,
+                &mut enclosing,
+            )
+            .expect_err(source);
+            assert!(error.to_string().contains("$missing"), "{source}: {error}");
+            assert!(enclosing.is_empty(), "scope leaked while checking {source}");
+        }
+    }
+
+    #[test]
+    fn nested_compile_errors_propagate_from_every_expression_position() {
+        let schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath3">
+                 <pattern><rule context="a"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let expressions = [
+            "-unknown()",
+            "unknown() + 1",
+            "1 + unknown()",
+            "boolean(unknown())",
+            "if (unknown()) then 1 else 2",
+            "if (true()) then unknown() else 2",
+            "if (true()) then 1 else unknown()",
+            "unknown() instance of item()",
+            "(1, unknown())",
+            "unknown() to 2",
+            "1 to unknown()",
+            "for $v in unknown() return $v",
+            "for $v in 1 return unknown()",
+            "let $v := unknown() return $v",
+            "let $v := 1 return unknown()",
+            "some $v in unknown() satisfies true()",
+            "some $v in 1 satisfies unknown()",
+            "function($v) { unknown() }",
+            "unknown()(1)",
+            "function($v) { $v }(unknown())",
+            "unknown() => string()",
+            "(unknown())/a",
+            "('x')[unknown()]/a",
+            "a[unknown()]",
+        ];
+
+        for source in expressions {
+            let expr = crate::xpath::parse(source).expect("coverage expression must parse");
+            let error = schema
+                .check_expression(&expr, source, "test")
+                .expect_err(source);
+            assert!(
+                error.to_string().contains("unknown function"),
+                "{source}: {error}"
+            );
+        }
     }
 }
