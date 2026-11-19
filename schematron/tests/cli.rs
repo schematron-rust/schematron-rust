@@ -78,6 +78,100 @@ fn an_unreadable_document_exits_four() {
 }
 
 #[test]
+fn file_encodings_preserve_relative_references_findings_and_exit_codes() {
+    fn encode(text: &str, encoding: &str) -> Vec<u8> {
+        match encoding {
+            "le" => [0xff, 0xfe]
+                .into_iter()
+                .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
+                .collect(),
+            "be" => [0xfe, 0xff]
+                .into_iter()
+                .chain(text.encode_utf16().flat_map(u16::to_be_bytes))
+                .collect(),
+            _ => text.as_bytes().to_vec(),
+        }
+    }
+    let directory = std::env::temp_dir().join(format!("schéma 東京 {}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    let schema = directory.join("règles.sch");
+    let fragment = directory.join("共通.sch");
+    let lookup = directory.join("品.xml");
+    let instance = directory.join("entrée.xml");
+    let run_files = || {
+        Command::new(binary())
+            .arg("--schema")
+            .arg(&schema)
+            .args(["--format", "svrl"])
+            .arg(&instance)
+            .output()
+            .unwrap()
+    };
+    let mut baseline = None;
+    for encoding in ["utf8", "le", "be"] {
+        for (path, contents) in [
+            (
+                &schema,
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron"><include href="共通.sch#p"/></schema>"#,
+            ),
+            (
+                &fragment,
+                r#"<pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="p"><rule context="lot"><assert test="document('品.xml')/品 = @ref">Référence inconnue 📦</assert></rule></pattern>"#,
+            ),
+            (&lookup, "<品>abc</品>"),
+            (&instance, "<lot ref='xyz'/>"),
+        ] {
+            std::fs::write(path, encode(contents, encoding)).unwrap();
+        }
+        let compiled = schematron::Schema::from_path(&schema).unwrap();
+        let document = schematron::Document::from_path(&instance).unwrap();
+        let report = compiled.validate(&document).unwrap();
+        let failure = report.failures().next().unwrap();
+        assert_eq!(failure.location, "/lot[1]");
+        assert_eq!(failure.text, "Référence inconnue 📦");
+        let output = run_files();
+        assert_eq!(
+            code(&output),
+            1,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let svrl = stdout(&output);
+        assert_contains!(svrl, "Référence inconnue 📦");
+        assert_eq!(baseline.get_or_insert_with(|| svrl.clone()), &svrl);
+    }
+    std::fs::write(&lookup, [0xfe, 0xff, 0x01]).unwrap();
+    let loaded = schematron::Schema::from_path(&schema).unwrap();
+    let document = schematron::Document::from_path(&instance).unwrap();
+    let error = loaded.validate(&document).unwrap_err().to_string();
+    assert!(
+        error.contains(lookup.to_str().unwrap()) && error.contains("UTF-16"),
+        "{error}"
+    );
+    for path in [&fragment, &schema] {
+        std::fs::write(path, [0xff, 0xfe, 0x01]).unwrap();
+        let error = schematron::Schema::from_path(&schema)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains(path.to_str().unwrap()) && error.contains("UTF-16"),
+            "{error}"
+        );
+        assert_eq!(code(&run_files()), 3);
+    }
+    std::fs::write(&schema, r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron"><pattern><rule context="order"><assert test="@id">id</assert></rule></pattern></schema>"#).unwrap();
+    std::fs::write(&instance, "<orders><order/><unclosed>").unwrap();
+    let streamed = Command::new(binary())
+        .args(["--stream", "--max-failures", "1", "--schema"])
+        .arg(&schema)
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert_eq!(code(&streamed), 4);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn the_default_phase_applies_when_none_is_named() {
     // The default phase runs only the structure pattern, so the totals
     // warning from the bad invoice does not appear.
@@ -97,9 +191,19 @@ fn svrl_output_is_well_formed_and_carries_findings() {
     assert_contains!(text, "svrl:schematron-output");
     assert_contains!(text, "svrl:failed-assert");
     assert_contains!(text, "</svrl:schematron-output>");
+    assert_contains!(text, "svrl:fired-rule");
+
+    let findings_only = run(&[
+        "--schema", &schema_path(), "--phase", "#ALL", "--format", "svrl",
+        "--svrl-findings-only", &bad(),
+    ]);
+    assert_eq!(code(&findings_only), code(&output));
+    let findings = stdout(&findings_only);
+    assert!(findings.lines().eq(text.lines().filter(|line| !line.contains("<svrl:fired-rule"))));
 }
 
 #[test]
+#[cfg(feature = "serde")]
 fn json_output_parses_as_json() {
     let output = run(&[
         "--schema", &schema_path(), "--phase", "#ALL", "--format", "json", &bad(),

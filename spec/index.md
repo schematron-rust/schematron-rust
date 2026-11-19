@@ -9,6 +9,9 @@ It is a separate tree from
 Schematron validator. A change to how XPath comparisons work belongs there.
 A change to how the project accepts money belongs here.
 
+The [production readiness assessment](../plan.md) and [verification backlog](../tasks.md)
+track cross-platform checks and remaining operational work.
+
 ## Status
 
 | Document | Status |

@@ -209,13 +209,7 @@ impl Schema {
     /// As [`Schema::from_str_with`], plus [`Error::Io`] if the file cannot be
     /// read.
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Schema> {
-        let path = path.as_ref();
-        let source = std::fs::read_to_string(path).map_err(|source| Error::Io {
-            path: path.display().to_string(),
-            source,
-        })?;
-        let options = SchemaOptions::new().with_base_uri(path.display().to_string());
-        Schema::from_str_with(&source, &options)
+        Schema::from_document(&Document::from_path(path)?, &SchemaOptions::default())
     }
 
     /// Compiles a schema from an already-parsed XML document.
@@ -258,13 +252,13 @@ impl Schema {
             uses_document_function: false,
             streaming_ineligible_reason: None,
         };
+        schema.streaming_ineligible_reason = streaming_ineligibility_reason(&schema);
         schema.compile_expressions()?;
         schema.check_references()?;
         schema.uses_document_function = schema
             .expressions
             .values()
             .any(calls_document_function);
-        schema.streaming_ineligible_reason = streaming_ineligibility_reason(&schema);
         Ok(schema)
     }
 
@@ -316,6 +310,17 @@ impl Schema {
             Schema::check_variables(&expr, &source, &location, &bindable, &mut Vec::new())?;
             if is_pattern {
                 check_match_pattern(&expr, &source, &location)?;
+            }
+            if self.streaming_ineligible_reason.is_none() {
+                let reason = if is_pattern {
+                    streaming_context_reason(&expr)
+                } else {
+                    streaming_unsafe_construct(&expr)
+                };
+                if let Some(reason) = reason {
+                    self.streaming_ineligible_reason =
+                        Some(format!("{location} uses {reason} in {source:?}"));
+                }
             }
             self.expressions.insert(source, expr);
         }
@@ -879,11 +884,10 @@ impl Schema {
     /// Validates a document read from `source` one record at a time, never
     /// materialising the whole document in memory.
     ///
-    /// Only for schemas whose active patterns are provably local to one
-    /// record's own subtree — most real schemas are not, and
-    /// [`Schema::streaming_eligible`] says why not for one that isn't,
-    /// before any of `source` is even read. See `spec/streaming/` for
-    /// exactly what qualifies and what the "record" boundary is.
+    /// Use this for record-local rules and wrapper attribute checks.
+    /// [`Schema::streaming_eligible`] checks the schema before reading.
+    /// When a rule fires on the wrapper, a test or message that needs
+    /// its children raises [`Error::Streaming`].
     ///
     /// Deliberately a hard error rather than a silent fallback to
     /// [`Schema::validate_with`] when a schema does not qualify: someone
@@ -935,6 +939,17 @@ impl Schema {
                 "this expression was not compiled; this is a bug in the crate",
             )
         })
+    }
+
+    pub(crate) fn streaming_wrapper_expression(&self, source: &str) -> Result<&Expr> {
+        let expr = self.expression(source)?;
+        if wrapper_expression(expr) {
+            Ok(expr)
+        } else {
+            Err(Error::streaming(format!(
+                "cannot evaluate {source:?} on the document wrapper before its children arrive"
+            )))
+        }
     }
 
     /// Whether any expression in this schema calls XPath `document()`.
@@ -1191,11 +1206,8 @@ fn calls_document_function(expr: &Expr) -> bool {
 /// and `spec/streaming/`.
 ///
 /// Deliberately schema-wide, not scoped to one phase's active patterns —
-/// the same choice `uses_document_function` already made: simpler, and
-/// conservative in the direction that never lets an unsound schema
-/// through, at the cost of occasionally refusing one whose only
-/// disqualifying construct sits in a pattern that would never actually
-/// run.
+/// the same choice `uses_document_function` already made. An inactive
+/// pattern can therefore disqualify a schema.
 fn streaming_ineligibility_reason(schema: &Schema) -> Option<String> {
     if !schema.model.keys.is_empty() {
         return Some(
@@ -1235,14 +1247,6 @@ fn streaming_ineligibility_reason(schema: &Schema) -> Option<String> {
             ));
         }
     }
-    for expr in schema.expressions.values() {
-        if let Some(what) = streaming_unsafe_construct(expr) {
-            return Some(format!(
-                "an expression uses {what}, which needs more of the document than \
-                 one record's own subtree"
-            ));
-        }
-    }
     None
 }
 
@@ -1253,22 +1257,126 @@ fn pattern_label(pattern: &Pattern) -> String {
     }
 }
 
+/// Wrapper children and record positions are unavailable when matching the
+/// skeleton. Only attribute tests whose truth is independent of position
+/// may filter the match path.
+fn streaming_context_reason(expr: &Expr) -> Option<&'static str> {
+    match expr {
+        Expr::Binary(BinaryOp::Union, left, right) => {
+            streaming_context_reason(left).or_else(|| streaming_context_reason(right))
+        }
+        Expr::Path(path) => {
+            if matches!(path.start, PathStart::Expr(..)) {
+                return Some("a filtered context expression");
+            }
+            for step in &path.steps {
+                for predicate in &step.predicates {
+                    if let Some(reason) = streaming_unsafe_construct(predicate) {
+                        return Some(reason);
+                    }
+                    // A numeric predicate implicitly selects by position even
+                    // when it never calls position() or last().
+                    if !attribute_predicate(predicate) {
+                        return Some("a positional or non-attribute rule context predicate");
+                    }
+                }
+            }
+            // Text, comments and PIs between records are outside the record
+            // subtrees. They are not candidates for streamed rule dispatch.
+            if path.steps.last().is_some_and(|step| {
+                step.axis != Axis::Attribute
+                    && !matches!(
+                        step.node_test,
+                        NodeTest::Name(_)
+                            | NodeTest::Wildcard
+                            | NodeTest::NamespaceWildcard(_)
+                            | NodeTest::Kind {
+                                kind: crate::xml::NodeKind::Element,
+                                ..
+                            }
+                    )
+            }) {
+                return Some("a rule context that can select nodes outside record elements");
+            }
+            None
+        }
+        _ => Some("a non-path rule context"),
+    }
+}
+
+fn attribute_predicate(expr: &Expr) -> bool {
+    match expr {
+        Expr::Path(_)
+        | Expr::Binary(
+            BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual
+            | BinaryOp::And
+            | BinaryOp::Or,
+            _,
+            _,
+        ) => wrapper_expression(expr),
+        Expr::Function { name, .. }
+            if matches!(
+                name.as_str(),
+                "boolean" | "not" | "true" | "false" | "exists" | "empty"
+            ) =>
+        {
+            wrapper_expression(expr)
+        }
+        _ => false,
+    }
+}
+
+/// An expression evaluable before the wrapper's children arrive. Restrict
+/// the leaf inputs as well as the operations: string() with no argument
+/// reads the wrapper's string value, while string(@id) is already complete.
+fn wrapper_expression(expr: &Expr) -> bool {
+    match expr {
+        Expr::Literal(_) | Expr::Number(..) | Expr::Variable(_) => true,
+        Expr::Path(path) => {
+            matches!(path.start, PathStart::Context)
+                && matches!(path.steps.as_slice(), [step] if step.axis == Axis::Attribute && step.predicates.is_empty())
+        }
+        Expr::Negate(inner) => wrapper_expression(inner),
+        Expr::Binary(_, left, right) => wrapper_expression(left) && wrapper_expression(right),
+        Expr::Function { name, args } => {
+            let safe_call = match name.as_str() {
+                "true" | "false" | "name" | "local-name" | "namespace-uri" => true,
+                "not" | "boolean" | "string" | "number" | "count" | "exists" | "empty"
+                | "normalize-space" | "string-length" | "contains" | "starts-with"
+                | "ends-with" | "concat" => !args.is_empty(),
+                _ => false,
+            };
+            safe_call && args.iter().all(wrapper_expression)
+        }
+        _ => false,
+    }
+}
+
 /// The first construct anywhere in `expr` that needs more of the document
 /// than one record's own subtree, if any — see
 /// [`streaming_ineligibility_reason`].
 ///
-/// `following::`, `preceding::`, and `following-sibling::` each need
+/// `following::`, `preceding::`, and both sibling axes can need
 /// either the whole document or a record's *parent's* full child list
 /// (`collect_axis`, `src/xpath/eval.rs`); `document()`, `id()`, and
 /// `key()` each need the whole document too, the same reasoning
 /// [`calls_document_function`] already applies to `document()` alone.
-/// Every other axis and function reads only a node's already-parsed
-/// ancestor chain plus its own subtree, which streaming always has.
 fn streaming_unsafe_construct(expr: &Expr) -> Option<&'static str> {
-    const UNSAFE_FUNCTIONS: [&str; 3] = ["document", "id", "key"];
+    const UNSAFE_FUNCTIONS: [&str; 4] = ["document", "id", "key", "function-lookup"];
 
     match expr {
         Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) => None,
+        Expr::Function { name, args } if name == "resolve-uri" && args.len() == 1 => {
+            Some("resolve-uri() without an explicit base URI")
+        }
+        Expr::NamedFunctionRef { name, arity: 1 } if name == "resolve-uri" => {
+            Some("resolve-uri#1 without an explicit base URI")
+        }
         Expr::Negate(inner) => streaming_unsafe_construct(inner),
         Expr::Binary(_, left, right) => {
             streaming_unsafe_construct(left).or_else(|| streaming_unsafe_construct(right))
@@ -1309,9 +1417,10 @@ fn streaming_unsafe_construct(expr: &Expr) -> Option<&'static str> {
         Expr::Arrow(called) => streaming_unsafe_construct(called),
         Expr::Path(path) => {
             let start = match &path.start {
+                PathStart::Root => Some("an absolute path outside a rule context"),
                 PathStart::Expr(expr, predicates) => streaming_unsafe_construct(expr)
                     .or_else(|| predicates.iter().find_map(streaming_unsafe_construct)),
-                PathStart::Root | PathStart::Context => None,
+                PathStart::Context => None,
             };
             start.or_else(|| path.steps.iter().find_map(|step| {
                 axis_reason(step.axis)
@@ -1323,9 +1432,13 @@ fn streaming_unsafe_construct(expr: &Expr) -> Option<&'static str> {
 
 fn axis_reason(axis: Axis) -> Option<&'static str> {
     match axis {
+        Axis::Parent => Some("the parent:: axis"),
+        Axis::Ancestor => Some("the ancestor:: axis"),
+        Axis::AncestorOrSelf => Some("the ancestor-or-self:: axis"),
         Axis::Following => Some("the following:: axis"),
         Axis::Preceding => Some("the preceding:: axis"),
         Axis::FollowingSibling => Some("the following-sibling:: axis"),
+        Axis::PrecedingSibling => Some("the preceding-sibling:: axis"),
         _ => None,
     }
 }
@@ -1335,6 +1448,7 @@ fn function_reason(name: &'static str) -> &'static str {
         "document" => "document()",
         "id" => "id()",
         "key" => "key()",
+        "function-lookup" => "function-lookup(), which can select document-wide functions dynamically",
         _ => unreachable!("only called with a name from UNSAFE_FUNCTIONS"),
     }
 }

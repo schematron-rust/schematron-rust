@@ -11,7 +11,7 @@ repository may assume.
 
 - Let `1.N` be the latest stable Rust release published by the Rust project.
 - The MSRV MUST be `1.(N-2)`.
-- Code, tests, benchmarks, fuzz targets, and examples MUST compile with the
+- The crate, its tests, benchmarks and examples MUST compile with the
   MSRV toolchain. A language or standard-library feature stabilized after the
   MSRV MUST NOT be used.
 - Only the minor version is pinned. Any patch release of the MSRV minor
@@ -76,9 +76,12 @@ red means a regression on the toolchain the code is actually developed
 against, `msrv` red means the code started requiring a newer toolchain than
 the policy allows.
 
-## Current value
+## Local verification
 
-As of the most recent update to this document, stable Rust is **1.98**, so the
-MSRV is **1.98** — matching `schematron/Cargo.toml`. If stable has moved on
-since, this document is stale in its example only — the rule above is what
-binds, and `schematron/Cargo.toml` must be brought back in line with it.
+From the repository root, `make test-minimum-supported-rust-version` checks
+all crate targets with all features, then runs the full suite on each of
+the two older supported Rust minors. It uses the committed lockfile and
+accepts rustup host toolchains installed by minor or by patch version.
+A missing toolchain or failed check makes the command fail.
+
+The crate records the release numbers in its [MSRV specification](../../schematron/spec/rust-msrv-n-minus-2/index.md).

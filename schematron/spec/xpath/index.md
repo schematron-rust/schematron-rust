@@ -36,16 +36,25 @@ This is the detail engines get wrong. XPath 1.0 `string(number)`:
 - otherwise → the shortest decimal that round-trips, **never** in exponential
   notation, so `1e21` prints as `1000000000000000000000`.
 
+### Whitespace in strings and ID lists
+
+`normalize-space()` trims and collapses runs of space, tab, carriage return
+and line feed. A nonbreaking space (U+00A0) or narrow nonbreaking space
+(U+202F) survives even at the ends of the string. `id()` uses the same four
+separators for a string argument and for each node's string value when given
+a node-set. [XPath 1.0 §4.1](https://www.w3.org/TR/1999/REC-xpath-19991116/#function-id)
+and [§4.2](https://www.w3.org/TR/1999/REC-xpath-19991116/#function-normalize-space)
+
 ## Depth limit
 
 Sub-expression nesting — parentheses, predicates, function arguments, unary
-minus — is capped at **64**. Recursive descent on a thousand nested
+minus — is capped at the [documented nesting limit](../conformance/index.md#limits).
+Recursive descent on a thousand nested
 parentheses would otherwise exhaust the stack, and an error beats a crash.
 The limit does not count the *length* of a location path, which is parsed
-iteratively, so `a/b/c/…` of any length is fine. Sixty-four is far beyond any
-expression a person writes; the ceiling is set by how much stack one nesting
-level costs in an unoptimised build, where each level descends the whole
-precedence chain below.
+iteratively, so `a/b/c/…` of any length is fine. The ceiling follows the
+stack cost of one nesting level in an unoptimised build, where each level
+descends the whole precedence chain below.
 
 ## Grammar
 

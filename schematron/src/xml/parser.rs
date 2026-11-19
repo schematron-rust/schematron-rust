@@ -356,7 +356,14 @@ impl Document {
             path: path.display().to_string(),
             source,
         })?;
-        let mut doc = Document::from_bytes(&bytes)?;
+        let mut doc = Document::from_bytes(&bytes).map_err(|error| match error {
+            Error::XmlParse { line, column, message } => Error::XmlParse {
+                line,
+                column,
+                message: format!("{}: {message}", path.display()),
+            },
+            other => other,
+        })?;
         doc.set_base_uri(path.display().to_string());
         Ok(doc)
     }
@@ -367,7 +374,7 @@ impl Document {
 /// Only UTF-8 and UTF-16 are recognised, by byte order mark. Anything else is
 /// treated as UTF-8, which is correct for the ASCII-compatible encodings and
 /// an explicit error for the rest.
-fn decode_bytes(bytes: &[u8]) -> Result<String> {
+pub(crate) fn decode_bytes(bytes: &[u8]) -> Result<String> {
     let parse_error = |message: String| Error::XmlParse {
         line: 1,
         column: 1,
@@ -460,6 +467,13 @@ pub(crate) fn handle_event(
     match event {
         Event::Eof => return Ok(EventOutcome::Eof),
 
+        Event::Start(_) | Event::Empty(_) if parent == builder.doc.root && *saw_element => {
+            return Err(builder.error(position, "document has more than one document element"));
+        }
+        Event::Decl(_) | Event::DocType(_) if *saw_element => {
+            return Err(builder.error(position, "declaration after the document element began"));
+        }
+
         // The XML declaration carries no node. A DOCTYPE is skipped: the
         // crate does no DTD processing, and says so plainly rather than
         // half-honouring it. See spec/conformance/.
@@ -494,7 +508,7 @@ pub(crate) fn handle_event(
             let decoded = unescape(raw).map_err(|m| builder.error(position, m))?;
             // Whitespace outside the document element is not a text node.
             if parent == builder.doc.root {
-                if !decoded.trim().is_empty() {
+                if !decoded.chars().all(super::is_xml_space) {
                     return Err(builder.error(
                         position,
                         "character data outside the document element",
@@ -507,11 +521,10 @@ pub(crate) fn handle_event(
 
         Event::CData(cdata) => {
             let raw = cdata.as_ref().to_string();
-            if parent != builder.doc.root {
-                // CDATA is literal: no entity expansion, and it merges
-                // with adjacent character data into one text node.
-                builder.push_text(parent, &raw);
+            if parent == builder.doc.root {
+                return Err(builder.error(position, "CDATA outside the document element"));
             }
+            builder.push_text(parent, &raw);
         }
 
         Event::Comment(comment) => {
@@ -522,8 +535,11 @@ pub(crate) fn handle_event(
 
         Event::PI(pi) => {
             let raw = pi.as_ref().to_string();
-            let (target, content) = match raw.find(char::is_whitespace) {
-                Some(i) => (raw[..i].to_string(), raw[i..].trim_start().to_string()),
+            let (target, content) = match raw.find(super::is_xml_space) {
+                Some(i) => (
+                    raw[..i].to_string(),
+                    raw[i..].trim_start_matches(super::is_xml_space).to_string(),
+                ),
                 None => (raw.clone(), String::new()),
             };
             let id = builder.push_node(NodeKind::ProcessingInstruction, parent);
@@ -681,14 +697,14 @@ mod tests {
 
     #[test]
     fn keeps_comments_and_processing_instructions() {
-        let d = doc("<a><!--c--><?target data?></a>");
+        let d = doc("<a><!--c--><?target \t\u{a0}data?></a>");
         let a = d.document_element().unwrap();
         assert_eq!(d.kind(d.children(a)[0]), NodeKind::Comment);
         assert_eq!(d.value(d.children(a)[0]), "c");
         let pi = d.children(a)[1];
         assert_eq!(d.kind(pi), NodeKind::ProcessingInstruction);
         assert_eq!(d.name(pi).unwrap().local, "target");
-        assert_eq!(d.value(pi), "data");
+        assert_eq!(d.value(pi), "\u{a0}data");
     }
 
     #[test]

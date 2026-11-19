@@ -43,8 +43,11 @@ fn main() -> schematron::Result<()> {
     println!("\n=== SVRL, standard-conformant ===\n");
     print!("{}", report.to_svrl());
 
-    println!("\n=== JSON ===\n");
-    println!("{}", report.to_json().expect("a report always serialises"));
+    #[cfg(feature = "serde")]
+    {
+        println!("\n=== JSON ===\n");
+        println!("{}", report.to_json().expect("a report always serialises"));
+    }
 
     // The report is a value, so it can be queried directly rather than
     // scraped back out of formatted text.

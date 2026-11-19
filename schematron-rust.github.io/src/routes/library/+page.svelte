@@ -162,14 +162,11 @@ let report = schema.validate_streaming(file, &ValidateOptions::new())?;`}</code>
   </CodeBlock>
 
   <p>
-    Only for a schema whose active patterns are provably local to one
-    record's own subtree: any <code>&lt;key&gt;</code>,{' '}
-    <code>key()</code>, <code>id()</code>, <code>document()</code>,{' '}
-    <code>following::</code>/<code>preceding::</code>/<code>following-sibling::</code>,
-    or a schema-, phase-, or pattern-scoped <code>&lt;let&gt;</code>, refuses
-    it by name rather than silently falling back to ordinary validation — a
-    fallback that might exhaust the memory someone specifically asked to
-    avoid using. See <a href={specUrl('streaming/index.md')}>spec/streaming/</a>.
+    Use streaming for rules that can evaluate one record in isolation.
+    A rule on the wrapper can check its attributes. If it needs to count
+    its children, use whole-document validation. The eligibility check
+    detects some cross-record dependencies, including sibling axes.
+    See the <a href={specUrl('streaming/index.md')}>streaming specification</a>.
   </p>
 </section>
 

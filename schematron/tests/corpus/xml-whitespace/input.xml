@@ -1,0 +1,4 @@
+<lot refs="a&#xA0;b&#x9;c">
+  <libellé>&#xD;&#xA; 12&#x202F;345&#xA0;€ </libellé>
+  <item xml:id="a"/><item xml:id="b"/><item xml:id="c"/>
+</lot>

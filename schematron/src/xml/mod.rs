@@ -39,4 +39,14 @@ pub use parser::MAX_DEPTH;
 pub use writer::{escape_attribute, escape_text};
 
 pub(crate) use node::NodeData;
+pub(crate) use parser::decode_bytes;
 pub(crate) use streaming::StreamingReader;
+
+/// XML 1.0 production S, also used to delimit XPath ID tokens.
+pub(crate) fn is_xml_space(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\r' | '\n')
+}
+
+pub(crate) fn xml_tokens(text: &str) -> impl Iterator<Item = &str> {
+    text.split(is_xml_space).filter(|token| !token.is_empty())
+}

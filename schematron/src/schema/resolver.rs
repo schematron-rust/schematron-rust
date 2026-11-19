@@ -83,7 +83,11 @@ impl Resolver for FileResolver {
         }
         let href = href.strip_prefix("file://").unwrap_or(href);
         let path = join(href, base);
-        std::fs::read_to_string(&path).map_err(|source| Error::Resolve {
+        let bytes = std::fs::read(&path).map_err(|source| Error::Resolve {
+            href: path.display().to_string(),
+            message: source.to_string(),
+        })?;
+        crate::xml::decode_bytes(&bytes).map_err(|source| Error::Resolve {
             href: path.display().to_string(),
             message: source.to_string(),
         })

@@ -15,7 +15,7 @@ use super::temporal::{
 use super::uri;
 use super::value::{parse_number, FunctionItem, Item, NumericType, Value};
 use super::version::XPathVersion;
-use crate::xml::{Document, NodeId, NodeKind, QName};
+use crate::xml::{xml_tokens, Document, NodeId, NodeKind, QName};
 
 /// The name and permitted argument count of every supported function.
 ///
@@ -1561,16 +1561,12 @@ fn id_function(args: &[Value], context: &EvalContext<'_>) -> Vec<NodeId> {
         Some(Value::NodeSet(nodes)) => nodes
             .iter()
             .flat_map(|&n| {
-                document
-                    .string_value(n)
-                    .split_whitespace()
+                xml_tokens(&document.string_value(n))
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
             })
             .collect(),
-        Some(value) => value
-            .to_xpath_string(document)
-            .split_whitespace()
+        Some(value) => xml_tokens(&value.to_xpath_string(document))
             .map(ToString::to_string)
             .collect(),
         None => Vec::new(),
@@ -1644,7 +1640,7 @@ fn round_half_up(value: f64) -> f64 {
 
 /// Collapses internal whitespace runs and trims the ends.
 fn normalize_space(input: &str) -> String {
-    input.split_whitespace().collect::<Vec<_>>().join(" ")
+    xml_tokens(input).collect::<Vec<_>>().join(" ")
 }
 
 /// `translate()`: character-wise mapping, with characters beyond the end of

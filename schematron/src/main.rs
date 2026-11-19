@@ -156,6 +156,7 @@ enum Format {
     /// Schematron Validation Report Language, the standard XML report format.
     Svrl,
     /// JSON, keeping the report's tree structure.
+    #[cfg(feature = "serde")]
     Json,
 }
 
@@ -188,10 +189,9 @@ impl Exit {
 fn run(cli: &Cli) -> Result<u8, Exit> {
     let options = SchemaOptions::new()
         .with_allow_unknown_query_binding(cli.allow_unknown_query_binding);
-    let source = std::fs::read_to_string(&cli.schema)
-        .map_err(|e| Exit::new(EXIT_SCHEMA, format!("cannot read schema {}: {e}", cli.schema)))?;
-    let options = options.with_base_uri(cli.schema.clone());
-    let schema = Schema::from_str_with(&source, &options)
+    let source = Document::from_path(&cli.schema)
+        .map_err(|e| Exit::new(EXIT_SCHEMA, e.to_string()))?;
+    let schema = Schema::from_document(&source, &options)
         .map_err(|e| Exit::new(EXIT_SCHEMA, e.to_string()))?;
 
     if cli.list_phases {
@@ -232,15 +232,19 @@ fn run(cli: &Cli) -> Result<u8, Exit> {
         ));
     }
 
+    let record_fired_rules = !cli.quiet
+        && if cli.format == Format::Svrl {
+            !cli.svrl_findings_only
+        } else {
+            cli.verbose
+        };
     let mut validate_options = ValidateOptions::new()
         .with_phase(
             cli.phase
                 .as_deref()
                 .map_or(PhaseSelection::Default, PhaseSelection::from),
         )
-        // SVRL carries `fired-rule` events, so they are recorded for it even
-        // when the run is not verbose.
-        .with_record_fired_rules(cli.verbose || cli.format == Format::Svrl)
+        .with_record_fired_rules(record_fired_rules)
         .with_parallel_patterns(cli.parallel);
     if let Some(limit) = cli.max_failures {
         validate_options = validate_options.with_max_failures(limit);
@@ -300,16 +304,24 @@ fn validate_streaming_path(
     path: &str,
     options: &ValidateOptions,
 ) -> Result<Report, Exit> {
+    let classify = |error: schematron::Error| {
+        let code = match error {
+            schematron::Error::XmlParse { .. } | schematron::Error::Io { .. } => EXIT_DOCUMENT,
+            _ => EXIT_SCHEMA,
+        };
+        let label = if path == "-" { "standard input" } else { path };
+        Exit::new(code, format!("{label}: {error}"))
+    };
     if path == "-" {
         return schema
             .validate_streaming(std::io::stdin(), options)
-            .map_err(|e| Exit::new(EXIT_SCHEMA, format!("standard input: {e}")));
+            .map_err(classify);
     }
     let file = std::fs::File::open(path)
         .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("cannot read {path}: {e}")))?;
     schema
         .validate_streaming(file, options)
-        .map_err(|e| Exit::new(EXIT_SCHEMA, format!("{path}: {e}")))
+        .map_err(classify)
 }
 
 /// Keeps only the findings whose flag is in `flags`.
@@ -345,6 +357,7 @@ fn render(report: &Report, cli: &Cli, path: &str) -> String {
             };
             report.to_svrl_with(&options)
         }
+        #[cfg(feature = "serde")]
         Format::Json => report
             .to_json()
             .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}")),

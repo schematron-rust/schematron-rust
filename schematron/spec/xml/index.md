@@ -75,6 +75,10 @@ construction.
 Handled:
 
 - XML declaration; UTF-8 and UTF-16 input, transcoded to UTF-8 internally.
+- A document has exactly one document element. The parser accepts comments,
+  processing instructions and XML whitespace around it. A second element,
+  a CDATA section or other character data there is a parse error. The
+  streaming reader uses the same checks. [XML 1.0 §§2.1 and 2.8](https://www.w3.org/TR/2008/REC-xml-20081126/#sec-well-formed)
 - Namespace declarations, including default namespaces and undeclaration
   (`xmlns=""`), with correct scoping.
 - The five predefined entities and numeric character references.

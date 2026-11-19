@@ -156,7 +156,7 @@ impl<R: Read> StreamingReader<R> {
             }
         }
 
-        let record_parent = *open.last().expect("the root is never popped");
+        let record_parent = builder.doc.document_element().expect("saw the document element");
         let skeleton_len = builder.doc.nodes.len();
 
         Ok(Self {
@@ -183,6 +183,11 @@ impl<R: Read> StreamingReader<R> {
     /// Resets the arena back to the skeleton first, so a `NodeId` from the
     /// previous record is never valid to use again after this returns.
     pub(crate) fn next_record(&mut self) -> Result<Option<NodeId>> {
+        // A self-closing wrapper was already closed by open(). Its epilog
+        // belongs to finish(), just as it does for an explicit end tag.
+        if self.open.len() == 1 {
+            return Ok(None);
+        }
         self.builder.doc.nodes.truncate(self.skeleton_len);
         self.builder.doc.nodes[self.record_parent.0].children.clear();
         // The skeleton's own nodes never change, but a fresh `Vec` element
@@ -261,6 +266,9 @@ impl<R: Read> StreamingReader<R> {
     ///
     /// Call once [`StreamingReader::next_record`] has returned `None`.
     pub(crate) fn finish(&mut self) -> Result<()> {
+        if self.open.len() != 1 {
+            return Err(self.builder.error(0, "record input must be consumed before the epilog"));
+        }
         loop {
             self.buf.clear();
             let event = self
@@ -289,5 +297,32 @@ impl<R: Read> StreamingReader<R> {
             .name(id)
             .map_or((None, String::new()), |n| (n.uri.clone(), n.local.clone()));
         (document.kind(id), uri, local)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StreamingReader;
+
+    #[test]
+    fn the_live_record_arena_has_the_same_peak_after_an_early_failure() {
+        fn peak(records: usize) -> (usize, usize) {
+            let xml = format!(
+                "<orders><order/>{}</orders>",
+                "<order id='ok'/>".repeat(records)
+            );
+            let mut reader = StreamingReader::open(xml.as_bytes()).unwrap();
+            assert!(reader.next_record().unwrap().is_some());
+            // The cap is reached on the first record. The validator still
+            // consumes this stream to check the well-formedness of its tail.
+            let mut peak = (0, 0);
+            while reader.next_record().unwrap().is_some() {
+                let nodes = &reader.document().nodes;
+                peak = (peak.0.max(nodes.len()), peak.1.max(nodes.capacity()));
+            }
+            reader.finish().unwrap();
+            peak
+        }
+        assert_eq!(peak(10), peak(10_000));
     }
 }

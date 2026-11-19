@@ -38,6 +38,7 @@ const MAX_DOCUMENT_PASSES: usize = 8;
 #[derive(Clone, Copy)]
 struct Run<'a> {
     schema: &'a Schema,
+    checking_wrapper: bool,
     /// The tree being validated. This is the target document for a pattern
     /// with `@documents`, not necessarily the instance.
     document: &'a Document,
@@ -62,6 +63,14 @@ impl<'a> Run<'a> {
             document,
             keys,
             ..self
+        }
+    }
+
+    fn rule_expression(self, source: &str) -> Result<&'a Expr> {
+        if self.checking_wrapper {
+            self.schema.streaming_wrapper_expression(source)
+        } else {
+            self.schema.expression(source)
         }
     }
 
@@ -110,7 +119,7 @@ pub(crate) fn validate_streaming<R: std::io::Read>(
     if let Err(reason) = schema.streaming_eligible() {
         return Err(Error::streaming(reason.to_string()));
     }
-    if options.is_parallel() {
+    if options.parallel_patterns {
         return Err(Error::streaming(
             "--stream/validate_streaming cannot be combined with parallel pattern \
              evaluation: the arena streaming reuses across records is not safe to \
@@ -121,6 +130,11 @@ pub(crate) fn validate_streaming<R: std::io::Read>(
     let model = schema.model();
     let phase = resolve_phase(model, &options.phase)?;
     let active = active_patterns(model, phase.as_deref());
+    if options.max_failures.is_some() && active.len() > 1 {
+        return Err(Error::streaming(
+            "a failure cap with multiple active patterns needs whole-document pattern order",
+        ));
+    }
     let keys = Keys::new(); // guaranteed empty: streaming_eligible refuses any <key>
     let documents = Documents::new();
     let current_time = options.resolve_current_time();
@@ -147,6 +161,7 @@ pub(crate) fn validate_streaming<R: std::io::Read>(
     {
         let run = Run {
             schema,
+            checking_wrapper: true,
             document: reader.document(),
             keys: &keys,
             documents: &documents,
@@ -160,12 +175,15 @@ pub(crate) fn validate_streaming<R: std::io::Read>(
         }
     }
 
-    while options.max_failures.is_none_or(|limit| failures < limit) {
-        let Some(record) = reader.next_record()? else {
-            break;
-        };
+    while let Some(record) = reader.next_record()? {
+        // Even after evaluation stops, malformed trailing XML is an error.
+        // Keep recycling the record arena as we read to the end.
+        if options.max_failures.is_some_and(|limit| failures >= limit) {
+            continue;
+        }
         let run = Run {
             schema,
+            checking_wrapper: false,
             document: reader.document(),
             keys: &keys,
             documents: &documents,
@@ -268,6 +286,7 @@ fn validate_once(
     let keys = build_keys(schema, document)?;
     let run = Run {
         schema,
+        checking_wrapper: false,
         document,
         keys: &keys,
         documents,
@@ -892,7 +911,7 @@ fn fire_rule(
     };
 
     for assertion in rule.assertions() {
-        let expr = schema.expression(&assertion.test)?;
+        let expr = run.rule_expression(&assertion.test)?;
         let context = run.context(node, variables);
         let outcome = evaluate(expr, &context)
             .map_err(|e| {
@@ -977,11 +996,10 @@ fn resolve_subject(
     subject: Option<&str>,
     variables: &Variables,
 ) -> Result<NodeId> {
-    let Run { schema, .. } = run;
     let Some(source) = subject else {
         return Ok(node);
     };
-    let expr = schema.expression(source)?;
+    let expr = run.rule_expression(source)?;
     let context = run.context(node, variables);
     let value = evaluate(expr, &context)
         .map_err(|e| Error::xpath_eval(format!("@subject: {source}"), e.message))?;
@@ -1001,11 +1019,10 @@ fn bind_all(
     variables: &mut Variables,
     location: &str,
 ) -> Result<()> {
-    let Run { schema, .. } = run;
     for binding in lets {
         let value = match &binding.value {
             LetValue::Expression(source) => {
-                let expr = schema.expression(source)?;
+                let expr = run.rule_expression(source)?;
                 let context = run.context(node, variables);
                 evaluate(expr, &context).map_err(|e| {
                     Error::xpath_eval(
@@ -1033,14 +1050,14 @@ fn instantiate(
     content: &[Content],
     variables: &Variables,
 ) -> Result<String> {
-    let Run { schema, document, .. } = run;
+    let Run { document, .. } = run;
     let mut out = String::new();
     for fragment in content {
         match fragment {
             Content::Text(text) => out.push_str(text),
 
             Content::ValueOf { select } => {
-                let expr = schema.expression(select)?;
+                let expr = run.rule_expression(select)?;
                 let context = run.context(node, variables);
                 let value = evaluate(expr, &context).map_err(|e| {
                     Error::xpath_eval(format!("value-of/@select: {select}"), e.message)
@@ -1052,7 +1069,7 @@ fn instantiate(
                 let target = match path {
                     None => Some(node),
                     Some(path_source) => {
-                        let expr = schema.expression(path_source)?;
+                        let expr = run.rule_expression(path_source)?;
                         let context =
                             run.context(node, variables);
                         let value = evaluate(expr, &context).map_err(|e| {

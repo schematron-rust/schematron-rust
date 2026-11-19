@@ -39,6 +39,14 @@ name = "schematron"
 path = "src/main.rs"
 required-features = ["cli"]
 
+[[test]]
+name = "cli"
+required-features = ["cli"]
+
+[[test]]
+name = "differential"
+required-features = ["cli"]
+
 [[bench]]
 name = "bench_xml_parse"
 harness = false
@@ -88,7 +96,6 @@ codegen-units = 1
 
 [profile.dev]
 debug = "line-tables-only"
-split-debuginfo = "unpacked"
 
 [profile.dev.package."*"]
 debug = false

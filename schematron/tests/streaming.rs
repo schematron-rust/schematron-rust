@@ -52,8 +52,8 @@ fn assert_streaming_matches_full(schema_source: &str, document: &str) {
         .expect("streaming validation should run");
 
     assert_eq!(
-        findings(&streamed),
-        findings(&full),
+        streamed,
+        full,
         "streaming and full validation disagreed for:\n{document}"
     );
 }
@@ -88,11 +88,43 @@ fn zero_records_is_a_clean_empty_report_not_an_error() {
         r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#,
     ))
     .unwrap();
-    let report = schema
-        .validate_streaming("<orders></orders>".as_bytes(), &ValidateOptions::new())
-        .unwrap();
-    assert!(report.is_valid());
-    assert_is_empty!(findings(&report));
+    for document in [
+        "<orders></orders>",
+        "<orders/>",
+        "<orders/><!--tail--><?done?>\r\n",
+    ] {
+        let report = schema
+            .validate_streaming(document.as_bytes(), &ValidateOptions::new())
+            .unwrap();
+        assert!(report.is_valid());
+        assert_is_empty!(findings(&report));
+    }
+}
+
+#[test]
+fn whole_and_streamed_documents_reject_content_outside_the_wrapper() {
+    let schema = Schema::from_str(&schema_with(
+        r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#,
+    ))
+    .unwrap();
+    for document in [
+        "<orders/><extra/>",
+        "<orders></orders><extra></extra>",
+        "<![CDATA[ ]]><orders/>",
+        "<orders/><![CDATA[]]>",
+        "<orders/><?xml version='1.0'?>",
+        "<orders/><!DOCTYPE extra>",
+        "\u{a0}<orders/>",
+        "<orders/>\u{202f}",
+    ] {
+        assert!(Document::from_str(document).is_err(), "{document:?}");
+        assert!(
+            schema
+                .validate_streaming(document.as_bytes(), &ValidateOptions::new())
+                .is_err(),
+            "{document:?}"
+        );
+    }
 }
 
 #[test]
@@ -187,14 +219,94 @@ fn max_failures_stops_early_across_records() {
         r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#,
     ))
     .unwrap();
-    // Ten failing records; --max-failures=2 should mean streaming never even
-    // parses the later ones, not just that the report is truncated.
+    // Evaluation stops after two failures. The reader still checks the tail.
     let document = format!("<orders>{}</orders>", "<order/>".repeat(10));
     let options = ValidateOptions::new().with_max_failures(2);
     let report = schema
         .validate_streaming(document.as_bytes(), &options)
         .unwrap();
     assert_eq!(report.count_failures(), 2);
+    let malformed = "<orders><order/><order/><order></wrong></orders>";
+    assert!(matches!(
+        schema.validate_streaming(malformed.as_bytes(), &options),
+        Err(schematron::Error::XmlParse { .. })
+    ));
+}
+
+#[test]
+fn wrapper_child_assertions_and_interpolation_require_the_full_document() {
+    for body in [
+        r#"<assert test="order">needs a child</assert>"#,
+        r#"<report test="true()"><value-of select="string()"/></report>"#,
+        r#"<let name="n" value="count(order)"/><report test="$n">counted</report>"#,
+    ] {
+        let schema = Schema::from_str(&schema_with(&format!(
+            r#"<pattern><rule context="orders">{body}</rule></pattern>"#
+        )))
+        .unwrap();
+        let document = "<orders><order>one</order></orders>";
+        assert!(schema
+            .validate(&Document::from_str(document).unwrap())
+            .unwrap()
+            .is_valid());
+        let error = schema
+            .validate_streaming(document.as_bytes(), &ValidateOptions::new())
+            .unwrap_err();
+        assert!(
+            matches!(error, schematron::Error::Streaming { .. }),
+            "{error}"
+        );
+        assert_contains!(error.to_string(), "wrapper");
+    }
+}
+
+#[test]
+fn positional_contexts_and_cross_record_paths_require_the_full_document() {
+    for (context, test, reason) in [
+        ("order[2]", "@id", "positional"),
+        ("order[last()]", "@id", "positional"),
+        ("order", "count(../order) = 2", "parent::"),
+        ("order", "count(/orders/order) = 2", "absolute path"),
+    ] {
+        let source = schema_with(&format!(
+            r#"<pattern><rule context="{context}"><report test="{test}">matched</report></rule></pattern>"#
+        ));
+        let schema = Schema::from_str(&source).unwrap();
+        let document =
+            Document::from_str("<orders><order id='1'/><order id='2'/></orders>").unwrap();
+        assert!(!findings(&schema.validate(&document).unwrap()).is_empty());
+        assert_ineligible(&source, reason);
+    }
+    assert_streaming_matches_full(
+        &schema_with(
+            r#"<pattern><rule context="/orders[@version='1']"><report test="contains(@version, '1')">v1</report></rule></pattern>"#,
+        ),
+        "<orders version='1'><order/></orders>",
+    );
+}
+
+#[test]
+fn capped_streaming_requires_one_active_pattern() {
+    let source = schema_with(
+        r#"<phase id="one"><active pattern="a"/></phase>
+        <pattern id="a"><rule context="order"><assert test="@x">x</assert></rule></pattern>
+        <pattern id="b"><rule context="order"><assert test="@y">y</assert></rule></pattern>"#,
+    );
+    let schema = Schema::from_str(&source).unwrap();
+    let document = b"<orders><order x='1'/><order/></orders>";
+    let limit = ValidateOptions::new().with_max_failures(1);
+    let error = schema
+        .validate_streaming(&document[..], &limit)
+        .unwrap_err();
+    assert_contains!(error.to_string(), "multiple active patterns");
+    let options = limit.with_phase(schematron::validate::PhaseSelection::Named("one".into()));
+    assert_eq!(
+        schema
+            .validate_streaming(&document[..], &options)
+            .unwrap()
+            .count_failures(),
+        1
+    );
 }
 
 #[test]
@@ -286,6 +398,14 @@ fn following_sibling_axis_is_ineligible() {
     assert_ineligible(
         &schema_with(r#"<pattern><rule context="a"><assert test="following-sibling::b">x</assert></rule></pattern>"#),
         "following-sibling:: axis",
+    );
+}
+
+#[test]
+fn a_rule_cannot_read_a_discarded_record_through_the_preceding_sibling_axis() {
+    assert_ineligible(
+        &schema_with(r#"<pattern><rule context="order"><assert test="preceding-sibling::order">needs an earlier order</assert></rule></pattern>"#),
+        "preceding-sibling:: axis",
     );
 }
 

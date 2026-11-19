@@ -89,7 +89,9 @@ Implementing your own is one method.
 
 The resolver serves three things: `include`, `pattern/@documents`, and XPath
 `document()`. Supplying one is therefore the single place to control every
-external fetch a schema can make.
+external fetch a schema can make. `Schema::from_path`, the CLI schema option
+and the default file resolver accept UTF-8 and BOM-marked UTF-16 in either
+byte order. Relative references retain their including file as the base.
 
 ## `ValidateOptions`
 
@@ -179,7 +181,8 @@ conflating the two is the most common way to misuse Schematron.
 | `cli` | on | Builds the `schematron` binary; pulls in `clap` |
 
 Turn both off for the smallest possible dependency footprint: the crate then
-depends only on `quick-xml` and `thiserror`.
+depends on `quick-xml`, `regex` and `thiserror`. A CLI-only build offers
+text and SVRL output. Enable `serde` for JSON.
 
 ## Lower layers
 

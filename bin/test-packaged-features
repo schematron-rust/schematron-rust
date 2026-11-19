@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Exercise the distributable crate from a downstream Rust application."""
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import tarfile
+import tempfile
+
+crate = Path(__file__).resolve().parents[1] / "schematron"
+metadata = json.loads(subprocess.check_output(
+    ["cargo", "metadata", "--no-deps", "--format-version", "1"], cwd=crate,
+))
+package = metadata["packages"][0]
+archive_name = f"{package['name']}-{package['version']}"
+target = Path(metadata["target_directory"])
+
+subprocess.run(["cargo", "package", "--locked", "--allow-dirty", "--no-verify"],
+               cwd=crate, check=True)
+with tempfile.TemporaryDirectory(prefix="schematron-consumer-") as temporary:
+    root = Path(temporary)
+    with tarfile.open(target / "package" / f"{archive_name}.crate") as archive:
+        archive.extractall(root, filter="data")
+    consumer = root / "consumer"
+    (consumer / "src").mkdir(parents=True)
+    (consumer / "Cargo.toml").write_text(f"""
+[package]
+name = "schematron-consumer"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+schematron = {{ path = "../{archive_name}", default-features = false }}
+
+[features]
+default = ["schematron/default", "serde"]
+serde = ["schematron/serde"]
+cli = ["schematron/cli"]
+""", encoding="utf-8")
+    (consumer / "src/main.rs").write_text('''
+use schematron::{Document, Schema};
+fn main() {
+    let schema = Schema::from_path(std::env::args_os().nth(1).unwrap()).unwrap();
+    let document = Document::from_path(std::env::args_os().nth(2).unwrap()).unwrap();
+    let report = schema.validate(&document).unwrap();
+    assert!(report.count_failures() > 0);
+    println!("{}", report.to_svrl());
+    #[cfg(feature = "serde")]
+    assert!(report.to_json().unwrap().contains("FailedAssert"));
+}
+''', encoding="utf-8")
+    shipped = root / archive_name
+    inputs = [shipped / "examples/invoice.sch", shipped / "examples/invoice-bad.xml"]
+    env = dict(os.environ, CARGO_TARGET_DIR=str(target / "consumer"))
+    baseline = None
+    for features in [[], ["--no-default-features"], ["--no-default-features", "--features", "serde"],
+                     ["--no-default-features", "--features", "cli"]]:
+        result = subprocess.check_output(["cargo", "run", "--quiet", *features, "--", *inputs],
+                                         cwd=consumer, env=env)
+        if baseline is None:
+            baseline = result
+        elif result != baseline:
+            raise SystemExit(f"Packaged feature combination {features} changed the SVRL report")
+
+    for features, output_format in [([], "json"), (["--no-default-features", "--features", "cli"], "svrl")]:
+        result = subprocess.run(["cargo", "run", "--locked", "--quiet", "--bin", "schematron",
+                                 *features, "--", "--format", output_format, "--schema", *inputs],
+                                cwd=shipped, env=env, stdout=subprocess.PIPE)
+        if result.returncode != 1 or (output_format == "svrl" and b"svrl:failed-assert" not in result.stdout):
+            raise SystemExit(f"Packaged CLI failed with {output_format} output")
+        if output_format == "json":
+            assert json.loads(result.stdout)["patterns"]
+    print("Packaged library passed in four feature configurations and CLI passed in both.")

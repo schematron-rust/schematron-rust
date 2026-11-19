@@ -8,6 +8,7 @@ This repository is a monorepo holding the `schematron` crate and its companion w
 
 - [Crate README](schematron/README.md): what Schematron is, install, library and CLI usage, and the feature list
 - [Repository map](schematron/index.md): routes to the right document
+- [Production readiness assessment](plan.md) and [prioritized tasks](tasks.md)
 - [Contributing](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## Layout

@@ -54,6 +54,7 @@ directory — no Rust code. The cases, and what each pins down:
 | `following-axis-from-attribute` | `following` taken from an attribute node — a documented divergence from the reference |
 | `namespaced-attribute-context` | `@x` and `@p:x` are different attributes — a second documented divergence |
 | `namespaced-sibling-position` | A location counts position within its own namespace, not by local name alone |
+| `xml-whitespace` | A French amount retains its nonbreaking spaces, and an ID list splits on XML whitespace in both forms of the XPath call |
 | `message-inline-whitespace` | Whitespace between two inline elements in a message survives |
 | `phase-default` | `@defaultPhase` applies when no phase is named |
 | `phase-selection` | A named phase activating more patterns |
@@ -414,6 +415,17 @@ the narrowest scope that works. `#![warn(missing_docs)]` is on and CI runs
 `cargo doc` with `RUSTDOCFLAGS=-D warnings`, so every public item needs
 documentation in practice: local `cargo doc` only warns, but CI fails without
 it.
+
+## Native runners and packaged features
+
+Linux, macOS and Windows CI run the locked all-feature suite. The CLI file
+encoding test uses a Unicode directory with spaces and checks identical
+SVRL for UTF-8 and BOM-marked UTF-16 in either byte order.
+
+From the monorepo root, `python3 bin/test-packaged-features` builds the
+crate archive, extracts it, and validates a packaged example from a fresh
+downstream application. It checks default, minimal, serde-only and CLI-only
+features, plus the default and CLI-only binaries.
 
 ## Commands
 
