@@ -454,15 +454,29 @@ fn evaluate_simple_map(
     Ok(Value::Sequence(flatten_into_sequence(out)))
 }
 
+// Keeping the exhaustive operator classification and evaluation together
+// makes a newly added `BinaryOp` fail compilation instead of silently taking
+// the wrong eager or short-circuit path.
+#[allow(clippy::too_many_lines)]
 fn evaluate_binary(
     op: BinaryOp,
     left: &Expr,
     right: &Expr,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
+    enum Eager {
+        Union,
+        NodeComparison(BinaryOp),
+        Concat,
+        ValueComparison(BinaryOp),
+        Equality(BinaryOp),
+        Relational(BinaryOp),
+        Arithmetic(BinaryOp),
+    }
+
     // `and` and `or` short-circuit, which matters when the right operand
     // would raise an error on nodes the left operand has already ruled out.
-    match op {
+    let eager = match op {
         BinaryOp::And => {
             if !evaluate(left, context)?.to_boolean() {
                 return Ok(Value::Boolean(false));
@@ -480,17 +494,32 @@ fn evaluate_binary(
         // the shared one — genuinely different from every operator below,
         // not just short-circuited the way `and`/`or` are.
         BinaryOp::SimpleMap => return evaluate_simple_map(left, right, context),
-        _ => {}
-    }
+        BinaryOp::Union => Eager::Union,
+        BinaryOp::NodeIs | BinaryOp::NodeBefore | BinaryOp::NodeAfter => Eager::NodeComparison(op),
+        BinaryOp::Concat => Eager::Concat,
+        BinaryOp::ValueEqual
+        | BinaryOp::ValueNotEqual
+        | BinaryOp::ValueLess
+        | BinaryOp::ValueLessEqual
+        | BinaryOp::ValueGreater
+        | BinaryOp::ValueGreaterEqual => Eager::ValueComparison(op),
+        BinaryOp::Equal | BinaryOp::NotEqual => Eager::Equality(op),
+        BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
+            Eager::Relational(op)
+        }
+        BinaryOp::Add
+        | BinaryOp::Subtract
+        | BinaryOp::Multiply
+        | BinaryOp::Divide
+        | BinaryOp::Modulo => Eager::Arithmetic(op),
+    };
 
     let left = evaluate(left, context)?;
     let right = evaluate(right, context)?;
     let document = context.document;
 
-    match op {
-        BinaryOp::And | BinaryOp::Or | BinaryOp::SimpleMap => unreachable!("handled above"),
-
-        BinaryOp::Union => match (left, right) {
+    match eager {
+        Eager::Union => match (left, right) {
             (Value::NodeSet(a), Value::NodeSet(b)) => {
                 let mut merged = a;
                 merged.extend(b);
@@ -503,22 +532,15 @@ fn evaluate_binary(
             ))),
         },
 
-        BinaryOp::NodeIs | BinaryOp::NodeBefore | BinaryOp::NodeAfter => {
-            compare_by_node(op, &left, &right, document)
-        }
+        Eager::NodeComparison(op) => compare_by_node(op, &left, &right, document),
 
-        BinaryOp::Concat => evaluate_concat(op, &left, &right, document),
+        Eager::Concat => evaluate_concat(BinaryOp::Concat, &left, &right, document),
 
-        BinaryOp::ValueEqual
-        | BinaryOp::ValueNotEqual
-        | BinaryOp::ValueLess
-        | BinaryOp::ValueLessEqual
-        | BinaryOp::ValueGreater
-        | BinaryOp::ValueGreaterEqual => {
+        Eager::ValueComparison(op) => {
             compare_by_value(op, &left, &right, document, context.implicit_timezone)
         }
 
-        BinaryOp::Equal | BinaryOp::NotEqual => {
+        Eager::Equality(op) => {
             reject_function_item(op.as_str(), &left, &right)?;
             let want_equal = op == BinaryOp::Equal;
             // XPath 2.0: a comparison involving a date compares instants, not
@@ -532,7 +554,7 @@ fn evaluate_binary(
             )))
         }
 
-        BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
+        Eager::Relational(op) => {
             reject_function_item(op.as_str(), &left, &right)?;
             if has_temporal(&left) || has_temporal(&right) {
                 return compare_temporals(op, &left, &right, context);
@@ -542,25 +564,23 @@ fn evaluate_binary(
             )))
         }
 
-        BinaryOp::Add | BinaryOp::Subtract
-            if lone_temporal(&left).is_some()
-                || lone_duration(&left).is_some()
-                || lone_duration(&right).is_some() =>
+        Eager::Arithmetic(op)
+            if matches!(op, BinaryOp::Add | BinaryOp::Subtract)
+                && (lone_temporal(&left).is_some()
+                    || lone_duration(&left).is_some()
+                    || lone_duration(&right).is_some()) =>
         {
             temporal_arithmetic(op, &left, &right)
         }
 
-        BinaryOp::Multiply | BinaryOp::Divide
-            if lone_duration(&left).is_some() || lone_duration(&right).is_some() =>
+        Eager::Arithmetic(op)
+            if matches!(op, BinaryOp::Multiply | BinaryOp::Divide)
+                && (lone_duration(&left).is_some() || lone_duration(&right).is_some()) =>
         {
             scale_duration(op, &left, &right, document)
         }
 
-        BinaryOp::Add
-        | BinaryOp::Subtract
-        | BinaryOp::Multiply
-        | BinaryOp::Divide
-        | BinaryOp::Modulo => {
+        Eager::Arithmetic(op) => {
             let a = left.to_number(document);
             let b = right.to_number(document);
             let result = match op {
@@ -2006,6 +2026,80 @@ mod tests {
     }
 
     const DOC: &str = "<a><b id='1'>one</b><b id='2'>two</b><c><d/></c></a>";
+
+    fn with_exhausted_sequence_budget<T>(
+        run: impl FnOnce() -> Result<T, EvalError>,
+    ) -> Result<T, EvalError> {
+        SEQUENCE_DEPTH.with(|depth| depth.set(1));
+        SEQUENCE_WORK.with(|work| work.set(0));
+        let result = run();
+        SEQUENCE_DEPTH.with(|depth| depth.set(0));
+        SEQUENCE_WORK.with(|work| work.set(0));
+        result
+    }
+
+    #[test]
+    fn every_multiplying_construct_refuses_an_exhausted_shared_budget() {
+        let document = Document::from_str("<a/>").unwrap();
+        let variables = Variables::new();
+        let namespaces = Namespaces::new();
+        let context = EvalContext::new(
+            &document,
+            document.document_element().unwrap(),
+            &variables,
+            &namespaces,
+        )
+        .with_version(XPathVersion::V3);
+        let item = Item::Number(1.0, NumericType::Double);
+        let unary = FunctionItem::Named {
+            name: "string".into(),
+            arity: 1,
+        };
+        let binary = FunctionItem::Named {
+            name: "concat".into(),
+            arity: 2,
+        };
+
+        assert!(with_exhausted_sequence_budget(|| {
+            for_each(vec![item.clone()], &unary, &context)
+        })
+        .is_err());
+        assert!(with_exhausted_sequence_budget(|| {
+            filter(vec![item.clone()], &unary, &context)
+        })
+        .is_err());
+        assert!(with_exhausted_sequence_budget(|| {
+            fold_left(
+                vec![item.clone()],
+                Value::String(String::new()),
+                &binary,
+                &context,
+            )
+        })
+        .is_err());
+        assert!(with_exhausted_sequence_budget(|| {
+            fold_right(
+                vec![item.clone()],
+                Value::String(String::new()),
+                &binary,
+                &context,
+            )
+        })
+        .is_err());
+        assert!(with_exhausted_sequence_budget(|| {
+            for_each_pair(vec![item.clone()], vec![item.clone()], &binary, &context)
+        })
+        .is_err());
+
+        for expression in [
+            "(1) ! .",
+            "for $x in 1 return $x",
+            "some $x in 1 satisfies true()",
+        ] {
+            let parsed = parse(expression).unwrap();
+            assert!(with_exhausted_sequence_budget(|| evaluate(&parsed, &context)).is_err());
+        }
+    }
 
     #[test]
     fn child_axis_selects_named_children() {

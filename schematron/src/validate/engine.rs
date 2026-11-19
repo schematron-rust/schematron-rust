@@ -805,12 +805,15 @@ fn matched_nodes(run: Run<'_>, rule: &Rule, variables: &Variables) -> Result<Vec
     // work without the vector.
     if let Some(test) = simple_descendant_test(&rooted) {
         let matched = descendant_matches(document, test, &context);
+        #[cfg(debug_assertions)]
+        let evaluated = evaluate(&rooted, &context)
+            .expect("a compiled rule context must evaluate")
+            .as_node_set()
+            .expect("a compiled rule context must return a node-set")
+            .to_vec();
         debug_assert_eq!(
             matched,
-            match evaluate(&rooted, &context) {
-                Ok(Value::NodeSet(nodes)) => nodes,
-                _ => matched.clone(),
-            },
+            evaluated,
             "the fast path for rule context {source:?} disagreed with the evaluator"
         );
         return Ok(matched);
@@ -1243,6 +1246,47 @@ mod tests {
             root_match_expression(&Expr::Literal("x".into())),
             Expr::Literal("x".into())
         );
+    }
+
+    #[test]
+    fn record_scoping_skips_matches_on_the_streaming_skeleton() {
+        let schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern>
+                   <rule context="root"><assert test="true()">m</assert></rule>
+                   <rule context="item"><assert test="true()">m</assert></rule>
+                   <rule context="item"><assert test="true()">m</assert></rule>
+                 </pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let document = Document::from_str("<root><item/></root>").unwrap();
+        let root = document.document_element().unwrap();
+        let record = document.children(root)[0];
+        let keys = Keys::new();
+        let documents = Documents::new();
+        let options = ValidateOptions::new();
+        let run = Run {
+            schema: &schema,
+            checking_wrapper: false,
+            document: &document,
+            keys: &keys,
+            documents: &documents,
+            current_time: 0.0,
+            implicit_timezone: 0,
+            options: &options,
+        };
+        let mut variables = Variables::new();
+        let mut failures = 0;
+        let active = run_pattern_scoped_to_record(
+            run,
+            &schema.model.patterns[0],
+            record,
+            &mut variables,
+            &mut failures,
+        )
+        .unwrap();
+        assert_eq!(active.rules.len(), 1);
     }
 
     #[test]

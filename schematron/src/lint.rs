@@ -472,7 +472,10 @@ impl Schema {
                 None
             } else {
                 pattern.rules[..index].iter().find_map(|earlier| {
-                    let earlier_context = earlier.context.as_deref()?;
+                    let earlier_context = earlier
+                        .context
+                        .as_deref()
+                        .expect("compiled concrete rules have contexts");
                     self.subsumes(earlier_context, context)
                         .then_some(earlier_context)
                 })
@@ -1555,9 +1558,12 @@ mod tests {
                <phase id="p"><let name="phase-unused" value="1"/><active pattern="used"/></phase>
                <key name="unused-key" match="a" use="@id"/>
                <pattern id="used"><let name="pattern-unused" value="1"/><rule context="a">
-                 <let name="rule-unused" value="1"/><assert test="b">m</assert>
+                 <let name="rule-unused" value="1"/><assert test="b" properties="used-property">m</assert>
                </rule></pattern>
-               <properties><property id="unused-property">p</property></properties>"#,
+               <properties>
+                 <property id="unused-property">p</property>
+                 <property id="used-property">p</property>
+               </properties>"#,
         );
         assert!(found
             .iter()
@@ -1728,7 +1734,7 @@ mod tests {
                </schema>"#,
         )
         .unwrap();
-        let _ = schema.lint();
+        let _ = schema.portability();
         assert!(constant_test(&schema, "not compiled").is_none());
     }
 

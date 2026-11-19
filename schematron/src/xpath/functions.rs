@@ -329,6 +329,15 @@ pub(crate) fn call(
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
     check_function(name, args.len(), context.version).map_err(EvalError::new)?;
+    call_known(name, args, context)
+}
+
+/// Dispatch after [`call`] has validated the name, version, and arity.
+fn call_known(
+    name: &str,
+    args: &[Value],
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
     let document = context.document;
     match name {
         "last" => Ok(double(as_f64(context.size))),
@@ -484,12 +493,8 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             let count = numbers.len() as f64;
             Ok(double(total / count))
         }
-        "exists" => Ok(Value::Boolean(
-            !sequence_items(&args[0]).is_empty(),
-        )),
-        "empty" => Ok(Value::Boolean(
-            sequence_items(&args[0]).is_empty(),
-        )),
+        "exists" => Ok(Value::Boolean(!sequence_items(&args[0]).is_empty())),
+        "empty" => Ok(Value::Boolean(sequence_items(&args[0]).is_empty())),
         "string-join" => {
             let items = sequence_items(&args[0]);
             let separator = args[1].to_xpath_string(document);
@@ -1705,15 +1710,16 @@ fn lang(wanted: &str, document: &Document, node: NodeId) -> bool {
     let mut current = Some(node);
     while let Some(id) = current {
         for &attribute in document.attributes(id) {
-            if let Some(name) = document.name(attribute) {
-                if name.local == "lang" && name.uri.as_deref() == Some(crate::xml::XML_NAMESPACE) {
-                    let actual = document.value(attribute).to_lowercase();
-                    let wanted = wanted.to_lowercase();
-                    return actual == wanted
-                        || actual
-                            .strip_prefix(&wanted)
-                            .is_some_and(|r| r.starts_with('-'));
-                }
+            let name = document
+                .name(attribute)
+                .expect("attributes always carry an expanded name");
+            if name.local == "lang" && name.uri.as_deref() == Some(crate::xml::XML_NAMESPACE) {
+                let actual = document.value(attribute).to_lowercase();
+                let wanted = wanted.to_lowercase();
+                return actual == wanted
+                    || actual
+                        .strip_prefix(&wanted)
+                        .is_some_and(|r| r.starts_with('-'));
             }
         }
         current = document.parent(id);
@@ -2148,6 +2154,12 @@ mod tests {
         .with_version(XPathVersion::V2);
         let string = [Value::String("2024-01-01".into())];
 
+        assert!(call_known(
+            "not-a-function",
+            &[],
+            &context.clone().with_version(XPathVersion::V1)
+        )
+        .is_err());
         assert!(call_v2("not-a-function", &[], &context).is_err());
         assert!(call_v2_temporal("not-a-function", &[], &context).is_err());
         assert!(adjust_to_timezone_call("adjust-wrong-to-timezone", &string, &context).is_err());

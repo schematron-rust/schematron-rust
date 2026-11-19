@@ -41,26 +41,56 @@ fn optional_core_arguments_and_runtime_errors_are_total() {
     .unwrap()
     .to_boolean());
     assert_eq!(
-        evaluate_source("number()", &document, &variables, &namespaces, XPathVersion::V1)
-            .unwrap()
-            .to_number(&document),
+        evaluate_source(
+            "number()",
+            &document,
+            &variables,
+            &namespaces,
+            XPathVersion::V1
+        )
+        .unwrap()
+        .to_number(&document),
         12.0
     );
     assert_eq!(
-        evaluate_source("string()", &document, &variables, &namespaces, XPathVersion::V1)
-            .unwrap()
-            .to_xpath_string(&document),
+        evaluate_source(
+            "string()",
+            &document,
+            &variables,
+            &namespaces,
+            XPathVersion::V1
+        )
+        .unwrap()
+        .to_xpath_string(&document),
         "12"
     );
-    assert!(evaluate_source("name('x')", &document, &variables, &namespaces, XPathVersion::V1)
-        .unwrap_err()
-        .contains("node-set"));
-    assert!(evaluate_source("sum(1)", &document, &variables, &namespaces, XPathVersion::V1)
-        .unwrap_err()
-        .contains("node-set"));
-    assert!(evaluate_source("count(1)", &document, &variables, &namespaces, XPathVersion::V1)
-        .unwrap_err()
-        .contains("node-set"));
+    assert!(evaluate_source(
+        "name('x')",
+        &document,
+        &variables,
+        &namespaces,
+        XPathVersion::V1
+    )
+    .unwrap_err()
+    .contains("node-set"));
+    assert!(evaluate_source(
+        "sum(1)",
+        &document,
+        &variables,
+        &namespaces,
+        XPathVersion::V1
+    )
+    .unwrap_err()
+    .contains("node-set"));
+    assert!(evaluate_source(
+        "count(1)",
+        &document,
+        &variables,
+        &namespaces,
+        XPathVersion::V1
+    )
+    .unwrap_err()
+    .contains("node-set"));
 
     let unknown = Expr::Function {
         name: "unknown-at-runtime".into(),
@@ -114,8 +144,8 @@ fn document_and_key_report_bad_inputs_and_accept_scalar_lookups() {
     let b = document.children(element)[0];
 
     let documents = Documents::new();
-    let context = EvalContext::new(&document, element, &variables, &namespaces)
-        .with_documents(&documents);
+    let context =
+        EvalContext::new(&document, element, &variables, &namespaces).with_documents(&documents);
     let expression = parse("document('parts.xml', 'not-a-node-set')").unwrap();
     assert!(evaluate(&expression, &context)
         .unwrap_err()
@@ -216,10 +246,8 @@ fn public_evaluator_reports_mixed_value_comparisons_and_non_node_paths() {
 
 #[test]
 fn xpath_two_function_failures_preserve_argument_contracts() {
-    let document = Document::from_str(
-        "<root><a x='1'>same</a><a x='2'>same</a><b>same</b></root>",
-    )
-    .unwrap();
+    let document =
+        Document::from_str("<root><a x='1'>same</a><a x='2'>same</a><b>same</b></root>").unwrap();
     let variables = Variables::new();
     let namespaces = Namespaces::new();
 
@@ -261,7 +289,7 @@ fn xpath_two_function_failures_preserve_argument_contracts() {
 
 #[test]
 fn direct_function_dispatch_propagates_each_helper_error() {
-    let document = Document::from_str("<a/>").unwrap();
+    let document = Document::from_str("<a x='1'/>").unwrap();
     let variables = Variables::new();
     let namespaces = Namespaces::new();
 
@@ -304,4 +332,96 @@ fn direct_function_dispatch_propagates_each_helper_error() {
     )
     .unwrap()
     .to_boolean());
+}
+
+#[test]
+fn evaluator_propagates_errors_from_each_composite_position() {
+    let document = Document::from_str("<a><b/></a>").unwrap();
+    let variables = Variables::new();
+    let namespaces = Namespaces::new();
+
+    for expression in [
+        "true() and $missing",
+        "false() or $missing",
+        "1 + $missing",
+        "xs:date('2024-01-01') eq 'bad'",
+        "/ is (/, /)",
+        "1 eq (1, 2)",
+        "($missing)/a",
+        "(.)[$missing]/a",
+        "b[$missing]",
+    ] {
+        assert!(
+            evaluate_source(
+                expression,
+                &document,
+                &variables,
+                &namespaces,
+                XPathVersion::V3,
+            )
+            .is_err(),
+            "{expression} unexpectedly succeeded"
+        );
+    }
+
+    assert!(evaluate_source(
+        "xs:yearMonthDuration('P3M') - xs:yearMonthDuration('P1M') eq xs:yearMonthDuration('P2M')",
+        &document,
+        &variables,
+        &namespaces,
+        XPathVersion::V2,
+    )
+    .unwrap()
+    .to_boolean());
+    assert!(evaluate_source(
+        "xs:yearMonthDuration('P1M') + xs:yearMonthDuration('P2M') eq xs:yearMonthDuration('P3M')",
+        &document,
+        &variables,
+        &namespaces,
+        XPathVersion::V2,
+    )
+    .unwrap()
+    .to_boolean());
+    assert!(evaluate_source(
+        ". is .",
+        &document,
+        &variables,
+        &namespaces,
+        XPathVersion::V2,
+    )
+    .unwrap()
+    .to_boolean());
+
+    for expression in [
+        "fold-left((1), 0, function($a, $b) { $missing })",
+        "fold-right((1), 0, function($a, $b) { $missing })",
+        "for-each-pair((1), (2), function($a, $b) { $missing })",
+        "$missing ! .",
+        "some $x in 1 satisfies $missing",
+        "xs:date('2024-01-01') = 'bad'",
+    ] {
+        assert!(evaluate_source(
+            expression,
+            &document,
+            &variables,
+            &namespaces,
+            XPathVersion::V3,
+        )
+        .is_err());
+    }
+
+    assert_eq!(
+        evaluate_source(
+            "(.)[true()]/b",
+            &document,
+            &variables,
+            &namespaces,
+            XPathVersion::V3,
+        )
+        .unwrap()
+        .as_node_set()
+        .unwrap()
+        .len(),
+        1
+    );
 }

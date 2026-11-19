@@ -1192,6 +1192,22 @@ mod tests {
             assert!(!error.message.is_empty(), "{source}: {error:?}");
             assert!(error.to_string().contains("offset"));
         }
+        let mut parser = Parser {
+            tokens: vec![
+                Token {
+                    kind: TokenKind::NodeType("unknown".into()),
+                    position: 0,
+                },
+                Token {
+                    kind: TokenKind::LeftParen,
+                    position: 7,
+                },
+            ],
+            index: 0,
+            depth: 0,
+            length: 8,
+        };
+        assert!(parser.parse_node_test(Axis::Child).is_err());
         assert!(std::panic::catch_unwind(|| path("1")).is_err());
     }
 
