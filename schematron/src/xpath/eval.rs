@@ -563,17 +563,17 @@ fn evaluate_binary(
         | BinaryOp::Modulo => {
             let a = left.to_number(document);
             let b = right.to_number(document);
+            let result = match op {
+                BinaryOp::Add => a + b,
+                BinaryOp::Subtract => a - b,
+                BinaryOp::Multiply => a * b,
+                // IEEE division: no error on zero, the result is an infinity
+                // or NaN, exactly as XPath 1.0 requires.
+                BinaryOp::Divide => a / b,
+                _ => a % b,
+            };
             Ok(Value::Number(
-                match op {
-                    BinaryOp::Add => a + b,
-                    BinaryOp::Subtract => a - b,
-                    BinaryOp::Multiply => a * b,
-                    // IEEE division: no error on zero, the result is an infinity
-                    // or NaN, exactly as XPath 1.0 requires.
-                    BinaryOp::Divide => a / b,
-                    BinaryOp::Modulo => a % b,
-                    _ => unreachable!("outer match limits the operators"),
-                },
+                result,
                 // Arithmetic always yields `xs:double`, never the operands'
                 // own type — this crate does not implement XPath 2.0's
                 // numeric type promotion. See `spec/xpath2/`.
@@ -647,23 +647,24 @@ fn compare_equality(left: &Value, right: &Value, document: &Document, want_equal
             })
         }
 
-        (Value::NodeSet(nodes), other) | (other, Value::NodeSet(nodes)) => match other {
+        (Value::NodeSet(nodes), Value::Boolean(b)) | (Value::Boolean(b), Value::NodeSet(nodes)) => {
             // Comparing a node-set to a boolean converts the node-set to a
             // boolean first — that is, to whether it is non-empty — and does
             // not look at the nodes' values at all.
-            Value::Boolean(b) => (nodes.is_empty() != *b) == want_equal,
-            Value::Number(n, _) => nodes.iter().any(|&node| {
-                let value = super::value::parse_number(&document.string_value(node));
-                // NaN is never equal to anything, so `!=` against a
-                // non-numeric string is true, and `=` is false.
-                (value == *n) == want_equal
-            }),
-            Value::String(s) => nodes
+            (nodes.is_empty() != *b) == want_equal
+        }
+        (Value::NodeSet(nodes), Value::Number(n, _))
+        | (Value::Number(n, _), Value::NodeSet(nodes)) => nodes.iter().any(|&node| {
+            let value = super::value::parse_number(&document.string_value(node));
+            // NaN is never equal to anything, so `!=` against a
+            // non-numeric string is true, and `=` is false.
+            (value == *n) == want_equal
+        }),
+        (Value::NodeSet(nodes), Value::String(s)) | (Value::String(s), Value::NodeSet(nodes)) => {
+            nodes
                 .iter()
-                .any(|&node| test(&document.string_value(node), s)),
-            Value::NodeSet(_) => unreachable!("matched by the arm above"),
-            Value::Sequence(_) => unreachable!("matched by the sequence arm above"),
-        },
+                .any(|&node| test(&document.string_value(node), s))
+        }
 
         // Neither side is a node-set: boolean wins, then number, then string.
         (a, b) => {
@@ -2594,6 +2595,40 @@ mod tests {
             temporal_kind_of(&Value::String("2024-01-01".into()), &date),
             TemporalKind::Date
         );
+        assert_eq!(
+            temporal_kind_of(&Value::String("a".into()), &Value::String("b".into())),
+            TemporalKind::DateTime
+        );
+        assert!(compare_equality(
+            &Value::NodeSet(Vec::new()),
+            &Value::Boolean(false),
+            &document,
+            true,
+        ));
+        assert!(!matches_item_type(
+            &Item::String("x".into()),
+            &ItemType::EmptySequence,
+            &context,
+        ));
+
+        let namespaced_document =
+            Document::from_str("<p:root xmlns:p='urn:p'><p:a/></p:root>").unwrap();
+        let mut bound_namespaces = Namespaces::new();
+        bound_namespaces.insert("p", "urn:p");
+        let namespaced_context = EvalContext::new(
+            &namespaced_document,
+            namespaced_document.document_element().unwrap(),
+            &variables,
+            &bound_namespaces,
+        )
+        .with_version(XPathVersion::V3);
+        for source in [". instance of element(p:root)", "child::element(p:a)"] {
+            assert!(evaluate(&parse(source).unwrap(), &namespaced_context).is_ok());
+        }
+
+        let mut atomic_context = context.clone();
+        atomic_context.context_item = Some(Item::String("x".into()));
+        assert!(evaluate(&parse("/root").unwrap(), &atomic_context).is_ok());
 
         // These reach the effective-boolean-value error paths after their
         // condition/predicate has evaluated successfully to a function item.

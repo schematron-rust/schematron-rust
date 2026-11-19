@@ -1192,6 +1192,7 @@ mod tests {
             assert!(!error.message.is_empty(), "{source}: {error:?}");
             assert!(error.to_string().contains("offset"));
         }
+        assert!(std::panic::catch_unwind(|| path("1")).is_err());
     }
 
     #[test]
@@ -1283,29 +1284,25 @@ mod tests {
     fn respects_operator_precedence() {
         // `1 + 2 * 3` must group as `1 + (2 * 3)`.
         let expr = parse("1 + 2 * 3").unwrap();
-        assert!(matches!(expr, Expr::Binary(BinaryOp::Add, _, _)));
-        if let Expr::Binary(BinaryOp::Add, _, right) = expr {
-            assert!(matches!(*right, Expr::Binary(BinaryOp::Multiply, _, _)));
-        }
+        assert!(
+            matches!(expr, Expr::Binary(BinaryOp::Add, _, right) if matches!(*right, Expr::Binary(BinaryOp::Multiply, _, _)))
+        );
     }
 
     #[test]
     fn or_binds_looser_than_and() {
         let expr = parse("a or b and c").unwrap();
-        assert!(matches!(expr, Expr::Binary(BinaryOp::Or, _, _)));
-        if let Expr::Binary(BinaryOp::Or, _, right) = expr {
-            assert!(matches!(*right, Expr::Binary(BinaryOp::And, _, _)));
-        }
+        assert!(
+            matches!(expr, Expr::Binary(BinaryOp::Or, _, right) if matches!(*right, Expr::Binary(BinaryOp::And, _, _)))
+        );
     }
 
     #[test]
     fn parses_function_calls_with_arguments() {
         let expr = parse("concat('a', 'b', 'c')").unwrap();
-        assert!(matches!(expr, Expr::Function { .. }));
-        if let Expr::Function { name, args } = expr {
-            assert_eq!(name, "concat");
-            assert_eq!(args.len(), 3);
-        }
+        assert!(
+            matches!(expr, Expr::Function { name, args } if name == "concat" && args.len() == 3)
+        );
     }
 
     #[test]
@@ -1418,43 +1415,35 @@ mod tests {
         // `'a' || 'b' = 'ab'` must group as `('a' || 'b') = 'ab'` — `||`
         // binds inside `=`.
         let expr = parse("'a' || 'b' = 'ab'").unwrap();
-        assert!(matches!(expr, Expr::Binary(BinaryOp::Equal, _, _)));
-        if let Expr::Binary(BinaryOp::Equal, left, _) = expr {
-            assert!(matches!(*left, Expr::Binary(BinaryOp::Concat, _, _)));
-        }
+        assert!(
+            matches!(expr, Expr::Binary(BinaryOp::Equal, left, _) if matches!(*left, Expr::Binary(BinaryOp::Concat, _, _)))
+        );
 
         // `1 || 2 + 3` must group as `1 || (2 + 3)` — additive binds inside
         // `||`.
         let expr = parse("1 || 2 + 3").unwrap();
-        assert!(matches!(expr, Expr::Binary(BinaryOp::Concat, _, _)));
-        if let Expr::Binary(BinaryOp::Concat, _, right) = expr {
-            assert!(matches!(*right, Expr::Binary(BinaryOp::Add, _, _)));
-        }
+        assert!(
+            matches!(expr, Expr::Binary(BinaryOp::Concat, _, right) if matches!(*right, Expr::Binary(BinaryOp::Add, _, _)))
+        );
     }
 
     #[test]
     fn parses_an_arrow_call_to_a_named_function() {
         // `$x => f(1)` is sugar for `f($x, 1)`.
         let expr = parse("$x => f(1)").unwrap();
-        assert!(matches!(expr, Expr::Arrow(_)));
-        if let Expr::Arrow(called) = expr {
-            assert!(matches!(*called, Expr::Function { .. }));
-            if let Expr::Function { name, args } = *called {
-                assert_eq!(name, "f");
-                assert_eq!(args.len(), 2);
-                assert!(matches!(args[0], Expr::Variable(_)));
-            }
-        }
+        assert!(
+            matches!(expr, Expr::Arrow(called) if matches!(*called, Expr::Function { ref name, ref args } if name == "f" && args.len() == 2 && matches!(args[0], Expr::Variable(_))))
+        );
     }
 
     #[test]
     fn parses_an_arrow_call_to_a_dynamic_target() {
         for source in ["$x => $f(1)", "$x => (g#1)(1)"] {
             let expr = parse(source).unwrap();
-            assert!(matches!(expr, Expr::Arrow(_)), "{source}");
-            if let Expr::Arrow(called) = expr {
-                assert!(matches!(*called, Expr::DynamicCall { .. }), "{source}");
-            }
+            assert!(
+                matches!(expr, Expr::Arrow(called) if matches!(*called, Expr::DynamicCall { .. })),
+                "{source}"
+            );
         }
     }
 
@@ -1462,14 +1451,9 @@ mod tests {
     fn arrow_calls_chain() {
         // `$x => f() => g()` is sugar for `g(f($x))`.
         let expr = parse("$x => f() => g()").unwrap();
-        assert!(matches!(expr, Expr::Arrow(_)));
-        if let Expr::Arrow(outer) = expr {
-            assert!(matches!(*outer, Expr::Function { .. }));
-            if let Expr::Function { name, args } = *outer {
-                assert_eq!(name, "g");
-                assert!(matches!(args[0], Expr::Arrow(_)));
-            }
-        }
+        assert!(
+            matches!(expr, Expr::Arrow(outer) if matches!(*outer, Expr::Function { ref name, ref args } if name == "g" && matches!(args[0], Expr::Arrow(_))))
+        );
     }
 
     #[test]
@@ -1477,10 +1461,7 @@ mod tests {
         // `$x => f() cast as xs:string` must group as
         // `($x => f()) cast as xs:string`.
         let expr = parse("$x => f() cast as xs:string").unwrap();
-        assert!(matches!(expr, Expr::TypeOp { .. }));
-        if let Expr::TypeOp { value, .. } = expr {
-            assert!(matches!(*value, Expr::Arrow(_)));
-        }
+        assert!(matches!(expr, Expr::TypeOp { value, .. } if matches!(*value, Expr::Arrow(_))));
     }
 
     #[test]
@@ -1505,10 +1486,9 @@ mod tests {
     fn simple_map_chains_left_associatively() {
         // `a ! b ! c` is `(a ! b) ! c`.
         let expr = parse("a ! b ! c").unwrap();
-        assert!(matches!(expr, Expr::Binary(BinaryOp::SimpleMap, _, _)));
-        if let Expr::Binary(BinaryOp::SimpleMap, left, _) = expr {
-            assert!(matches!(*left, Expr::Binary(BinaryOp::SimpleMap, _, _)));
-        }
+        assert!(
+            matches!(expr, Expr::Binary(BinaryOp::SimpleMap, left, _) if matches!(*left, Expr::Binary(BinaryOp::SimpleMap, _, _)))
+        );
     }
 
     #[test]
@@ -1516,10 +1496,9 @@ mod tests {
         // `a ! b | c` must group as `(a ! b) | c` — real XPath 3.0's grammar
         // nests `UnionExpr` around `SimpleMapExpr`, not the other way round.
         let expr = parse("a ! b | c").unwrap();
-        assert!(matches!(expr, Expr::Binary(BinaryOp::Union, _, _)));
-        if let Expr::Binary(BinaryOp::Union, left, _) = expr {
-            assert!(matches!(*left, Expr::Binary(BinaryOp::SimpleMap, _, _)));
-        }
+        assert!(
+            matches!(expr, Expr::Binary(BinaryOp::Union, left, _) if matches!(*left, Expr::Binary(BinaryOp::SimpleMap, _, _)))
+        );
     }
 
     #[test]
@@ -1528,10 +1507,9 @@ mod tests {
         // `!` in this grammar exactly as `RangeExpr` sits above
         // `SimpleMapExpr` in real XPath 3.0's.
         let expr = parse("1 to 2 ! f()").unwrap();
-        assert!(matches!(expr, Expr::Range(_, _)));
-        if let Expr::Range(_, right) = expr {
-            assert!(matches!(*right, Expr::Binary(BinaryOp::SimpleMap, _, _)));
-        }
+        assert!(
+            matches!(expr, Expr::Range(_, right) if matches!(*right, Expr::Binary(BinaryOp::SimpleMap, _, _)))
+        );
     }
 
     #[test]
@@ -1553,17 +1531,9 @@ mod tests {
     #[test]
     fn parses_a_let_expression() {
         let expr = parse("let $x := 1 return $x").unwrap();
-        assert!(matches!(expr, Expr::Let { .. }));
-        if let Expr::Let {
-            variable,
-            value,
-            body,
-        } = expr
-        {
-            assert_eq!(variable.to_string(), "x");
-            assert!(matches!(*value, Expr::Number(1.0, _)));
-            assert!(matches!(*body, Expr::Variable(_)));
-        }
+        assert!(
+            matches!(expr, Expr::Let { variable, value, body } if variable.to_string() == "x" && matches!(*value, Expr::Number(1.0, _)) && matches!(*body, Expr::Variable(_)))
+        );
     }
 
     #[test]

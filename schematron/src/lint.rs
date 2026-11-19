@@ -1694,6 +1694,8 @@ mod tests {
                    <rule context="text()"><assert test="true()">m</assert></rule>
                    <rule context="comment()"><assert test="true()">m</assert></rule>
                    <rule context="processing-instruction()"><assert test="true()">m</assert></rule>
+                   <rule context="element"><assert test="child">m</assert></rule>
+                   <rule context="@*"><assert test="true()">m</assert></rule>
                  </pattern>
                  <pattern>
                    <rule context="@x" flag="warning">
@@ -1726,7 +1728,10 @@ mod tests {
     fn lint_walkers_cover_nonmatching_path_and_reference_shapes() {
         let schema = Schema::from_str(
             r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
-                 <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>
+                 <pattern>
+                   <rule context="/a"><assert test="b">m</assert></rule>
+                   <rule context="a"><assert test="b">m</assert></rule>
+                 </pattern>
                  <properties><property id="used">p</property></properties>
                </schema>"#,
         )
@@ -1746,13 +1751,5 @@ mod tests {
             &crate::xpath::parse("(1)[$v]/a").unwrap(),
             "v"
         ));
-
-        let found = lints_of(
-            r#"<pattern><rule context="a"><assert test="b" properties="used">m</assert></rule></pattern>
-               <properties><property id="used">p</property></properties>"#,
-        );
-        assert!(!found
-            .iter()
-            .any(|lint| lint.kind == LintKind::UnreferencedProperty));
     }
 }

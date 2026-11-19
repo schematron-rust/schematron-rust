@@ -2261,8 +2261,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn sequence_library_executes_success_empty_and_error_shapes() {
-        let document = Document::from_str("<root><a>1</a><a>2</a></root>").unwrap();
+        let mut document = Document::from_str("<root><a>1</a><a>2</a></root>").unwrap();
+        document.set_base_uri("/data/instance.xml");
         let variables = Variables::new();
         let namespaces = Namespaces::new();
         let context = EvalContext::new(
@@ -2314,7 +2316,7 @@ mod tests {
         )
         .is_ok());
         assert!(call("resolve-uri", &[Value::Sequence(Vec::new())], &context).is_ok());
-        assert!(call("resolve-uri", &[Value::String("x".into())], &context).is_err());
+        assert!(call("resolve-uri", &[Value::String("x".into())], &context).is_ok());
         assert!(call(
             "not-a-function",
             &[],
@@ -2350,5 +2352,36 @@ mod tests {
             &document,
         )
         .is_ok());
+
+        let typed_time = Value::Sequence(vec![Item::Temporal(
+            Temporal::parse("12:00:00", TemporalKind::Time).unwrap(),
+        )]);
+        assert!(
+            adjust_to_timezone_call("adjust-date-to-timezone", &[typed_time], &context,).is_err()
+        );
+        let wrong_item = Value::Sequence(vec![Item::String("P1D".into())]);
+        assert!(duration_component("days-from-duration", &[wrong_item], &document).is_ok());
+        let wrong_temporal = Value::Sequence(vec![Item::String("2024-01-01".into())]);
+        assert!(timezone_of(
+            "timezone-from-date",
+            std::slice::from_ref(&wrong_temporal),
+            &document,
+        )
+        .is_ok());
+        assert!(component_of("year-from-date", &[wrong_temporal], &document).is_ok());
+
+        let root = document.root();
+        assert!(deep_equal_node(root, root, &document));
+        let registry = Documents::new();
+        let based_context = context.clone().with_documents(&registry);
+        assert!(document_function(
+            &[
+                Value::String("other.xml".into()),
+                Value::NodeSet(vec![document.document_element().unwrap()]),
+            ],
+            &based_context,
+        )
+        .is_ok());
+        assert!(!lang("fr", &document, document.document_element().unwrap()));
     }
 }

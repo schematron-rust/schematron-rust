@@ -1800,11 +1800,21 @@ mod tests {
         assert!(!attribute_predicate(&parse("concat('a', 'b')").unwrap()));
         assert!(wrapper_expression(&parse("-1 + @id").unwrap()));
         assert!(wrapper_expression(&parse("string(@id)").unwrap()));
+        assert!(wrapper_expression(&parse("true()").unwrap()));
         assert!(!wrapper_expression(&parse("child::a").unwrap()));
         assert!(!wrapper_expression(&parse("unknown(@id)").unwrap()));
+        assert!(!wrapper_expression(&Expr::Sequence(Vec::new())));
         assert_eq!(
             streaming_unsafe_construct(&parse("resolve-uri#1").unwrap()),
             Some("resolve-uri#1 without an explicit base URI")
+        );
+        assert!(streaming_unsafe_construct(&parse("string#1").unwrap()).is_none());
+        assert_eq!(
+            streaming_unsafe_construct(&Expr::NamedFunctionRef {
+                name: "document".into(),
+                arity: 1,
+            }),
+            Some("document()")
         );
         assert_eq!(
             streaming_unsafe_construct(&parse("/a").unwrap()),
@@ -1849,5 +1859,22 @@ mod tests {
             assert!(!function_reason(name).is_empty());
         }
         assert!(std::panic::catch_unwind(|| function_reason("unknown")).is_err());
+    }
+
+    #[test]
+    fn filtered_path_starts_validate_predicate_variables_and_versions() {
+        let unbound = error(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="a"><assert test="(.)[$missing]/b">m</assert></rule></pattern>
+               </schema>"#,
+        );
+        assert!(unbound.contains("$missing"), "{unbound}");
+
+        let wrong_version = error(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+                 <pattern><rule context="a"><assert test="(.)[function($x) { $x }]/b">m</assert></rule></pattern>
+               </schema>"#,
+        );
+        assert!(wrong_version.contains("XPath 3.0"), "{wrong_version}");
     }
 }

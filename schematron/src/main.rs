@@ -287,14 +287,18 @@ fn run(cli: &Cli) -> Result<u8, Exit> {
 
 fn read_document(path: &str) -> Result<Document, Exit> {
     if path == "-" {
-        let mut bytes = Vec::new();
-        std::io::stdin()
-            .read_to_end(&mut bytes)
-            .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("cannot read standard input: {e}")))?;
-        return Document::from_bytes(&bytes)
-            .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("standard input: {e}")));
+        return read_document_stream(std::io::stdin());
     }
     Document::from_path(path).map_err(|e| Exit::new(EXIT_DOCUMENT, e.to_string()))
+}
+
+fn read_document_stream(mut reader: impl Read) -> Result<Document, Exit> {
+    let mut bytes = Vec::new();
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("cannot read standard input: {e}")))?;
+    Document::from_bytes(&bytes)
+        .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("standard input: {e}")))
 }
 
 /// The `--stream` counterpart to [`read_document`] plus
@@ -359,7 +363,7 @@ fn render(report: &Report, cli: &Cli, path: &str) -> String {
         #[cfg(feature = "serde")]
         Format::Json => report
             .to_json()
-            .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}")),
+            .expect("serializing a report to JSON cannot fail"),
     }
 }
 
@@ -367,13 +371,17 @@ fn write_output(path: Option<&str>, text: &str) -> Result<(), Exit> {
     match path {
         None => {
             let mut stdout = std::io::stdout().lock();
-            stdout
-                .write_all(text.as_bytes())
-                .map_err(|e| Exit::new(EXIT_USAGE, format!("cannot write output: {e}")))
+            write_stdout(&mut stdout, text)
         }
         Some(path) => std::fs::write(path, text)
             .map_err(|e| Exit::new(EXIT_USAGE, format!("cannot write {path}: {e}"))),
     }
+}
+
+fn write_stdout(mut writer: impl Write, text: &str) -> Result<(), Exit> {
+    writer
+        .write_all(text.as_bytes())
+        .map_err(|e| Exit::new(EXIT_USAGE, format!("cannot write output: {e}")))
 }
 
 /// Renders lints for a person, one block each.
@@ -506,6 +514,24 @@ fn explain(schema: &Schema) -> String {
 mod tests {
     use super::*;
 
+    struct FailingIo;
+
+    impl Read for FailingIo {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("expected read failure"))
+        }
+    }
+
+    impl Write for FailingIo {
+        fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("expected write failure"))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     fn schema() -> Schema {
         Schema::from_str(
             r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" defaultPhase="quick">
@@ -608,6 +634,9 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "result");
         std::fs::remove_file(path).unwrap();
         assert!(write_output(Some("missing-parent/output.txt"), "result").is_err());
+        assert!(read_document_stream(FailingIo).is_err());
+        assert!(read_document_stream(&b"not xml"[..]).is_err());
+        assert!(write_stdout(FailingIo, "result").is_err());
     }
 
     #[test]
