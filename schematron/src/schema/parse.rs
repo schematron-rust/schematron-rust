@@ -798,6 +798,10 @@ mod tests {
                 "@name",
             ),
             (
+                "<pattern><rule context='a'><report/></rule></pattern>",
+                "@test",
+            ),
+            (
                 "<pattern><rule context='a'><extends/></rule></pattern>",
                 "needs @rule or @href",
             ),

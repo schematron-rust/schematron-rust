@@ -617,6 +617,12 @@ mod tests {
     }
 
     #[test]
+    fn scalar_boolean_strings_cover_both_values() {
+        assert_eq!(Value::Boolean(true).to_xpath_string_scalar(), "true");
+        assert_eq!(Value::Boolean(false).to_xpath_string_scalar(), "false");
+    }
+
+    #[test]
     fn every_item_conversion_preserves_xpath_semantics() {
         let document = Document::from_str("<a n=' 12 '>34</a>").unwrap();
         let element = document.document_element().unwrap();

@@ -146,8 +146,7 @@ impl Duration {
             Some(time) => parse_duration_fields(time, "HMS").ok_or_else(reject)?,
             None => Vec::new(),
         };
-        let (months, seconds) =
-            duration_totals(&date_fields, &time_fields).ok_or_else(reject)?;
+        let (months, seconds) = validated_duration_totals(&date_fields, &time_fields);
 
         // Each subtype accepts only its own fields.
         match kind {
@@ -303,6 +302,16 @@ fn duration_totals(date_fields: &[(f64, char)], time_fields: &[(f64, char)]) -> 
         }
     }
     Some((months, seconds))
+}
+
+/// Total fields emitted by `parse_duration_fields`, whose unit alphabet has
+/// already been checked at the lexical boundary.
+fn validated_duration_totals(
+    date_fields: &[(f64, char)],
+    time_fields: &[(f64, char)],
+) -> (i64, f64) {
+    duration_totals(date_fields, time_fields)
+        .expect("the duration field parser emits only units accepted by the totalizer")
 }
 
 /// Adds a number of months to a date, clamping the day.
@@ -687,11 +696,19 @@ fn split_timezone(text: &str) -> Option<(&str, Option<i32>)> {
             _ => return Some((text, None)),
         };
         if !body.is_empty() {
-            let hours: i32 = tail.get(1..3)?.parse().ok()?;
+            let hours: i32 = tail
+                .get(1..3)
+                .expect("a six-byte timezone tail contains two hour bytes")
+                .parse()
+                .ok()?;
             if tail.as_bytes().get(3) != Some(&b':') {
                 return Some((text, None));
             }
-            let minutes: i32 = tail.get(4..6)?.parse().ok()?;
+            let minutes: i32 = tail
+                .get(4..6)
+                .expect("a six-byte timezone tail contains two minute bytes")
+                .parse()
+                .ok()?;
             if hours > 14 || minutes > 59 {
                 return None;
             }
@@ -730,7 +747,10 @@ fn parse_time(text: &str) -> Option<(u32, u32, f64)> {
     let minute: u32 = parts[1].parse().ok()?;
     // Seconds may carry a fraction, but must have two integral digits.
     let seconds_text = parts[2];
-    let integral = seconds_text.split('.').next()?;
+    let integral = seconds_text
+        .split('.')
+        .next()
+        .expect("splitting a string always yields one component");
     if integral.len() != 2 || !seconds_text.chars().all(|c| c.is_ascii_digit() || c == '.') {
         return None;
     }
@@ -933,6 +953,10 @@ mod tests {
             "2025-02-29",
             "not-a-date",
             "2026-8-21",
+            "20aa-01-01",
+            "2026-aa-01",
+            "2026-01-aa",
+            "2026-aa-01Z",
             "",
         ] {
             assert!(
@@ -952,7 +976,18 @@ mod tests {
 
     #[test]
     fn rejects_impossible_times() {
-        for bad in ["25:00:00", "10:60:00", "10:00:60", "24:00:01", "1:00:00"] {
+        for bad in [
+            "25:00:00",
+            "10:60:00",
+            "10:00:60",
+            "24:00:01",
+            "1:00:00",
+            "aa:00:00",
+            "00:aa:00",
+            "00:00:aa",
+            "10:00:00+aa:00",
+            "10:00:00+01:aa",
+        ] {
             assert!(
                 Temporal::parse(bad, TemporalKind::Time).is_err(),
                 "{bad:?} should be rejected"
@@ -1048,6 +1083,8 @@ mod tests {
         );
         assert!(Temporal::parse("10:00:00+15:00", TemporalKind::Time).is_err());
         assert!(Temporal::parse("+01:00", TemporalKind::Time).is_err());
+        assert!(Temporal::parse("badT10:00:00", TemporalKind::DateTime).is_err());
+        assert!(Temporal::parse("2026-08-21Tbad", TemporalKind::DateTime).is_err());
         assert!(Temporal::parse("10:00:0x", TemporalKind::Time).is_err());
         assert!(Temporal::parse("10:00:00.0.0", TemporalKind::Time).is_err());
         assert_eq!(days_in_month(2026, 13), 0);
@@ -1140,7 +1177,10 @@ mod duration_tests {
 
     #[test]
     fn rejects_malformed_durations() {
-        for bad in ["", "P", "1D", "PD", "P1X", "PT", "P1DT", "P1M1Y", "PT1S1H", "P1"] {
+        for bad in [
+            "", "P", "1D", "PD", "P1X", "PT", "P1DT", "P1M1Y", "PT1S1H", "P1",
+            "PT1..2S",
+        ] {
             assert!(
                 Duration::parse(bad, DurationKind::DayTime).is_err()
                     && Duration::parse(bad, DurationKind::YearMonth).is_err(),

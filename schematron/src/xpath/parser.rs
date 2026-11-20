@@ -1148,32 +1148,44 @@ mod tests {
             "bogus::node()",
             "1 2",
             "a and",
+            "(1,)",
             "foo $x",
             "for 1 in a return a",
             "for $x a return a",
             "for $x in a a",
+            "for $x in return a",
+            "for $x in a return",
             "let 1 := a return a",
             "let $x a return a",
             "let $x := a a",
+            "let $x := return a",
+            "let $x := a return",
             "some 1 in a satisfies true()",
             "some $x a satisfies true()",
             "some $x in a true()",
+            "some $x in satisfies true()",
+            "some $x in a satisfies",
             "if (a) b else c",
             "if (a) then b c",
             "1 instance",
             "1 instance of",
+            "1 to",
             "1 cast",
             "1 cast as",
             "1 cast as node()",
             "1 castable as node()",
             "1 treat as",
             "a/",
+            "//",
+            "(a)/",
             "a[]",
+            "(1)[",
             "child::",
             "processing-instruction(1)",
             "element(,)",
             "attribute(a b)",
             "f(",
+            "f(1,)",
             "f#",
             "f#1.5",
             "function(1) { 1 }",
@@ -1181,9 +1193,24 @@ mod tests {
             "$x => 1",
             "$x => f",
             "$x =>",
+            "$x => f(",
+            "$x => $f(",
+            "$x => (",
+            "$x => (1",
+            "$x => (1)(",
             "child::",
             "child::unknown()",
             "(1)(",
+            "if () then 1 else 2",
+            "if (true() then 1 else 2",
+            "if (true()) then else 2",
+            "if (true()) then",
+            "if (true()) then 1 else",
+            "function(",
+            "function($x,)",
+            "function($x) ",
+            "function($x) {",
+            "function($x) { 1",
         ] {
             let result = parse(source);
             assert!(result.is_err(), "{source:?} unexpectedly parsed");
@@ -1209,6 +1236,87 @@ mod tests {
         };
         assert!(parser.parse_node_test(Axis::Child).is_err());
         assert!(std::panic::catch_unwind(|| path("1")).is_err());
+    }
+
+    fn parser_for(kinds: Vec<TokenKind>) -> Parser {
+        Parser {
+            length: kinds.len(),
+            tokens: kinds
+                .into_iter()
+                .enumerate()
+                .map(|(position, kind)| Token { kind, position })
+                .collect(),
+            index: 0,
+            depth: 0,
+        }
+    }
+
+    #[test]
+    fn internal_productions_reject_impossible_lexer_and_dispatch_shapes() {
+        let name = |text: &str| TokenKind::Name(text.into());
+        let variable = || TokenKind::Variable("x".into());
+
+        let mut parser = parser_for(vec![name("let")]);
+        assert!(parser.parse_let().is_err());
+        let mut parser = parser_for(vec![name("let"), variable(), TokenKind::Assign]);
+        assert!(parser.parse_let().is_err());
+
+        let mut parser = parser_for(vec![name("for")]);
+        assert!(parser.parse_for().is_err());
+        let mut parser = parser_for(vec![name("for"), variable(), name("in")]);
+        assert!(parser.parse_for().is_err());
+
+        let mut parser = parser_for(vec![name("some")]);
+        assert!(parser.parse_quantified(Quantifier::Some).is_err());
+        let mut parser = parser_for(vec![name("some"), variable(), name("in")]);
+        assert!(parser.parse_quantified(Quantifier::Some).is_err());
+
+        let mut parser = parser_for(vec![TokenKind::Minus]);
+        parser.depth = MAX_RECURSION_DEPTH;
+        assert!(parser.parse_unary().is_err());
+        let mut parser = parser_for(vec![TokenKind::Minus]);
+        assert!(parser.parse_unary().is_err());
+
+        for kinds in [
+            vec![TokenKind::FunctionName("item".into())],
+            vec![TokenKind::FunctionName("item".into()), TokenKind::LeftParen],
+            vec![
+                TokenKind::FunctionName("empty-sequence".into()),
+                TokenKind::LeftParen,
+            ],
+            vec![TokenKind::NodeType("element".into()), TokenKind::LeftParen],
+            vec![TokenKind::RightParen],
+        ] {
+            assert!(parser_for(kinds).parse_item_type().is_err());
+        }
+
+        assert!(parser_for(Vec::new()).parse_absolute_path().is_err());
+        assert!(parser_for(vec![TokenKind::Slash, TokenKind::At])
+            .parse_absolute_path()
+            .is_err());
+        assert!(parser_for(vec![TokenKind::AxisName("child".into())])
+            .parse_step()
+            .is_err());
+        assert!(parser_for(vec![TokenKind::NodeType("node".into())])
+            .parse_node_test(Axis::Child)
+            .is_err());
+        assert!(parser_for(vec![TokenKind::FunctionName("if".into())])
+            .parse_primary()
+            .is_err());
+        assert!(parser_for(Vec::new()).parse_arguments().is_err());
+        assert!(parser_for(vec![TokenKind::FunctionName("function".into())])
+            .parse_primary()
+            .is_err());
+        assert!(parser_for(vec![TokenKind::LeftParen, variable()])
+            .parse_inline_function()
+            .is_err());
+        let mut parser = parser_for(vec![
+            TokenKind::LeftParen,
+            TokenKind::RightParen,
+            TokenKind::LeftBrace,
+        ]);
+        parser.depth = MAX_RECURSION_DEPTH;
+        assert!(parser.parse_inline_function().is_err());
     }
 
     #[test]

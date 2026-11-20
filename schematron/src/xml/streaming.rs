@@ -329,6 +329,7 @@ mod tests {
         assert_eq!(position.get(), (2, 3));
 
         let (mut failing, failing_position) = LineTrackingReader::new(FailingRead);
+        assert!(failing.read(&mut [0]).is_err());
         failing.consume(1);
         assert_eq!(failing_position.get(), (1, 1));
     }
@@ -344,6 +345,9 @@ mod tests {
 
         let mut unclosed = StreamingReader::open(&b"<root><record>"[..]).unwrap();
         assert!(unclosed.next_record().is_err());
+
+        let mut malformed_record = StreamingReader::open(&b"<root><record x=></root>"[..]).unwrap();
+        assert!(malformed_record.next_record().is_err());
 
         let mut unread = StreamingReader::open(&b"<root><record/></root>"[..]).unwrap();
         assert!(unread.finish().is_err());

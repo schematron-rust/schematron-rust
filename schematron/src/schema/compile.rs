@@ -1642,7 +1642,7 @@ mod tests {
 
     #[test]
     fn rejects_reverse_axes_in_a_rule_context() {
-        for context in ["ancestor::a", "a | ancestor::b"] {
+        for context in ["ancestor::a", "ancestor::a | b", "a | ancestor::b"] {
             let message = error(&format!(
                 r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
                      <pattern><rule context="{context}"><assert test="b">m</assert></rule></pattern>

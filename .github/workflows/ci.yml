@@ -84,11 +84,8 @@ jobs:
       - run: cargo test --locked --all-features
 
   coverage:
-    name: Coverage (at least 95% of lines)
+    name: Coverage (100% of merged source)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: schematron
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -100,7 +97,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: schematron
-      - run: cargo llvm-cov --locked --all-features --fail-under-lines 95 --summary-only
+      - run: bin/test-coverage
 
   msrv:
     name: MSRV boundary

@@ -1255,7 +1255,11 @@ fn compare_by_node(
         }
     };
 
-    let (Some(a), Some(b)) = (node_of(left, "left")?, node_of(right, "right")?) else {
+    let Some(a) = node_of(left, "left")? else {
+        // Nothing to compare, so nothing is claimed.
+        return Ok(Value::Sequence(Vec::new()));
+    };
+    let Some(b) = node_of(right, "right")? else {
         // Nothing to compare, so nothing is claimed.
         return Ok(Value::Sequence(Vec::new()));
     };

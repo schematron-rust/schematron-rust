@@ -345,7 +345,7 @@ fn evaluator_propagates_errors_from_each_composite_position() {
         "false() or $missing",
         "1 + $missing",
         "xs:date('2024-01-01') eq 'bad'",
-        "/ is (/, /)",
+        ". is (., .)",
         "1 eq (1, 2)",
         "($missing)/a",
         "(.)[$missing]/a",
@@ -391,6 +391,17 @@ fn evaluator_propagates_errors_from_each_composite_position() {
     )
     .unwrap()
     .to_boolean());
+    assert!(evaluate_source(
+        ". is ()",
+        &document,
+        &variables,
+        &namespaces,
+        XPathVersion::V2,
+    )
+    .unwrap()
+    .as_sequence()
+    .unwrap()
+    .is_empty());
 
     for expression in [
         "fold-left((1), 0, function($a, $b) { $missing })",

@@ -439,6 +439,30 @@ fn output_can_be_written_to_a_file() {
 }
 
 #[test]
+fn report_and_lint_output_write_failures_are_usage_errors() {
+    let directory = std::env::temp_dir().display().to_string();
+    let report = run(&[
+        "--schema",
+        &schema_path(),
+        "--output",
+        &directory,
+        &good(),
+    ]);
+    assert_eq!(code(&report), 2);
+    assert_contains!(String::from_utf8_lossy(&report.stderr), "cannot write");
+
+    let lint = run(&[
+        "--schema",
+        &schema_path(),
+        "--lint",
+        "--output",
+        &directory,
+    ]);
+    assert_eq!(code(&lint), 2);
+    assert_contains!(String::from_utf8_lossy(&lint.stderr), "cannot write");
+}
+
+#[test]
 fn help_and_version_work() {
     let help = run(&["--help"]);
     assert_eq!(code(&help), 0);

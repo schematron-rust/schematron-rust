@@ -41,6 +41,10 @@
 - [x] Measure line coverage across the complete all-feature Rust suite, add
   behavior-focused CLI tests for standard input and incompatible execution
   modes, and enforce a 95% minimum locally and in hosted CI.
+- [x] Raise the complete all-feature suite to exact source coverage. Exercise
+  every function and merged executable region, document LLVM's duplicate
+  Rust code-generation accounting, and enforce the 100% gate locally and in
+  hosted CI without excluding files or narrowing the suite.
 - [x] Confirm the Linux, Windows and macOS hosted jobs on the readiness
   revision, including the non-ASCII path fixture. All jobs passed in
   [hosted run 44513735145](https://github.com/schematron-rust/schematron-rust/actions/runs/44513735145).

@@ -49,7 +49,7 @@ SPLIT        := _split_site
 help:
 	@echo "make publish       publish $(PREFIX)/ to the Pages repo (recommended)"
 	@echo "make github-pages  publish $(PREFIX)/ via a plain 'git subtree push'"
-	@echo "make test-coverage  run all Rust tests and require at least 95% line coverage"
+	@echo "make test-coverage  run all Rust tests and require exact source coverage"
 	@echo "make test-minimum-supported-rust-version  check and test on Rust N-2 (MSRV) and N-1"
 	@echo ""
 	@echo "Add FORCE=1 to overwrite the Pages repo's history (make publish only)."
@@ -102,7 +102,7 @@ github-pages:
 	bin/make-github-pages '$(NAME)' '$(URL)'
 
 test-coverage:
-	cd schematron && cargo llvm-cov --locked --all-features --fail-under-lines 95 --summary-only
+	bin/test-coverage
 
 # Check and test on Rust N-2 (the MSRV) and N-1.
 test-minimum-supported-rust-version:

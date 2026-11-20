@@ -83,7 +83,9 @@ impl Context<'_> {
         if document.kind(node) != NodeKind::Element {
             return None;
         }
-        let name = document.name(node)?;
+        let name = document
+            .name(node)
+            .expect("elements always carry an expanded name");
         let in_schematron = matches!(
             name.uri.as_deref(),
             Some(SCHEMATRON_NAMESPACE | SCHEMATRON_1_5_NAMESPACE)
@@ -707,5 +709,23 @@ mod tests {
             same_document_key(&source, "#part"),
             "/schemas/main.sch#part"
         );
+    }
+
+    #[test]
+    fn child_splicing_propagates_a_nested_directive_failure() {
+        let resolver = MemoryResolver::new().with(
+            "definitions.sch",
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <rule id="base"><include href="missing.sch"/></rule>
+               </schema>"#,
+        );
+        let error = resolve(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="a"><extends href="definitions.sch#base"/></rule></pattern>
+               </schema>"#,
+            &resolver,
+        )
+        .unwrap_err();
+        assert!(matches!(error, Error::Resolve { .. }));
     }
 }

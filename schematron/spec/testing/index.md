@@ -18,11 +18,20 @@
 Assertions use the `assertables` crate, matching the house style of the
 sibling SixArm crates.
 
-Line coverage is a regression gate, not a substitute for the semantic layers
-above. The complete all-feature suite must cover at least 95% of instrumented
-Rust lines. CI and `make test-coverage` run the same command and fail below
-that threshold. Tests added to preserve the threshold must assert observable
-behaviour or an invariant rather than merely execute a line.
+Coverage is a regression gate, not a substitute for the semantic layers
+above. The complete all-feature suite must cover every function and every
+merged executable Rust source region. CI and `make test-coverage` both run
+`bin/test-coverage` and require exact (100%) source coverage. Tests added to
+preserve the threshold must assert observable behaviour or an invariant
+rather than merely execute a line.
+
+LLVM emits a separately instrumented copy of some Rust functions for the
+unit-test crate and each integration-test crate. Its aggregate line summary
+counts those code-generation copies independently, so a copy unused in one
+test binary can lower that summary even when another binary exercises the
+same source region. The gate therefore checks the JSON report's merged source
+segments, which are the regions presented by LLVM's source report, and also
+checks the function total. It does not exclude files or reduce the test suite.
 
 ## Corpus tests
 

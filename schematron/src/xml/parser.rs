@@ -837,6 +837,29 @@ mod tests {
         }
         assert!(Document::from_str(r#"<a x="&unknown;"/>"#).is_err());
         assert!(Document::from_str(r#"<a xmlns:p="&unknown;"><p:b/></a>"#).is_err());
+        assert!(Document::from_str("<a broken></a>").is_err());
+        assert!(Document::from_str("<a broken/>").is_err());
+        assert!(Document::from_str("<a p:x='1'/>").is_err());
+        assert!(Document::from_str("<a>before &amp</a>").is_err());
+
+        let start = quick_xml::events::BytesStart::from_content("a broken", 1);
+        let mut builder = Builder::new(PositionSource::WholeDocument("<a broken/>"));
+        let root = builder.doc.root();
+        let element = builder.push_node(NodeKind::Element, root);
+        assert!(builder.attach_attributes(element, &start, 0).is_err());
+
+        let mut open = vec![root];
+        let mut saw_element = true;
+        assert!(handle_event(
+            &mut builder,
+            &mut open,
+            &mut saw_element,
+            0,
+            quick_xml::events::Event::Text(quick_xml::events::BytesText::from_escaped(
+                "before &amp"
+            )),
+        )
+        .is_err());
     }
 
     #[test]

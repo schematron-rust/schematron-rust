@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Run the complete Rust suite and require exact merged source coverage."""
+
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+
+
+repository = Path(__file__).resolve().parents[1]
+crate = repository / "schematron"
+
+with tempfile.TemporaryDirectory(prefix="schematron-coverage-") as temporary:
+    report = Path(temporary) / "coverage.json"
+    subprocess.run(
+        [
+            "cargo",
+            "llvm-cov",
+            "--locked",
+            "--all-features",
+            "--json",
+            "--output-path",
+            str(report),
+        ],
+        cwd=crate,
+        check=True,
+    )
+    coverage = json.loads(report.read_text(encoding="utf-8"))
+
+data = coverage["data"]
+if len(data) != 1:
+    raise SystemExit(f"Expected one coverage data set, found {len(data)}")
+
+totals = data[0]["totals"]
+functions = totals["functions"]
+if functions["covered"] != functions["count"]:
+    missing = functions["count"] - functions["covered"]
+    raise SystemExit(f"Coverage failed: {missing} function(s) were not exercised")
+
+regions = 0
+uncovered: list[str] = []
+for source in data[0]["files"]:
+    filename = Path(source["filename"])
+    try:
+        display_name = filename.relative_to(repository)
+    except ValueError:
+        display_name = filename
+    for segment in source["segments"]:
+        line, column, count, has_count, is_region_entry, _is_gap = segment
+        if not has_count or not is_region_entry:
+            continue
+        regions += 1
+        if count == 0:
+            uncovered.append(f"{display_name}:{line}:{column}")
+
+if uncovered:
+    locations = "\n  ".join(uncovered)
+    raise SystemExit(
+        f"Coverage failed: {len(uncovered)} merged source region(s) were not exercised:\n"
+        f"  {locations}"
+    )
+
+if regions == 0:
+    raise SystemExit("Coverage failed: LLVM reported no executable source regions")
+
+print(
+    f"Exact source coverage passed: {functions['count']} functions and "
+    f"{regions} merged executable regions covered (100%)."
+)

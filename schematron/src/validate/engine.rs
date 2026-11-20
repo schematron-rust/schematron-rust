@@ -1290,6 +1290,137 @@ mod tests {
     }
 
     #[test]
+    fn streaming_propagates_phase_record_and_record_scope_errors() {
+        let schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="item"><assert test="false()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let options = ValidateOptions::new().with_phase(PhaseSelection::from("missing"));
+        assert!(validate_streaming(&schema, "<root/>".as_bytes(), &options).is_err());
+
+        let mut schema = schema;
+        schema.expressions.remove("false()");
+        assert!(validate_streaming(
+            &schema,
+            "<root><item/></root>".as_bytes(),
+            &ValidateOptions::new()
+        )
+        .is_err());
+
+        let document = Document::from_str("<root><item/></root>").unwrap();
+        let root = document.document_element().unwrap();
+        let record = document.children(root)[0];
+        let keys = Keys::new();
+        let documents = Documents::new();
+        let options = ValidateOptions::new();
+
+        let mut schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><let name="x" value="1"/><rule context="item"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        schema.expressions.remove("1");
+        let run = Run {
+            schema: &schema,
+            checking_wrapper: false,
+            document: &document,
+            keys: &keys,
+            documents: &documents,
+            current_time: 0.0,
+            implicit_timezone: 0,
+            options: &options,
+        };
+        assert!(run_pattern_scoped_to_record(
+            run,
+            &schema.model.patterns[0],
+            record,
+            &mut Variables::new(),
+            &mut 0,
+        )
+        .is_err());
+
+        let mut schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="item"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        schema.expressions.remove("item");
+        let run = Run { schema: &schema, ..run };
+        assert!(run_pattern_scoped_to_record(
+            run,
+            &schema.model.patterns[0],
+            record,
+            &mut Variables::new(),
+            &mut 0,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn external_document_failures_propagate_from_each_validation_pass() {
+        let resolver = MemoryResolver::new().with("bad.xml", "<");
+        let options = SchemaOptions::new().with_resolver(Arc::new(resolver));
+        let schema = Schema::from_str_with(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="root"><assert test="document('bad.xml')">m</assert></rule></pattern>
+               </schema>"#,
+            &options,
+        )
+        .unwrap();
+        assert!(schema
+            .validate(&Document::from_str("<root/>").unwrap())
+            .is_err());
+
+        let resolver = MemoryResolver::new().with("loaded.xml", "<loaded/>");
+        let options = SchemaOptions::new().with_resolver(Arc::new(resolver));
+        let schema = Schema::from_str_with(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath3">
+                 <pattern><rule context="root"><assert test="if (exists(document('loaded.xml'))) then 1 eq (1, 2) else true()">m</assert></rule></pattern>
+               </schema>"#,
+            &options,
+        )
+        .unwrap();
+        assert!(schema
+            .validate(&Document::from_str("<root/>").unwrap())
+            .is_err());
+
+        for parallel in [false, true] {
+            let resolver = MemoryResolver::new().with("external.xml", "<external/>");
+            let options = SchemaOptions::new().with_resolver(Arc::new(resolver));
+            let schema = Schema::from_str_with(
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath2">
+                     <key name="k" match="external" use="1 eq (1, 2)"/>
+                     <pattern documents="'external.xml'"><rule context="external"><assert test="true()">m</assert></rule></pattern>
+                     <pattern><rule context="root"><assert test="true()">m</assert></rule></pattern>
+                   </schema>"#,
+                &options,
+            )
+            .unwrap();
+            let validate = ValidateOptions::new().with_parallel_patterns(parallel);
+            assert!(schema
+                .validate_with(&Document::from_str("<root/>").unwrap(), &validate)
+                .is_err());
+        }
+
+        let resolver = MemoryResolver::new().with("external.xml", "<");
+        let options = SchemaOptions::new().with_resolver(Arc::new(resolver));
+        let schema = Schema::from_str_with(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern documents="'external.xml'"><rule context="external"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+            &options,
+        )
+        .unwrap();
+        assert!(schema
+            .validate(&Document::from_str("<root/>").unwrap())
+            .is_err());
+    }
+
+    #[test]
     fn defensive_runtime_model_edges_return_contextual_errors() {
         let document = Document::from_str("<a id='x'/>").unwrap();
 
@@ -1555,6 +1686,105 @@ mod tests {
             .expressions
             .insert("text-node".into(), parse("text()").unwrap());
         assert!(schema.validate(&document).is_ok());
+    }
+
+    fn validation_with_missing_expression(body: &str, expression: &str) -> Error {
+        let source = format!(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">{body}</schema>"#
+        );
+        let mut schema = Schema::from_str(&source).unwrap();
+        assert!(schema.expressions.remove(expression).is_some(), "{expression}");
+        schema
+            .validate(&Document::from_str("<root id='x'><item/></root>").unwrap())
+            .unwrap_err()
+    }
+
+    #[test]
+    fn missing_compiled_expressions_propagate_from_every_validation_construct() {
+        let cases = [
+            (
+                r#"<key name="k" match="item" use="@id"/>
+                   <pattern><rule context="root"><assert test="true()">m</assert></rule></pattern>"#,
+                "item",
+            ),
+            (
+                r#"<key name="k" match="item" use="@id"/>
+                   <pattern><rule context="root"><assert test="true()">m</assert></rule></pattern>"#,
+                "@id",
+            ),
+            (
+                r#"<pattern documents="'external.xml'"><rule context="root"><assert test="true()">m</assert></rule></pattern>"#,
+                "'external.xml'",
+            ),
+            (
+                r#"<pattern><let name="x" value="41"/><rule context="root"><assert test="true()">m</assert></rule></pattern>"#,
+                "41",
+            ),
+            (
+                r#"<pattern><rule context="root"><assert test="false()" subject=".">m</assert></rule></pattern>"#,
+                ".",
+            ),
+            (
+                r#"<pattern><rule context="root"><assert test="false()" diagnostics="d">m</assert></rule></pattern>
+                   <diagnostics><diagnostic id="d"><value-of select="'diagnostic'"/></diagnostic></diagnostics>"#,
+                "'diagnostic'",
+            ),
+            (
+                r#"<pattern><rule context="root"><assert test="false()" properties="p">m</assert></rule></pattern>
+                   <properties><property id="p"><value-of select="'property'"/></property></properties>"#,
+                "'property'",
+            ),
+            (
+                r#"<pattern><rule context="root"><let name="x"><value-of select="'binding'"/></let><assert test="true()">m</assert></rule></pattern>"#,
+                "'binding'",
+            ),
+            (
+                r#"<pattern><rule context="root"><assert test="false()"><name path="child::item"/></assert></rule></pattern>"#,
+                "child::item",
+            ),
+            (
+                r#"<pattern><rule context="root"><assert test="false()"><emph><value-of select="'nested'"/></emph></assert></rule></pattern>"#,
+                "'nested'",
+            ),
+        ];
+
+        for (body, expression) in cases {
+            let error = validation_with_missing_expression(body, expression);
+            assert!(error.to_string().contains("not compiled"), "{error}");
+        }
+
+        let error = validation_with_missing_expression(
+            r#"<pattern><rule context="missing-context"><assert test="true()">m</assert></rule></pattern>"#,
+            "missing-context",
+        );
+        assert!(error.to_string().contains("not compiled"));
+
+        let mut schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" defaultPhase="p">
+                 <phase id="p"><let name="x" value="99"/><active pattern="one"/></phase>
+                 <pattern id="one"><rule context="root"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        schema.expressions.remove("99");
+        assert!(schema
+            .validate(&Document::from_str("<root/>").unwrap())
+            .is_err());
+
+        let mut schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern documents="'external.xml'"><rule context="external"><assert test="true()">m</assert></rule></pattern>
+                 <pattern><rule context="root"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        schema.expressions.remove("'external.xml'");
+        assert!(schema
+            .validate_with(
+                &Document::from_str("<root/>").unwrap(),
+                &ValidateOptions::new().with_parallel_patterns(true),
+            )
+            .is_err());
     }
 
     #[test]

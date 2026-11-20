@@ -285,6 +285,7 @@ mod tests {
     fn component_helpers_cover_invalid_schemes_and_relative_base_shapes() {
         let invalid = split("1not-a-scheme:path");
         assert!(invalid.scheme.is_none());
+        assert!(split("not_a_scheme:path").scheme.is_none());
 
         for (path, expected) in [
             ("../a", "a"),
