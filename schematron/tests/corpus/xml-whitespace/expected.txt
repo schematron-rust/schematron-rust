@@ -1,0 +1,3 @@
+# Only XML whitespace separates tokens. Nonbreaking spaces are data.
+report | /lot[1] | Montant préservé.
+report | /lot[1] | One matching ID.

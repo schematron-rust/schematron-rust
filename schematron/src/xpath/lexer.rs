@@ -463,7 +463,7 @@ impl<'a> Lexer<'a> {
                         self.position += 2;
                         self.push(TokenKind::DoubleDot, start);
                     } else if self.peek_at(1).is_some_and(|b| b.is_ascii_digit()) {
-                        self.lex_number(start)?;
+                        self.lex_number(start);
                     } else {
                         self.position += 1;
                         self.push(TokenKind::Dot, start);
@@ -471,7 +471,7 @@ impl<'a> Lexer<'a> {
                 }
                 b'\'' | b'"' => self.lex_literal(start)?,
                 b'$' => self.lex_variable(start)?,
-                c if c.is_ascii_digit() => self.lex_number(start)?,
+                c if c.is_ascii_digit() => self.lex_number(start),
                 // `Q{uri}local` — an XPath 3.0 EQName. `Q` directly
                 // followed by `{`, no whitespace, is unambiguous: `{`
                 // never otherwise follows a name character in this
@@ -507,7 +507,7 @@ impl<'a> Lexer<'a> {
         Err(Lexer::error(start, "unterminated string literal"))
     }
 
-    fn lex_number(&mut self, start: usize) -> Result<(), LexError> {
+    fn lex_number(&mut self, start: usize) {
         while self.peek().is_some_and(|c| c.is_ascii_digit()) {
             self.position += 1;
         }
@@ -528,9 +528,8 @@ impl<'a> Lexer<'a> {
         let text = &self.input[start..self.position];
         let value = text
             .parse::<f64>()
-            .map_err(|_| Lexer::error(start, format!("invalid number {text:?}")))?;
+            .expect("the numeric-token grammar only admits valid f64 syntax");
         self.push(TokenKind::Number(value, numeric_type), start);
-        Ok(())
     }
 
     fn lex_variable(&mut self, start: usize) -> Result<(), LexError> {
@@ -688,6 +687,83 @@ mod tests {
 
     fn kinds(input: &str) -> Vec<TokenKind> {
         tokenize(input).unwrap().into_iter().map(|t| t.kind).collect()
+    }
+
+    #[test]
+    fn every_token_has_a_readable_diagnostic_spelling() {
+        let cases = vec![
+            (TokenKind::Name("a".into()), "a"),
+            (TokenKind::AxisName("child".into()), "child"),
+            (TokenKind::NodeType("text".into()), "text"),
+            (TokenKind::FunctionName("count".into()), "count()"),
+            (TokenKind::Literal("x".into()), "'x'"),
+            (TokenKind::Number(2.0, NumericType::Integer), "2"),
+            (TokenKind::Variable("v".into()), "$v"),
+            (TokenKind::Slash, "/"),
+            (TokenKind::DoubleSlash, "//"),
+            (TokenKind::Dot, "."),
+            (TokenKind::DoubleDot, ".."),
+            (TokenKind::At, "@"),
+            (TokenKind::Comma, ","),
+            (TokenKind::ColonColon, "::"),
+            (TokenKind::LeftParen, "("),
+            (TokenKind::RightParen, ")"),
+            (TokenKind::LeftBracket, "["),
+            (TokenKind::RightBracket, "]"),
+            (TokenKind::Star, "*"),
+            (TokenKind::Multiply, "*"),
+            (TokenKind::Plus, "+"),
+            (TokenKind::Minus, "-"),
+            (TokenKind::Equal, "="),
+            (TokenKind::NotEqual, "!="),
+            (TokenKind::Less, "<"),
+            (TokenKind::LessEqual, "<="),
+            (TokenKind::Greater, ">"),
+            (TokenKind::GreaterEqual, ">="),
+            (TokenKind::Pipe, "|"),
+            (TokenKind::And, "and"),
+            (TokenKind::Or, "or"),
+            (TokenKind::Div, "div"),
+            (TokenKind::Mod, "mod"),
+            (TokenKind::ValueEqual, "eq"),
+            (TokenKind::ValueNotEqual, "ne"),
+            (TokenKind::ValueLess, "lt"),
+            (TokenKind::ValueLessEqual, "le"),
+            (TokenKind::ValueGreater, "gt"),
+            (TokenKind::ValueGreaterEqual, "ge"),
+            (TokenKind::NodeIs, "is"),
+            (TokenKind::NodeBefore, "<<"),
+            (TokenKind::NodeAfter, ">>"),
+            (TokenKind::QuestionMark, "?"),
+            (TokenKind::Hash, "#"),
+            (TokenKind::LeftBrace, "{"),
+            (TokenKind::RightBrace, "}"),
+            (TokenKind::DoublePipe, "||"),
+            (TokenKind::Arrow, "=>"),
+            (TokenKind::Bang, "!"),
+            (TokenKind::Assign, ":="),
+            (
+                TokenKind::EQName(Box::new(("urn:x".into(), "a".into()))),
+                "Q{urn:x}a",
+            ),
+        ];
+        for (token, expected) in cases {
+            assert_eq!(token.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn malformed_colons_variables_and_eqnames_are_located() {
+        for (source, expected) in [
+            (":", "must be part"),
+            ("$", "variable name"),
+            ("Q{urn:x}", "local name"),
+            ("Q{urn:x", "unterminated"),
+        ] {
+            let error = tokenize(source).unwrap_err();
+            assert_eq!(error.position, 0);
+            assert!(error.message.contains(expected), "{source}: {error:?}");
+        }
     }
 
     #[test]

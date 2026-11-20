@@ -233,7 +233,7 @@ states the limits and deliberate divergences in full.
 | `queryBinding="xpath31"` and later | Refused by default |
 | `extends rule` and `extends href`, with `#fragment` identifiers | Full |
 | `document(uri, base)` | Full — resolves against the second argument's first node |
-| Streaming validation (`--stream`) | Full, as a non-ISO extension, for schemas provably local to one record — see [spec/streaming/](spec/streaming/index.md) |
+| Streaming validation (`--stream`) | Non-ISO extension for record-local rules. See [streaming limits](spec/streaming/index.md#limits). |
 | XPath 2.0 kind tests as node tests — `element()`, `attribute(id)`, `document-node()` | Full, under an `xslt2` binding |
 
 Beyond the standard, the crate lints a schema for constructs that are legal
@@ -314,9 +314,9 @@ optionally evaluate in parallel.
 For a document too large to comfortably hold fully in memory —
 `--stream`/`Schema::validate_streaming` — validates one repeating record at
 a time instead, for schemas whose rules are local to a record's own
-subtree. Refused, naming why, rather than silently falling back to
-ordinary validation, when a schema or document doesn't qualify. See
-[spec/streaming/](spec/streaming/index.md).
+subtree. Use whole-document validation when a wrapper rule reads its
+children or a record needs data from another record. Streaming checks the schema first and checks wrapper
+expressions when their rule fires. See [spec/streaming/](spec/streaming/index.md).
 
 Indicative figures, and the benchmarks that produce them, are in
 [spec/testing/](spec/testing/index.md#benchmarks). Run them yourself with
@@ -408,9 +408,9 @@ does and does not mean.
 
 Licensed under any of:
 
-- MIT License
-- Apache License, Version 2.0
-- GNU General Public License version 2 only
-- GNU General Public License version 3 only
+- [MIT License](licenses/MIT.txt)
+- [Apache License, Version 2.0](licenses/Apache-2.0.txt)
+- [GNU General Public License version 2 only](licenses/GPL-2.0-only.txt)
+- [GNU General Public License version 3 only](licenses/GPL-3.0-only.txt)
 
 at your option.

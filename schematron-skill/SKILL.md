@@ -148,10 +148,10 @@ For a document too large to comfortably hold fully in memory, `--stream`
 (or `Schema::validate_streaming`) validates one repeating record at a
 time — the document element's direct children, e.g. `<order>` under
 `<orders>` — instead of materialising the whole tree. Only for a schema
-whose rules never need more than one record's own subtree: any `<key>`,
-`key()`, `id()`, `document()`, `following::`/`preceding::`/
-`following-sibling::`, or a schema-/phase-/pattern-scoped `<let>`, refuses
-it by name rather than guessing. See `schematron/spec/streaming/index.md`.
+whose rules can evaluate one record in isolation. Use ordinary validation
+when a wrapper rule reads its children or a rule needs another record.
+The eligibility check detects some cross-record dependencies, including
+sibling axes. See `schematron/spec/streaming/index.md`.
 
 ## When a schema seems to do nothing
 

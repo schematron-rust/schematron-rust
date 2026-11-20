@@ -156,7 +156,10 @@ impl<R: Read> StreamingReader<R> {
             }
         }
 
-        let record_parent = *open.last().expect("the root is never popped");
+        let record_parent = builder
+            .doc
+            .document_element()
+            .expect("saw the document element");
         let skeleton_len = builder.doc.nodes.len();
 
         Ok(Self {
@@ -183,8 +186,15 @@ impl<R: Read> StreamingReader<R> {
     /// Resets the arena back to the skeleton first, so a `NodeId` from the
     /// previous record is never valid to use again after this returns.
     pub(crate) fn next_record(&mut self) -> Result<Option<NodeId>> {
+        // A self-closing wrapper was already closed by open(). Its epilog
+        // belongs to finish(), just as it does for an explicit end tag.
+        if self.open.len() == 1 {
+            return Ok(None);
+        }
         self.builder.doc.nodes.truncate(self.skeleton_len);
-        self.builder.doc.nodes[self.record_parent.0].children.clear();
+        self.builder.doc.nodes[self.record_parent.0]
+            .children
+            .clear();
         // The skeleton's own nodes never change, but a fresh `Vec` element
         // slot after `truncate` still needs its stale index forgotten from
         // any side table — there is none besides `children`, cleared above.
@@ -243,7 +253,8 @@ impl<R: Read> StreamingReader<R> {
             }
         }
 
-        let record = record.expect("open.len() == 2 with a record is only reached after one opened");
+        let record =
+            record.expect("open.len() == 2 with a record is only reached after one opened");
         self.builder.doc.finalize_subtree(record);
 
         let key = self.sibling_key(record);
@@ -261,6 +272,11 @@ impl<R: Read> StreamingReader<R> {
     ///
     /// Call once [`StreamingReader::next_record`] has returned `None`.
     pub(crate) fn finish(&mut self) -> Result<()> {
+        if self.open.len() != 1 {
+            return Err(self
+                .builder
+                .error(0, "record input must be consumed before the epilog"));
+        }
         loop {
             self.buf.clear();
             let event = self
@@ -277,9 +293,6 @@ impl<R: Read> StreamingReader<R> {
                 break;
             }
         }
-        if self.open.len() != 1 {
-            return Err(self.builder.error(0, "unclosed element at end of input"));
-        }
         Ok(())
     }
 
@@ -289,5 +302,80 @@ impl<R: Read> StreamingReader<R> {
             .name(id)
             .map_or((None, String::new()), |n| (n.uri.clone(), n.local.clone()));
         (document.kind(id), uri, local)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LineTrackingReader, StreamingReader};
+    use std::io::{BufRead, Read};
+
+    struct FailingRead;
+
+    impl Read for FailingRead {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("expected read failure"))
+        }
+    }
+
+    #[test]
+    fn line_tracking_covers_read_and_buffered_consumption() {
+        let (mut reader, position) = LineTrackingReader::new(&b"a\nbc"[..]);
+        let mut first = [0; 2];
+        assert_eq!(reader.read(&mut first).unwrap(), 2);
+        assert_eq!(position.get(), (2, 1));
+        let buffered = reader.fill_buf().unwrap().to_vec();
+        reader.consume(buffered.len());
+        assert_eq!(position.get(), (2, 3));
+
+        let (mut failing, failing_position) = LineTrackingReader::new(FailingRead);
+        assert!(failing.read(&mut [0]).is_err());
+        failing.consume(1);
+        assert_eq!(failing_position.get(), (1, 1));
+    }
+
+    #[test]
+    fn streaming_structure_and_tail_errors_are_contextual() {
+        assert!(StreamingReader::open(&b"<"[..]).is_err());
+        assert!(StreamingReader::open(&b"<!-- no root -->"[..]).is_err());
+
+        let mut empty = StreamingReader::open(&b"<root/>"[..]).unwrap();
+        assert!(empty.next_record().unwrap().is_none());
+        empty.finish().unwrap();
+
+        let mut unclosed = StreamingReader::open(&b"<root><record>"[..]).unwrap();
+        assert!(unclosed.next_record().is_err());
+
+        let mut malformed_record = StreamingReader::open(&b"<root><record x=></root>"[..]).unwrap();
+        assert!(malformed_record.next_record().is_err());
+
+        let mut unread = StreamingReader::open(&b"<root><record/></root>"[..]).unwrap();
+        assert!(unread.finish().is_err());
+
+        let mut malformed_tail = StreamingReader::open(&b"<root></root><"[..]).unwrap();
+        assert!(malformed_tail.next_record().unwrap().is_none());
+        assert!(malformed_tail.finish().is_err());
+    }
+
+    #[test]
+    fn the_live_record_arena_has_the_same_peak_after_an_early_failure() {
+        fn peak(records: usize) -> (usize, usize) {
+            let xml = format!(
+                "<orders><order/>{}</orders>",
+                "<order id='ok'/>".repeat(records)
+            );
+            let mut reader = StreamingReader::open(xml.as_bytes()).unwrap();
+            assert!(reader.next_record().unwrap().is_some());
+            // The cap is reached on the first record. The validator still
+            // consumes this stream to check the well-formedness of its tail.
+            let mut peak = (0, 0);
+            while reader.next_record().unwrap().is_some() {
+                let nodes = &reader.document().nodes;
+                peak = (peak.0.max(nodes.len()), peak.1.max(nodes.capacity()));
+            }
+            reader.finish().unwrap();
+            peak
+        }
+        assert_eq!(peak(10), peak(10_000));
     }
 }

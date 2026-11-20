@@ -294,6 +294,12 @@ mod tests {
     }
 
     #[test]
+    fn finding_kind_reports_failure_directly() {
+        assert!(finding(ResultKind::FailedAssert, None).is_failure());
+        assert!(!finding(ResultKind::SuccessfulReport, None).is_failure());
+    }
+
+    #[test]
     fn findings_can_be_filtered_by_flag() {
         let report = report_with(vec![
             finding(ResultKind::FailedAssert, Some("error")),

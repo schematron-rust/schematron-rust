@@ -150,15 +150,6 @@ fn skeleton() -> PathBuf {
     path
 }
 
-fn binary() -> PathBuf {
-    let mut path = std::env::current_exe().expect("test executable path");
-    path.pop();
-    if path.ends_with("deps") {
-        path.pop();
-    }
-    path.join(format!("schematron{}", std::env::consts::EXE_SUFFIX))
-}
-
 /// Runs one stage of the reference pipeline.
 fn xsltproc(stylesheet: &Path, input: &Path, params: &[(&str, &str)]) -> Result<String, String> {
     let mut command = Command::new("xsltproc");
@@ -369,7 +360,7 @@ fn findings(svrl: &str) -> Result<Vec<Finding>, String> {
 
 /// Runs this crate over a case and returns its findings.
 fn our_svrl(schema: &Path, document: &Path, phase: Option<&str>) -> Result<String, String> {
-    let mut command = Command::new(binary());
+    let mut command = Command::new(env!("CARGO_BIN_EXE_schematron"));
     command
         .arg("--schema")
         .arg(schema)

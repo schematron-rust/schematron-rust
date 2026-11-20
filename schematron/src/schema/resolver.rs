@@ -83,7 +83,11 @@ impl Resolver for FileResolver {
         }
         let href = href.strip_prefix("file://").unwrap_or(href);
         let path = join(href, base);
-        std::fs::read_to_string(&path).map_err(|source| Error::Resolve {
+        let bytes = std::fs::read(&path).map_err(|source| Error::Resolve {
+            href: path.display().to_string(),
+            message: source.to_string(),
+        })?;
+        crate::xml::decode_bytes(&bytes).map_err(|source| Error::Resolve {
             href: path.display().to_string(),
             message: source.to_string(),
         })
@@ -155,6 +159,28 @@ mod tests {
             .resolve("https://example.com/a.sch", None)
             .unwrap_err();
         assert!(error.to_string().contains("network"), "{error}");
+    }
+
+    #[test]
+    fn file_resolver_reports_a_missing_local_file() {
+        let error = FileResolver::new()
+            .resolve("this-path-must-not-exist/schematron.sch", None)
+            .unwrap_err();
+        assert!(error.to_string().contains("this-path-must-not-exist"));
+    }
+
+    #[test]
+    fn file_resolver_reports_invalid_document_encoding() {
+        let path = std::env::temp_dir().join(format!(
+            "schematron-invalid-encoding-{}.sch",
+            std::process::id()
+        ));
+        std::fs::write(&path, [0xFF]).unwrap();
+        let error = FileResolver::new()
+            .resolve(path.to_str().unwrap(), None)
+            .unwrap_err();
+        std::fs::remove_file(&path).unwrap();
+        assert!(error.to_string().contains("UTF-8"), "{error}");
     }
 
     #[test]

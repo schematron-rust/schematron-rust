@@ -54,18 +54,19 @@ pub enum Value {
 /// to it is computed. Arithmetic (`+ - * div mod`), every function in the
 /// XPath function library, and `for`'s `to` ranges always produce
 /// [`NumericType::Double`] — exactly the single-double behaviour the crate
-/// had before this type existed. Only two things carry a more specific tag:
+/// had before this type existed. Only three things carry a more specific tag:
 /// a numeric literal as written (`1` is [`NumericType::Integer`], `1.5` is
 /// [`NumericType::Decimal`] — XPath 2.0 assigns these types lexically, not
 /// by value, so `1.0` is a decimal even though it equals the integer `1`),
-/// and the result of an explicit `cast as`/`castable as`.
+/// an explicit `cast as`/`castable as`, and the equivalent atomic constructor
+/// such as `xs:decimal()`.
 ///
 /// `xs:integer` derives from `xs:decimal` by restriction in XML Schema, so
 /// `instance of xs:decimal` also matches [`NumericType::Integer`].
 /// `xs:float` and `xs:double` are separate primitive types with no
 /// derivation between them or `xs:decimal`, so they match nothing but
 /// themselves. See `spec/xpath2/` for the full account, including the
-/// deliberate limit that only literals and casts are tracked.
+/// deliberate limit that only literals, casts, and constructors are tracked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum NumericType {
@@ -496,7 +497,15 @@ pub fn format_number(value: f64) -> String {
     // `{}` gives the shortest representation that round-trips, which is what
     // XPath wants, but it switches to exponential notation for extreme
     // magnitudes, which XPath forbids.
-    let shortest = format!("{value}");
+    // Request exponential notation at the magnitudes where a formatter may
+    // choose it implicitly. Expanding that known shape is stable across Rust
+    // releases; relying on Display to make the choice made this path dormant
+    // when its formatting policy changed.
+    let shortest = if value.abs() >= 1e21 || value.abs() < 1e-6 {
+        format!("{value:e}")
+    } else {
+        format!("{value}")
+    };
     if !shortest.contains('e') && !shortest.contains('E') {
         return shortest;
     }
@@ -543,15 +552,13 @@ fn expand_exponential(input: &str) -> String {
             }
         }
     }
-    if out.is_empty() || out == "-" {
-        out.push('0');
-    }
     out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::xpath::temporal::{DurationKind, TemporalKind};
 
     #[test]
     fn format_integers_without_a_point() {
@@ -607,5 +614,172 @@ mod tests {
         assert!(!Value::Number(f64::NAN, NumericType::Double).to_boolean());
         assert!(!Value::NodeSet(vec![]).to_boolean());
         assert!(Value::String("0".into()).to_boolean());
+    }
+
+    #[test]
+    fn scalar_boolean_strings_cover_both_values() {
+        assert_eq!(Value::Boolean(true).to_xpath_string_scalar(), "true");
+        assert_eq!(Value::Boolean(false).to_xpath_string_scalar(), "false");
+    }
+
+    #[test]
+    fn every_item_conversion_preserves_xpath_semantics() {
+        let document = Document::from_str("<a n=' 12 '>34</a>").unwrap();
+        let element = document.document_element().unwrap();
+        let attribute = document.attributes(element)[0];
+        let date = Temporal::parse("2024-02-29", TemporalKind::Date).unwrap();
+        let duration = Duration::parse("PT1M30S", DurationKind::DayTime).unwrap();
+        let function = FunctionItem::Named {
+            name: "string-length".to_string(),
+            arity: 1,
+        };
+
+        for (item, text, number, name) in [
+            (Item::Node(attribute), " 12 ", 12.0, "node"),
+            (Item::String(" 7 ".into()), " 7 ", 7.0, "string"),
+            (
+                Item::Number(2.5, NumericType::Decimal),
+                "2.5",
+                2.5,
+                "number",
+            ),
+            (Item::Boolean(true), "true", 1.0, "boolean"),
+        ] {
+            assert_eq!(item.to_xpath_string(&document), text);
+            assert_eq!(item.to_number(&document), number);
+            assert_eq!(item.type_name(), name);
+            assert!(item.as_temporal().is_none());
+            assert!(item.as_duration().is_none());
+        }
+
+        let temporal = Item::Temporal(date);
+        assert_eq!(temporal.to_xpath_string(&document), "2024-02-29");
+        assert!(temporal.to_number(&document).is_nan());
+        assert_eq!(temporal.type_name(), "xs:date");
+        assert_eq!(temporal.as_temporal(), Some(&date));
+
+        let duration_item = Item::Duration(duration);
+        assert_eq!(duration_item.to_xpath_string(&document), "PT1M30S");
+        assert!(duration_item.to_number(&document).is_nan());
+        assert_eq!(duration_item.type_name(), "xs:dayTimeDuration");
+        assert_eq!(duration_item.as_duration(), Some(&duration));
+
+        let function_item = Item::Function(function.clone());
+        assert_eq!(function.arity(), 1);
+        assert_eq!(function_item.to_xpath_string(&document), "");
+        assert!(function_item.to_number(&document).is_nan());
+        assert_eq!(function_item.type_name(), "function item");
+        assert_eq!(Item::Boolean(false).to_xpath_string(&document), "false");
+    }
+
+    #[test]
+    fn values_convert_and_flatten_without_losing_types_or_order() {
+        let document = Document::from_str("<a>19</a>").unwrap();
+        let element = document.document_element().unwrap();
+        let function = FunctionItem::Named {
+            name: "true".to_string(),
+            arity: 0,
+        };
+        let values = vec![
+            Value::NodeSet(vec![element]),
+            Value::Boolean(false),
+            Value::Number(3.5, NumericType::Float),
+            Value::String("x".into()),
+            Value::Sequence(vec![Item::Function(function.clone())]),
+        ];
+        let items = flatten_into_sequence(values);
+        assert_eq!(items.len(), 5);
+        assert!(matches!(items[0], Item::Node(node) if node == element));
+        assert!(matches!(items[1], Item::Boolean(false)));
+        assert!(matches!(items[2], Item::Number(3.5, NumericType::Float)));
+        assert!(matches!(&items[3], Item::String(text) if text == "x"));
+        assert!(matches!(&items[4], Item::Function(item) if item == &function));
+
+        for (value, name, text, number) in [
+            (Value::NodeSet(vec![element]), "node-set", "19", 19.0),
+            (Value::Boolean(true), "boolean", "true", 1.0),
+            (
+                Value::Number(19.0, NumericType::Integer),
+                "number",
+                "19",
+                19.0,
+            ),
+            (Value::String("19".into()), "string", "19", 19.0),
+            (
+                Value::Sequence(vec![Item::String("19".into())]),
+                "sequence",
+                "19",
+                19.0,
+            ),
+        ] {
+            assert_eq!(value.type_name(), name);
+            assert_eq!(value.to_xpath_string(&document), text);
+            assert_eq!(value.to_number(&document), number);
+        }
+
+        assert_eq!(Value::Boolean(false).to_xpath_string_scalar(), "false");
+        assert_eq!(Value::Boolean(false).to_xpath_string(&document), "false");
+        assert_eq!(Value::Number(2.0, NumericType::Double).to_xpath_string_scalar(), "2");
+        assert_eq!(Value::String("s".into()).to_xpath_string_scalar(), "s");
+        assert_eq!(Value::NodeSet(vec![element]).to_xpath_string_scalar(), "");
+        assert_eq!(Value::Sequence(vec![]).to_xpath_string_scalar(), "");
+        assert_eq!(Value::Boolean(true).to_number(&document), 1.0);
+        assert_eq!(Value::Boolean(false).to_number(&document), 0.0);
+    }
+
+    #[test]
+    fn sequence_helpers_cover_empty_singleton_node_and_atomic_cases() {
+        let document = Document::from_str("<a/>").unwrap();
+        let element = document.document_element().unwrap();
+        assert!(!Value::Sequence(vec![]).to_boolean());
+        assert!(!Value::Sequence(vec![Item::String(String::new())]).to_boolean());
+        assert!(Value::Sequence(vec![Item::String("x".into())]).to_boolean());
+        assert!(!Value::Sequence(vec![Item::Number(f64::NAN, NumericType::Double)]).to_boolean());
+        assert!(Value::Sequence(vec![Item::Node(element)]).to_boolean());
+        assert!(Value::Sequence(vec![Item::Boolean(true)]).effective_boolean_value().unwrap());
+        assert!(Value::Sequence(vec![Item::Number(1.0, NumericType::Double), Item::Boolean(true)])
+            .effective_boolean_value()
+            .unwrap_err()
+            .contains("2 atomic items"));
+
+        let sequence = Value::Sequence(vec![Item::String("x".into())]);
+        assert_eq!(sequence.as_sequence().unwrap().len(), 1);
+        assert!(sequence.as_node_set().is_none());
+        assert!(!sequence.contains_function_item());
+        assert_eq!(sequence.clone().into_items(), sequence.as_sequence().unwrap());
+
+        let nodes = Value::NodeSet(vec![element]);
+        assert_eq!(nodes.as_node_set(), Some(&[element][..]));
+        assert!(nodes.as_sequence().is_none());
+        assert_eq!(nodes.into_items(), vec![Item::Node(element)]);
+
+        let function = Value::Sequence(vec![Item::Function(FunctionItem::Named {
+            name: "true".into(),
+            arity: 0,
+        })]);
+        assert!(function.contains_function_item());
+        assert!(!Value::String("true".into()).contains_function_item());
+        assert!(Value::NodeSet(vec![element]).to_boolean_scalar());
+        assert_eq!(Value::NodeSet(vec![]).to_xpath_string(&document), "");
+    }
+
+    #[test]
+    fn formatting_expands_large_small_and_negative_exponents() {
+        assert_eq!(format_number(-1e21), "-1000000000000000000000");
+        assert_eq!(format_number(1.25e-7), "0.000000125");
+        assert_eq!(format_number(-1.25e-7), "-0.000000125");
+        assert_eq!(format_number(1.234e22), "12340000000000000000000");
+    }
+
+    #[test]
+    fn exponential_expansion_covers_each_decimal_point_position() {
+        // Rust's current Display implementation already chooses plain decimal
+        // notation for finite f64 values. Exercise the normalizer directly so
+        // a future formatter change cannot expose an untested conversion path.
+        assert_eq!(expand_exponential("1e3"), "1000");
+        assert_eq!(expand_exponential("12.5e-1"), "1.25");
+        assert_eq!(expand_exponential("-1.25e-7"), "-0.000000125");
+        assert_eq!(expand_exponential("1.20e1"), "12");
+        assert_eq!(expand_exponential("1E2"), "100");
     }
 }

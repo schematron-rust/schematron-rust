@@ -208,7 +208,7 @@ pub(crate) fn resolve(reference: &str, base: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve;
+    use super::{merge, recompose, remove_dot_segments, resolve, split};
 
     /// RFC 3986 §5.4.1, "Normal Examples", against the base URI its own
     /// worked examples use.
@@ -279,5 +279,34 @@ mod tests {
     #[test]
     fn a_reference_with_its_own_scheme_ignores_the_base_entirely() {
         assert_eq!(resolve("mailto:x@example.com", "http://a/b/"), "mailto:x@example.com");
+    }
+
+    #[test]
+    fn component_helpers_cover_invalid_schemes_and_relative_base_shapes() {
+        let invalid = split("1not-a-scheme:path");
+        assert!(invalid.scheme.is_none());
+        assert!(split("not_a_scheme:path").scheme.is_none());
+
+        for (path, expected) in [
+            ("../a", "a"),
+            ("./a", "a"),
+            ("/./a", "/a"),
+            ("/.", "/"),
+            ("/a/../b", "/b"),
+            ("/a/..", "/"),
+            (".", ""),
+            ("..", ""),
+        ] {
+            assert_eq!(remove_dot_segments(path), expected, "{path}");
+        }
+
+        let authority_only = split("https://example.com");
+        assert_eq!(merge(&authority_only, "child"), "/child");
+        let relative = split("base");
+        assert_eq!(merge(&relative, "child"), "child");
+        assert_eq!(
+            recompose(Some("urn"), None, "example", None, Some("part")),
+            "urn:example#part"
+        );
     }
 }

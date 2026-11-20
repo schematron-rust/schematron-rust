@@ -518,6 +518,36 @@ mod tests {
     }
 
     #[test]
+    fn every_binding_reports_its_declared_spelling() {
+        for (binding, spelling) in [
+            (QueryBinding::Default, None),
+            (QueryBinding::Xslt, Some("xslt")),
+            (QueryBinding::Xpath, Some("xpath")),
+            (QueryBinding::Xslt2, Some("xslt2")),
+            (QueryBinding::Xpath2, Some("xpath2")),
+            (QueryBinding::Xslt3, Some("xslt3")),
+            (QueryBinding::Xpath3, Some("xpath3")),
+            (QueryBinding::Other("custom".into()), Some("custom")),
+        ] {
+            assert_eq!(binding.as_str(), spelling);
+        }
+    }
+
+    #[test]
+    fn schema_model_key_lookup_reports_hits_and_misses() {
+        let model = SchemaModel {
+            keys: vec![Key {
+                name: "by-id".into(),
+                match_pattern: "item".into(),
+                use_expression: "@id".into(),
+            }],
+            ..SchemaModel::default()
+        };
+        assert_eq!(model.key("by-id").map(|key| key.name.as_str()), Some("by-id"));
+        assert!(model.key("missing").is_none());
+    }
+
+    #[test]
     fn query_binding_is_case_insensitive() {
         assert_eq!(QueryBinding::parse("XSLT"), QueryBinding::Xslt);
     }

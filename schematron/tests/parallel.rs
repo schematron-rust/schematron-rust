@@ -93,6 +93,7 @@ fn the_rendered_output_is_identical_too() {
 
     assert_eq!(one.to_svrl(), two.to_svrl());
     assert_eq!(one.to_text(), two.to_text());
+    #[cfg(feature = "serde")]
     assert_eq!(one.to_json().unwrap(), two.to_json().unwrap());
 }
 

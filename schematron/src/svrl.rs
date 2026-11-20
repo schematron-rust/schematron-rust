@@ -31,8 +31,7 @@
 //! ```
 
 use crate::validate::{
-    ActivePattern, AssertionResult, DiagnosticResult, FiredRule, PropertyResult, Report,
-    ResultKind,
+    ActivePattern, AssertionResult, DiagnosticResult, FiredRule, PropertyResult, Report, ResultKind,
 };
 use crate::xml::{escape_attribute, escape_text};
 
@@ -151,18 +150,20 @@ impl Report {
     /// assert_eq!(parsed.failures().next().unwrap().text, "Needs a b.");
     /// # Ok::<(), schematron::Error>(())
     /// ```
+    #[allow(clippy::missing_panics_doc)] // The parser rejects every rootless document first.
     pub fn from_svrl(source: &str) -> crate::Result<Report> {
         let document = crate::xml::Document::from_str(source)?;
-        let root = document.document_element().ok_or_else(|| {
-            crate::Error::schema("schematron-output", None, "the document has no root element")
-        })?;
+        let root = document
+            .document_element()
+            .expect("the XML parser accepts only documents with a root element");
 
         let is_svrl = |node| {
-            document.name(node).is_some_and(|name| {
-                name.uri.as_deref() == Some(SVRL_NAMESPACE)
-            })
+            document
+                .name(node)
+                .is_some_and(|name| name.uri.as_deref() == Some(SVRL_NAMESPACE))
         };
-        if !is_svrl(root) || document.name(root).map(|n| n.local.as_str()) != Some("schematron-output")
+        if !is_svrl(root)
+            || document.name(root).map(|n| n.local.as_str()) != Some("schematron-output")
         {
             return Err(crate::Error::schema(
                 document
@@ -196,7 +197,12 @@ impl Report {
             patterns: Vec::new(),
         };
 
-        for child in document.children(root).iter().copied().filter(|&n| is_svrl(n)) {
+        for child in document
+            .children(root)
+            .iter()
+            .copied()
+            .filter(|&n| is_svrl(n))
+        {
             let local = document
                 .name(child)
                 .map_or_else(String::new, |name| name.local.clone());
@@ -313,7 +319,12 @@ fn read_finding(
 
     let mut diagnostics = Vec::new();
     let mut properties = Vec::new();
-    for reference in document.children(node).iter().copied().filter(|&n| is_svrl(n)) {
+    for reference in document
+        .children(node)
+        .iter()
+        .copied()
+        .filter(|&n| is_svrl(n))
+    {
         let name = document
             .name(reference)
             .map_or_else(String::new, |n| n.local.clone());
@@ -361,10 +372,7 @@ fn last_pattern(report: &mut Report) -> &mut ActivePattern {
             rules: Vec::new(),
         });
     }
-    report
-        .patterns
-        .last_mut()
-        .expect("just ensured non-empty")
+    report.patterns.last_mut().expect("just ensured non-empty")
 }
 
 /// The rule a finding belongs to: the most recent one.
@@ -404,7 +412,8 @@ impl Writer<'_> {
     /// Writes ` name="value"`, or nothing when the value is absent.
     fn optional_attribute(&mut self, name: &str, value: Option<&str>) {
         if let Some(value) = value {
-            self.out.push_str(&format!(" {name}=\"{}\"", escape_attribute(value)));
+            self.out
+                .push_str(&format!(" {name}=\"{}\"", escape_attribute(value)));
         }
     }
 
@@ -415,9 +424,11 @@ impl Writer<'_> {
     }
 
     fn run(mut self, report: &Report) -> String {
-        self.out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         self.out
-            .push_str(&format!("<svrl:schematron-output xmlns:svrl=\"{SVRL_NAMESPACE}\""));
+            .push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        self.out.push_str(&format!(
+            "<svrl:schematron-output xmlns:svrl=\"{SVRL_NAMESPACE}\""
+        ));
         self.optional_attribute("title", report.title.as_deref());
         self.optional_attribute("phase", report.phase.as_deref());
         self.optional_attribute("schemaVersion", report.schema_version.as_deref());
@@ -570,7 +581,9 @@ Quantity is a positive count of units.</svrl:diagnostic-reference>
         let output = svrl(SCHEMA, "<order><line free='1'/></order>");
         assert!(output.starts_with("<?xml"));
         // The strongest check available: feed it back to our own parser.
-        let reparsed = Document::from_str(output.trim_start_matches("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"));
+        let reparsed = Document::from_str(
+            output.trim_start_matches("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"),
+        );
         assert!(reparsed.is_ok(), "{output}");
     }
 
@@ -579,23 +592,38 @@ Quantity is a positive count of units.</svrl:diagnostic-reference>
         let output = svrl(SCHEMA, "<order><line qty='1'/></order>");
         assert!(output.contains("title=\"Orders\""), "{output}");
         assert!(output.contains("schemaVersion=\"1\""), "{output}");
-        assert!(output.contains("ns-prefix-in-attribute-values prefix=\"p\""), "{output}");
+        assert!(
+            output.contains("ns-prefix-in-attribute-values prefix=\"p\""),
+            "{output}"
+        );
     }
 
     #[test]
     fn emits_active_pattern_and_fired_rule() {
         let output = svrl(SCHEMA, "<order><line qty='1'/></order>");
-        assert!(output.contains("<svrl:active-pattern id=\"lines\" name=\"Line rules\"/>"), "{output}");
-        assert!(output.contains("<svrl:fired-rule id=\"line-rule\" context=\"line\" flag=\"error\"/>"), "{output}");
+        assert!(
+            output.contains("<svrl:active-pattern id=\"lines\" name=\"Line rules\"/>"),
+            "{output}"
+        );
+        assert!(
+            output.contains("<svrl:fired-rule id=\"line-rule\" context=\"line\" flag=\"error\"/>"),
+            "{output}"
+        );
     }
 
     #[test]
     fn emits_failed_assert_with_location_and_test() {
         let output = svrl(SCHEMA, "<order><line/></order>");
         assert!(output.contains("<svrl:failed-assert"), "{output}");
-        assert!(output.contains("location=\"/order[1]/line[1]\""), "{output}");
+        assert!(
+            output.contains("location=\"/order[1]/line[1]\""),
+            "{output}"
+        );
         assert!(output.contains("test=\"@qty\""), "{output}");
-        assert!(output.contains("<svrl:text>Needs a qty.</svrl:text>"), "{output}");
+        assert!(
+            output.contains("<svrl:text>Needs a qty.</svrl:text>"),
+            "{output}"
+        );
     }
 
     #[test]
@@ -623,6 +651,32 @@ Quantity is a positive count of units.</svrl:diagnostic-reference>
         let output = report.to_svrl_with(&SvrlOptions::findings_only());
         assert!(!output.contains("fired-rule"), "{output}");
         assert!(output.contains("failed-assert"), "{output}");
+    }
+
+    #[test]
+    fn option_builders_control_compact_event_output() {
+        let schema = Schema::from_str(SCHEMA).unwrap();
+        let document = Document::from_str("<order><line free='1'/></order>").unwrap();
+        let report = schema.validate(&document).unwrap();
+        let options = SvrlOptions::new()
+            .with_fired_rules(false)
+            .with_successful_reports(false)
+            .with_indent(false);
+        let output = report.to_svrl_with(&options);
+        assert!(!output.contains("fired-rule"), "{output}");
+        assert!(!output.contains("successful-report"), "{output}");
+        assert!(!output.contains("\n  "), "{output}");
+    }
+
+    #[test]
+    fn reader_ignores_unknown_svrl_events() {
+        let report = Report::from_svrl(
+            r#"<svrl:schematron-output xmlns:svrl="http://purl.oclc.org/dsdl/svrl">
+                 <svrl:extension value="ignored"/>
+               </svrl:schematron-output>"#,
+        )
+        .unwrap();
+        assert!(report.patterns.is_empty());
     }
 
     #[test]
@@ -696,7 +750,10 @@ Quantity is a positive count of units.</svrl:diagnostic-reference>
     #[test]
     fn a_document_that_is_not_svrl_is_refused() {
         let error = Report::from_svrl("<not-svrl/>").unwrap_err();
-        assert!(error.to_string().contains("svrl:schematron-output"), "{error}");
+        assert!(
+            error.to_string().contains("svrl:schematron-output"),
+            "{error}"
+        );
 
         // And one that is not XML at all.
         assert!(Report::from_svrl("{\"json\": true}").is_err());

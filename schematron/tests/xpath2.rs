@@ -710,6 +710,42 @@ fn the_constructors_reject_impossible_values_when_the_schema_loads() {
 }
 
 #[test]
+fn atomic_constructor_functions_convert_and_retain_the_named_type() {
+    for expression in [
+        "xs:string(12) eq '12'",
+        "xs:boolean('1')",
+        "not(xs:boolean('false'))",
+        "xs:integer('12') instance of xs:integer",
+        "xs:decimal('10.5') instance of xs:decimal",
+        "xs:float('1.5') instance of xs:float",
+        "xs:double('1.5') instance of xs:double",
+        "sum((xs:decimal('10'), xs:decimal('20'))) = 30",
+        "empty(xs:decimal(()))",
+    ] {
+        assert!(check(expression, "<a/>"), "{expression}");
+    }
+}
+
+#[test]
+fn atomic_constructor_functions_reject_bad_lexical_forms_and_cardinality() {
+    for expression in [
+        "xs:integer('10.5')",
+        "xs:decimal('NaN')",
+        "xs:boolean('yes')",
+        "xs:decimal((1, 2))",
+    ] {
+        let message = eval_error(expression, "<a/>");
+        assert!(
+            message.contains("cannot be cast") || message.contains("zero or one item"),
+            "{expression}: {message}"
+        );
+    }
+
+    let message = compile_error("xslt", "xs:decimal('1') = 1");
+    assert_contains!(message, "XPath 2.0 function");
+}
+
+#[test]
 fn the_clock_is_stable_across_a_whole_run() {
     // Every call must agree, or one rule could contradict another halfway
     // down a document.

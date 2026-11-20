@@ -156,6 +156,7 @@ enum Format {
     /// Schematron Validation Report Language, the standard XML report format.
     Svrl,
     /// JSON, keeping the report's tree structure.
+    #[cfg(feature = "serde")]
     Json,
 }
 
@@ -171,6 +172,7 @@ fn main() -> ExitCode {
 }
 
 /// A fatal error, paired with the exit code it should produce.
+#[derive(Debug)]
 struct Exit {
     code: u8,
     message: String,
@@ -186,12 +188,11 @@ impl Exit {
 }
 
 fn run(cli: &Cli) -> Result<u8, Exit> {
-    let options = SchemaOptions::new()
-        .with_allow_unknown_query_binding(cli.allow_unknown_query_binding);
-    let source = std::fs::read_to_string(&cli.schema)
-        .map_err(|e| Exit::new(EXIT_SCHEMA, format!("cannot read schema {}: {e}", cli.schema)))?;
-    let options = options.with_base_uri(cli.schema.clone());
-    let schema = Schema::from_str_with(&source, &options)
+    let options =
+        SchemaOptions::new().with_allow_unknown_query_binding(cli.allow_unknown_query_binding);
+    let source =
+        Document::from_path(&cli.schema).map_err(|e| Exit::new(EXIT_SCHEMA, e.to_string()))?;
+    let schema = Schema::from_document(&source, &options)
         .map_err(|e| Exit::new(EXIT_SCHEMA, e.to_string()))?;
 
     if cli.list_phases {
@@ -232,15 +233,19 @@ fn run(cli: &Cli) -> Result<u8, Exit> {
         ));
     }
 
+    let record_fired_rules = !cli.quiet
+        && if cli.format == Format::Svrl {
+            !cli.svrl_findings_only
+        } else {
+            cli.verbose
+        };
     let mut validate_options = ValidateOptions::new()
         .with_phase(
             cli.phase
                 .as_deref()
                 .map_or(PhaseSelection::Default, PhaseSelection::from),
         )
-        // SVRL carries `fired-rule` events, so they are recorded for it even
-        // when the run is not verbose.
-        .with_record_fired_rules(cli.verbose || cli.format == Format::Svrl)
+        .with_record_fired_rules(record_fired_rules)
         .with_parallel_patterns(cli.parallel);
     if let Some(limit) = cli.max_failures {
         validate_options = validate_options.with_max_failures(limit);
@@ -282,14 +287,18 @@ fn run(cli: &Cli) -> Result<u8, Exit> {
 
 fn read_document(path: &str) -> Result<Document, Exit> {
     if path == "-" {
-        let mut bytes = Vec::new();
-        std::io::stdin()
-            .read_to_end(&mut bytes)
-            .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("cannot read standard input: {e}")))?;
-        return Document::from_bytes(&bytes)
-            .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("standard input: {e}")));
+        return read_document_stream(std::io::stdin());
     }
     Document::from_path(path).map_err(|e| Exit::new(EXIT_DOCUMENT, e.to_string()))
+}
+
+fn read_document_stream(mut reader: impl Read) -> Result<Document, Exit> {
+    let mut bytes = Vec::new();
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("cannot read standard input: {e}")))?;
+    Document::from_bytes(&bytes)
+        .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("standard input: {e}")))
 }
 
 /// The `--stream` counterpart to [`read_document`] plus
@@ -300,16 +309,22 @@ fn validate_streaming_path(
     path: &str,
     options: &ValidateOptions,
 ) -> Result<Report, Exit> {
+    let classify = |error: schematron::Error| {
+        let code = match error {
+            schematron::Error::XmlParse { .. } | schematron::Error::Io { .. } => EXIT_DOCUMENT,
+            _ => EXIT_SCHEMA,
+        };
+        let label = if path == "-" { "standard input" } else { path };
+        Exit::new(code, format!("{label}: {error}"))
+    };
     if path == "-" {
         return schema
             .validate_streaming(std::io::stdin(), options)
-            .map_err(|e| Exit::new(EXIT_SCHEMA, format!("standard input: {e}")));
+            .map_err(classify);
     }
     let file = std::fs::File::open(path)
         .map_err(|e| Exit::new(EXIT_DOCUMENT, format!("cannot read {path}: {e}")))?;
-    schema
-        .validate_streaming(file, options)
-        .map_err(|e| Exit::new(EXIT_SCHEMA, format!("{path}: {e}")))
+    schema.validate_streaming(file, options).map_err(classify)
 }
 
 /// Keeps only the findings whose flag is in `flags`.
@@ -345,9 +360,10 @@ fn render(report: &Report, cli: &Cli, path: &str) -> String {
             };
             report.to_svrl_with(&options)
         }
+        #[cfg(feature = "serde")]
         Format::Json => report
             .to_json()
-            .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}")),
+            .expect("serializing a report to JSON cannot fail"),
     }
 }
 
@@ -355,13 +371,17 @@ fn write_output(path: Option<&str>, text: &str) -> Result<(), Exit> {
     match path {
         None => {
             let mut stdout = std::io::stdout().lock();
-            stdout
-                .write_all(text.as_bytes())
-                .map_err(|e| Exit::new(EXIT_USAGE, format!("cannot write output: {e}")))
+            write_stdout(&mut stdout, text)
         }
         Some(path) => std::fs::write(path, text)
             .map_err(|e| Exit::new(EXIT_USAGE, format!("cannot write {path}: {e}"))),
     }
+}
+
+fn write_stdout(mut writer: impl Write, text: &str) -> Result<(), Exit> {
+    writer
+        .write_all(text.as_bytes())
+        .map_err(|e| Exit::new(EXIT_USAGE, format!("cannot write output: {e}")))
 }
 
 /// Renders lints for a person, one block each.
@@ -378,7 +398,11 @@ fn render_lints(lints: &[Lint]) -> String {
             // Wrap the help text, labelling the first line only so that the
             // continuation reads as one paragraph rather than a list.
             for (index, line) in wrap(help, 68).into_iter().enumerate() {
-                let label = if index == 0 { "    help: " } else { "          " };
+                let label = if index == 0 {
+                    "    help: "
+                } else {
+                    "          "
+                };
                 out.push_str(&format!("{label}{line}\n"));
             }
         }
@@ -438,7 +462,10 @@ fn explain(schema: &Schema) -> String {
     }
     out.push_str(&format!(
         "query binding: {}\n",
-        schema.query_binding().as_str().unwrap_or("(default, XPath 1.0)")
+        schema
+            .query_binding()
+            .as_str()
+            .unwrap_or("(default, XPath 1.0)")
     ));
     if matches!(schema.query_binding(), QueryBinding::Other(_)) {
         out.push_str("  warning: this binding is not implemented; expressions run as XPath 1.0\n");
@@ -487,6 +514,24 @@ fn explain(schema: &Schema) -> String {
 mod tests {
     use super::*;
 
+    struct FailingIo;
+
+    impl Read for FailingIo {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("expected read failure"))
+        }
+    }
+
+    impl Write for FailingIo {
+        fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("expected write failure"))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     fn schema() -> Schema {
         Schema::from_str(
             r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" defaultPhase="quick">
@@ -515,6 +560,38 @@ mod tests {
     }
 
     #[test]
+    fn explain_names_defaults_namespaces_titles_and_forced_bindings() {
+        let default = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <title>Untyped checks</title>
+                 <pattern><rule context="a"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let text = explain(&default);
+        assert!(text.starts_with("Untyped checks\n\n"), "{text}");
+        assert!(text.contains("(default, XPath 1.0)"), "{text}");
+        assert!(text.contains("namespaces: none declared"), "{text}");
+
+        let document = Document::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="vendor-xpath">
+                 <ns prefix="p" uri="urn:products"/>
+                 <pattern><rule context="p:a"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let options = SchemaOptions::new().with_allow_unknown_query_binding(true);
+        let forced = Schema::from_document(&document, &options).unwrap();
+        let text = explain(&forced);
+        assert!(text.contains("query binding: vendor-xpath"), "{text}");
+        assert!(
+            text.contains("warning: this binding is not implemented"),
+            "{text}"
+        );
+        assert!(text.contains("namespaces: p=urn:products"), "{text}");
+    }
+
+    #[test]
     fn flag_filtering_removes_other_findings() {
         let schema = Schema::from_str(
             r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
@@ -530,5 +607,139 @@ mod tests {
         assert_eq!(report.count_failures(), 2);
         retain_flags(&mut report, &["error".to_string()]);
         assert_eq!(report.count_failures(), 1);
+    }
+
+    #[test]
+    fn renderers_wrapping_and_file_output_cover_cli_helpers() {
+        let schema = schema();
+        let document = Document::from_str("<a/>").unwrap();
+        let report = schema.validate(&document).unwrap();
+        let mut cli =
+            Cli::try_parse_from(["schematron", "--schema", "rules.sch", "data.xml"]).unwrap();
+
+        cli.format = Format::Svrl;
+        assert!(render(&report, &cli, "data.xml").contains("schematron-output"));
+        #[cfg(feature = "serde")]
+        {
+            cli.format = Format::Json;
+            assert!(render(&report, &cli, "data.xml").contains("patterns"));
+        }
+
+        assert!(wrap("", 10).is_empty());
+        assert_eq!(wrap("one two three", 7), ["one two", "three"]);
+
+        let path =
+            std::env::temp_dir().join(format!("schematron-cli-output-{}.txt", std::process::id()));
+        assert!(write_output(path.to_str(), "result").is_ok());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "result");
+        std::fs::remove_file(path).unwrap();
+        assert!(write_output(Some("missing-parent/output.txt"), "result").is_err());
+        assert!(read_document_stream(FailingIo).is_err());
+        assert!(read_document_stream(&b"not xml"[..]).is_err());
+        assert!(write_stdout(FailingIo, "result").is_err());
+        FailingIo.flush().unwrap();
+
+        let without_help = Lint {
+            kind: schematron::LintKind::ConstantTest,
+            location: "pattern[1]".into(),
+            message: "fixed".into(),
+            help: None,
+        };
+        assert!(render_lints(&[without_help]).contains("fixed"));
+    }
+
+    #[test]
+    fn run_covers_schema_only_batch_and_streaming_cli_modes() {
+        let directory = std::env::temp_dir().join(format!(
+            "schematron-cli-modes-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let schema_path = directory.join("rules.sch");
+        let document_path = directory.join("data.xml");
+        let output_path = directory.join("lints.txt");
+        std::fs::write(
+            &schema_path,
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" defaultPhase="quick">
+                 <phase id="quick"><active pattern="p"/></phase>
+                 <pattern id="p"><rule context="item"><assert test="@ok">missing</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        std::fs::write(&document_path, "<root><item ok='yes'/></root>").unwrap();
+        let schema_arg = schema_path.to_str().unwrap();
+        let document_arg = document_path.to_str().unwrap();
+
+        for extra in ["--list-phases", "--explain"] {
+            let cli = Cli::try_parse_from(["schematron", "-s", schema_arg, extra]).unwrap();
+            assert_eq!(run(&cli).unwrap(), EXIT_VALID);
+        }
+        let cli = Cli::try_parse_from([
+            "schematron",
+            "-s",
+            schema_arg,
+            "--lint",
+            "--output",
+            output_path.to_str().unwrap(),
+        ])
+        .unwrap();
+        assert!(matches!(run(&cli).unwrap(), EXIT_VALID | EXIT_INVALID));
+        let cli = Cli::try_parse_from(["schematron", "-s", schema_arg, "--portability", "--quiet"])
+            .unwrap();
+        assert!(matches!(run(&cli).unwrap(), EXIT_VALID | EXIT_INVALID));
+
+        for stream in [false, true] {
+            let mut args = vec!["schematron", "-s", schema_arg, "--quiet"];
+            if stream {
+                args.push("--stream");
+            }
+            args.push(document_arg);
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert_eq!(run(&cli).unwrap(), EXIT_VALID);
+        }
+
+        let missing = directory.join("missing.xml");
+        let cli = Cli::try_parse_from([
+            "schematron",
+            "-s",
+            schema_arg,
+            "--stream",
+            missing.to_str().unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(run(&cli).unwrap_err().code, EXIT_DOCUMENT);
+
+        let external_schema_path = directory.join("external.sch");
+        std::fs::write(
+            &external_schema_path,
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern documents="'absent.xml'"><rule context="item"><assert test="true()">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let cli = Cli::try_parse_from([
+            "schematron",
+            "-s",
+            external_schema_path.to_str().unwrap(),
+            "--quiet",
+            document_arg,
+        ])
+        .unwrap();
+        assert_eq!(run(&cli).unwrap_err().code, EXIT_SCHEMA);
+
+        let non_streaming = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="item"><assert test="preceding::item">m</assert></rule></pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        assert_eq!(
+            validate_streaming_path(&non_streaming, document_arg, &ValidateOptions::new())
+                .unwrap_err()
+                .code,
+            EXIT_SCHEMA
+        );
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

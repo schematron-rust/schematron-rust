@@ -10,16 +10,16 @@ schematron [OPTIONS] --schema <SCHEMA> [DOCUMENT]...
 
 | Option | Description |
 |---|---|
-| `-s, --schema <PATH>` | Schematron schema file. Required. |
+| `-s, --schema <PATH>` | Schematron schema file in UTF-8 or BOM-marked UTF-16. Required. |
 | `[DOCUMENT]...` | XML documents to validate. `-` reads stdin. |
 | `-p, --phase <NAME>` | Phase to run. `#ALL`, `#DEFAULT`, or a phase id. |
-| `-f, --format <FMT>` | `text` (default), `svrl`, or `json` |
+| `-f, --format <FMT>` | `text` (default), `svrl`, or `json` with the `serde` feature |
 | `-o, --output <PATH>` | Write the report here instead of stdout |
 | `--flag <FLAG>` | Report only assertions with this flag. Repeatable. |
 | `--max-failures <N>` | Stop after N findings |
 | `--parallel` | Evaluate patterns on separate threads; see [validation/](../validation/index.md) |
-| `--stream` | Validate one repeating record at a time, in bounded memory; refused, naming why, unless the schema and document qualify — see [streaming/](../streaming/index.md). Cannot be combined with `--parallel` |
-| `--svrl-findings-only` | Omit `fired-rule` events from SVRL |
+| `--stream` | Validate one repeating record at a time. Requires record-local rules and sequential evaluation. See [streaming limits](../streaming/index.md#limits). |
+| `--svrl-findings-only` | Omit `fired-rule` events from SVRL and retain only rules with findings during validation |
 | `--allow-unknown-query-binding` | Compile an unsupported binding (`xpath31` and later) anyway, best effort |
 | `--list-phases` | Print the schema's phases and exit |
 | `--explain` | Print the compiled schema: patterns, rules, contexts, tests |

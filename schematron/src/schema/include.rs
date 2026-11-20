@@ -83,7 +83,9 @@ impl Context<'_> {
         if document.kind(node) != NodeKind::Element {
             return None;
         }
-        let name = document.name(node)?;
+        let name = document
+            .name(node)
+            .expect("elements always carry an expanded name");
         let in_schematron = matches!(
             name.uri.as_deref(),
             Some(SCHEMATRON_NAMESPACE | SCHEMATRON_1_5_NAMESPACE)
@@ -211,10 +213,9 @@ impl Context<'_> {
             Some(fragment) => {
                 find_fragment(&included, fragment).ok_or_else(|| missing_fragment(href))?
             }
-            None => included.document_element().ok_or_else(|| Error::Resolve {
-                href: href.to_string(),
-                message: "the included document has no root element".to_string(),
-            })?,
+            None => included
+                .document_element()
+                .expect("the XML parser accepts only documents with a root element"),
         };
 
         self.guard(key, |context| {
@@ -314,10 +315,7 @@ fn find_fragment(document: &Document, fragment: &str) -> Option<NodeId> {
             && document.attributes(node).iter().any(|&a| {
                 document.name(a).is_some_and(|name| {
                     name.local == "id"
-                        && matches!(
-                            name.uri.as_deref(),
-                            None | Some(crate::xml::XML_NAMESPACE)
-                        )
+                        && matches!(name.uri.as_deref(), None | Some(crate::xml::XML_NAMESPACE))
                 }) && document.value(a) == fragment
             })
     })
@@ -348,7 +346,20 @@ mod tests {
     use super::super::resolver::MemoryResolver;
     use super::*;
 
-    fn resolve(source: &str, resolver: &MemoryResolver) -> Result<Document> {
+    #[derive(Debug)]
+    struct NoRebaseResolver;
+
+    impl Resolver for NoRebaseResolver {
+        fn resolve(&self, _href: &str, _base: Option<&str>) -> Result<String> {
+            Ok(r#"<pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="p"/>"#.into())
+        }
+
+        fn rebase(&self, _href: &str, _base: Option<&str>) -> Option<String> {
+            None
+        }
+    }
+
+    fn resolve(source: &str, resolver: &dyn Resolver) -> Result<Document> {
         let document = Document::from_str(source).unwrap();
         resolve_includes(&document, resolver, 64)
     }
@@ -433,6 +444,18 @@ mod tests {
         assert!(matches!(error, Error::Resolve { .. }), "{error}");
     }
 
+    #[test]
+    fn resolver_without_rebasing_uses_the_written_href_identity() {
+        let document = resolve(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <include href="library.sch"/>
+               </schema>"#,
+            &NoRebaseResolver,
+        )
+        .unwrap();
+        assert_eq!(spliced(&document), ["pattern#p"]);
+    }
+
     /// The library used by the fragment tests below.
     fn library() -> MemoryResolver {
         MemoryResolver::new().with(
@@ -509,6 +532,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(spliced(&document), ["pattern#here", "pattern#here"]);
+    }
+
+    #[test]
+    fn a_missing_bare_fragment_is_an_error() {
+        let error = resolve(
+            r##"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <include href="#absent"/>
+               </schema>"##,
+            &MemoryResolver::new(),
+        )
+        .unwrap_err();
+        assert!(matches!(error, Error::Resolve { .. }));
     }
 
     #[test]
@@ -634,5 +669,63 @@ mod tests {
         let schema = document.document_element().unwrap();
         assert_eq!(document.name(schema).unwrap().local, "schema");
         assert_eq!(document.children(schema).len(), 3);
+    }
+
+    #[test]
+    fn foreign_directives_are_copied_and_depth_zero_refuses_an_include() {
+        let foreign = resolve(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron"><include xmlns="urn:foreign" href="missing"/></schema>"#,
+            &MemoryResolver::new(),
+        )
+        .unwrap();
+        let root = foreign.document_element().unwrap();
+        let include = foreign.children(root)[0];
+        assert_eq!(
+            foreign.name(include).unwrap().uri.as_deref(),
+            Some("urn:foreign")
+        );
+
+        let source = Document::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron"><include href="a.sch"/></schema>"#,
+        )
+        .unwrap();
+        let error = resolve_includes(&source, &MemoryResolver::new(), 0).unwrap_err();
+        assert!(matches!(error, Error::IncludeDepth { limit: 0, .. }));
+    }
+
+    #[test]
+    fn empty_included_documents_and_based_same_document_keys_are_reported() {
+        let resolver = MemoryResolver::new().with("empty.sch", "<!-- no root -->");
+        let error = resolve(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron"><include href="empty.sch"/></schema>"#,
+            &resolver,
+        )
+        .unwrap_err();
+        assert!(matches!(error, Error::XmlParse { .. }));
+
+        let mut source = Document::from_str("<schema/>").unwrap();
+        source.set_base_uri("/schemas/main.sch");
+        assert_eq!(
+            same_document_key(&source, "#part"),
+            "/schemas/main.sch#part"
+        );
+    }
+
+    #[test]
+    fn child_splicing_propagates_a_nested_directive_failure() {
+        let resolver = MemoryResolver::new().with(
+            "definitions.sch",
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <rule id="base"><include href="missing.sch"/></rule>
+               </schema>"#,
+        );
+        let error = resolve(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern><rule context="a"><extends href="definitions.sch#base"/></rule></pattern>
+               </schema>"#,
+            &resolver,
+        )
+        .unwrap_err();
+        assert!(matches!(error, Error::Resolve { .. }));
     }
 }

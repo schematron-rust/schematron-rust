@@ -138,6 +138,7 @@ fn bench_report_rendering(c: &mut Criterion) {
     let mut group = c.benchmark_group("report_render_1k");
     group.bench_function("svrl", |b| b.iter(|| black_box(report.to_svrl())));
     group.bench_function("text", |b| b.iter(|| black_box(report.to_text())));
+    #[cfg(feature = "serde")]
     group.bench_function("json", |b| b.iter(|| black_box(report.to_json().unwrap())));
     group.finish();
 }

@@ -73,7 +73,10 @@ mod tests {
 
     #[test]
     fn escapes_newlines_in_attributes() {
-        assert_eq!(escape_attribute("a\nb"), "a&#10;b");
+        assert_eq!(
+            escape_attribute("<&>\"\n\r\t"),
+            "&lt;&amp;&gt;&quot;&#10;&#13;&#9;"
+        );
     }
 
     #[test]

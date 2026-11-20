@@ -558,31 +558,35 @@ impl Document {
                     out.push_str(&name.local);
                 }
             }
-            kind => {
-                match kind {
-                    NodeKind::Element => match self.name(id) {
-                        Some(name) => match name.uri.as_deref() {
-                            Some(uri) => {
-                                out.push_str("*[");
-                                out.push_str(&name_predicate(&name.local, uri));
-                                out.push(']');
-                            }
-                            None => out.push_str(&name.local),
-                        },
-                        None => out.push('*'),
+            NodeKind::Element => {
+                match self.name(id) {
+                    Some(name) => match name.uri.as_deref() {
+                        Some(uri) => {
+                            out.push_str("*[");
+                            out.push_str(&name_predicate(&name.local, uri));
+                            out.push(']');
+                        }
+                        None => out.push_str(&name.local),
                     },
-                    NodeKind::Text => out.push_str("text()"),
-                    NodeKind::Comment => out.push_str("comment()"),
-                    NodeKind::ProcessingInstruction => out.push_str("processing-instruction()"),
-                    NodeKind::Root | NodeKind::Attribute | NodeKind::Namespace => {
-                        unreachable!("handled by the outer match arms")
-                    }
+                    None => out.push('*'),
                 }
                 out.push('[');
                 out.push_str(itoa(self.position_among_siblings(id)).as_str());
                 out.push(']');
             }
+            NodeKind::Text => self.push_positional_location_step(id, "text()", out),
+            NodeKind::Comment => self.push_positional_location_step(id, "comment()", out),
+            NodeKind::ProcessingInstruction => {
+                self.push_positional_location_step(id, "processing-instruction()", out);
+            }
         }
+    }
+
+    fn push_positional_location_step(&self, id: NodeId, name: &str, out: &mut String) {
+        out.push_str(name);
+        out.push('[');
+        out.push_str(itoa(self.position_among_siblings(id)).as_str());
+        out.push(']');
     }
 }
 
@@ -648,7 +652,7 @@ mod tests {
 
     #[test]
     fn string_value_concatenates_descendant_text() {
-        let d = doc("<a>one<b>two</b>three</a>");
+        let d = doc("<a>one<!-- ignored --><?also ignored?><b>two</b>three</a>");
         assert_eq!(d.string_value(d.document_element().unwrap()), "onetwothree");
     }
 
@@ -754,7 +758,10 @@ mod tests {
         assert_eq!(primary.attributes(x).len(), 1);
         let attribute = primary.attributes(x)[0];
         assert_eq!(primary.value(attribute), "1");
-        assert_eq!(primary.name(attribute).unwrap().uri.as_deref(), Some("urn:p"));
+        assert_eq!(
+            primary.name(attribute).unwrap().uri.as_deref(),
+            Some("urn:p")
+        );
         assert!(!primary.namespaces(x).is_empty());
     }
 
@@ -765,5 +772,62 @@ mod tests {
         let b = d.children(a)[0];
         let attr = d.attributes(b)[0];
         assert_eq!(d.location(attr), "/a[1]/b[1]/@q");
+    }
+
+    #[test]
+    fn size_base_uri_and_all_location_node_kinds_are_observable() {
+        let empty = Document::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 1);
+
+        let mut d = doc(r#"<p:a xmlns:p="urn:p" p:q="1">text<!--c--><?go now?><b/></p:a>"#);
+        assert!(!d.is_empty());
+        assert!(d.len() > 1);
+        assert_eq!(d.base_uri(), None);
+        d.set_base_uri("file:///data.xml");
+        assert_eq!(d.base_uri(), Some("file:///data.xml"));
+
+        let element = d.document_element().unwrap();
+        let attribute = d.attributes(element)[0];
+        assert!(d.location(element).contains("local-name()='a'"));
+        assert!(d.location(attribute).contains("local-name()='q'"));
+        for &namespace in d.namespaces(element) {
+            assert!(d.location(namespace).contains("namespace::"));
+        }
+        for &child in d.children(element) {
+            let location = d.location(child);
+            if d.kind(child) == NodeKind::Text {
+                assert!(location.contains("text()"));
+            } else if d.kind(child) == NodeKind::Comment {
+                assert!(location.contains("comment()"));
+            } else if d.kind(child) == NodeKind::ProcessingInstruction {
+                assert!(location.contains("processing-instruction()"));
+            }
+        }
+    }
+
+    #[test]
+    fn defensive_location_steps_cover_unnamed_nodes_and_root() {
+        let mut d = Document::empty();
+        d.nodes.push(NodeData::new(NodeKind::Attribute, None, 1));
+        d.nodes.push(NodeData::new(NodeKind::Element, None, 2));
+        d.nodes.push(NodeData::new(NodeKind::Namespace, None, 3));
+
+        let mut out = String::new();
+        d.push_location_step(d.root(), &mut out);
+        assert_eq!(out, "/");
+
+        out.clear();
+        d.push_location_step(NodeId(1), &mut out);
+        assert_eq!(out, "@*");
+
+        out.clear();
+        d.push_location_step(NodeId(2), &mut out);
+        assert_eq!(out, "*[1]");
+
+        out.clear();
+        d.push_location_step(NodeId(3), &mut out);
+        assert_eq!(out, "namespace::");
+        assert_eq!(xpath_literal("it's"), "\"it's\"");
     }
 }

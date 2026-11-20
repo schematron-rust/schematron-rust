@@ -1,45 +1,36 @@
 #!/usr/bin/env bash
-# Check and test the repo on Rust N-2 (the MSRV) and N-1.
-#
-# The MSRV is read from the first `rust-version` in the repo's Cargo.toml files.
-# N-1 is the next minor up. For each toolchain this runs, on every Cargo
-# workspace in the repo, `cargo check --all-targets` and `cargo test`, with
-# RUSTUP_TOOLCHAIN set (which overrides rust-toolchain.toml).
-# DB-gated tests stay skipped. Each toolchain must already be installed:
-#   rustup toolchain install <version> --profile minimal
+# Exercise the crate on both supported older Rust minors. The fuzz package
+# has its own manifest and requires nightly.
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "${ROOT}"
+cd "$(dirname "${BASH_SOURCE[0]}")/../schematron"
 
-# libFuzzer sub-crates (*-fuzz, fuzz) are skipped: they need nightly.
-msrv="$(grep -rhm1 --include=Cargo.toml --exclude-dir=target --exclude-dir=node_modules -E '^rust-version *= *"1\.[0-9]+' . | head -1 | sed -E 's/.*"(1\.[0-9]+).*/\1/')"
+msrv="$(sed -nE 's/^rust-version[[:space:]]*=[[:space:]]*"(1\.[0-9]+)".*/\1/p' Cargo.toml)"
 if [[ ! "${msrv}" =~ ^1\.([0-9]+)$ ]]; then
-  echo "could not find a rust-version in any Cargo.toml (got '${msrv}')" >&2
+  echo "could not read a minor rust-version from schematron/Cargo.toml" >&2
   exit 2
 fi
-n1="1.$(( BASH_REMATCH[1] + 1 ))"
-
-# Every independent workspace root (a workspace, or a standalone package).
-roots=()
-while IFS= read -r manifest; do
-  root="$(dirname "${manifest}")"
-  [[ "${root}" == *-fuzz || "${root}" == */fuzz ]] && continue   # libFuzzer targets need nightly
-  [[ "$(cd "${root}" && cargo locate-project --workspace --message-format plain)" == "$(cd "${root}" && pwd)/Cargo.toml" ]] && roots+=("${root}")
-done < <(find . \( -name target -o -name node_modules -o -name .git \) -prune -o -name Cargo.toml -print | sort)
+previous="1.$(( BASH_REMATCH[1] + 1 ))"
+host="$(rustc -vV | sed -n 's/^host: //p')"
+installed="$(rustup toolchain list)"
 
 failed=0
-for toolchain in "${msrv}" "${n1}"; do
-  label="N-2"; [[ "${toolchain}" == "${n1}" ]] && label="N-1"
-  if ! rustup toolchain list | grep -q "^${toolchain}\b"; then
-    echo "Rust ${toolchain} (${label}) is not installed:" >&2
-    echo "  rustup toolchain install ${toolchain} --profile minimal" >&2
+for minor in "${msrv}" "${previous}"; do
+  # Rustup treats 1.N and 1.N.x as different names. Use the installed
+  # host toolchain's full name so an offline run works with either form.
+  toolchain=""
+  while read -r candidate _; do
+    if [[ "${candidate}" =~ ^"${minor}"(\.[0-9]+)?-"${host}"$ ]]; then
+      toolchain="${candidate}"
+      break
+    fi
+  done <<< "${installed}"
+  if [[ -z "${toolchain}" ]]; then
+    echo "Rust ${minor} is missing. Install it with: rustup toolchain install ${minor} --profile minimal" >&2
     failed=1
     continue
   fi
-  echo "==> ${label}: Rust ${toolchain}"
-  for root in "${roots[@]}"; do
-    echo "--> ${root}"
-    (cd "${root}" && RUSTUP_TOOLCHAIN="${toolchain}" cargo check --all-targets && RUSTUP_TOOLCHAIN="${toolchain}" cargo test) || failed=1
-  done
+  echo "==> ${toolchain}"
+  cargo "+${toolchain}" check --locked --all-targets --all-features &&
+    cargo "+${toolchain}" test --locked --all-features || failed=1
 done
 exit "${failed}"

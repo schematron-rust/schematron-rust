@@ -7,7 +7,7 @@
 //! - every schema shown in `spec/*.md` and `README.md` compiles
 //! - every example `.sch` file compiles
 //! - every relative link resolves
-//! - every `spec/*/index.md` is reachable from `spec/index.md`
+//! - every crate and repository `spec/*/index.md` is reachable from its index
 //! - the MSRV in the spec matches the one `Cargo.toml` enforces
 //! - the XPath function list in the spec matches the engine's
 //! - every runnable example is referenced from the documentation
@@ -149,6 +149,73 @@ fn every_spec_document_is_linked_from_the_index() {
         assert!(
             index.contains(&format!("({name}/index.md)")),
             "spec/{name}/index.md is not linked from spec/index.md"
+        );
+    }
+}
+
+#[test]
+fn every_repository_spec_document_is_linked_from_the_index() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let Some(repository_root) = crate_root.parent() else {
+        return;
+    };
+    let specification = repository_root.join("spec");
+    let index_path = specification.join("index.md");
+
+    // A published crate archive deliberately contains only schematron/.
+    // Repository governance is enforceable only in the monorepo checkout.
+    if !index_path.is_file() {
+        return;
+    }
+    let index =
+        fs::read_to_string(&index_path).expect("repository spec/index.md should be readable");
+
+    let mut documents: Vec<PathBuf> = fs::read_dir(&specification)
+        .expect("repository spec/ should be readable")
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    documents.sort();
+
+    for path in documents {
+        let name = path.file_name().unwrap().to_string_lossy();
+        assert!(
+            path.join("index.md").is_file(),
+            "repository spec/{name}/ must contain index.md"
+        );
+        assert!(
+            index.contains(&format!("({name}/index.md)")),
+            "repository spec/{name}/index.md is not linked from spec/index.md"
+        );
+    }
+}
+
+#[test]
+fn repository_governance_and_license_files_are_present() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let Some(repository_root) = crate_root.parent() else {
+        return;
+    };
+    if !repository_root.join("spec/index.md").is_file() {
+        return;
+    }
+
+    for name in ["LICENSE.md", "SECURITY.md", "MAINTAINERS.md"] {
+        assert!(
+            repository_root.join(name).is_file(),
+            "the monorepo must contain {name}"
+        );
+    }
+    for name in [
+        "MIT.txt",
+        "Apache-2.0.txt",
+        "GPL-2.0-only.txt",
+        "GPL-3.0-only.txt",
+    ] {
+        assert!(
+            crate_root.join("licenses").join(name).is_file(),
+            "the crate must ship licenses/{name}"
         );
     }
 }

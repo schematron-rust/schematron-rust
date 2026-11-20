@@ -538,4 +538,50 @@ mod tests {
             Some(crate::xml::XML_NAMESPACE)
         );
     }
+
+    #[test]
+    fn registries_report_size_iteration_and_clear_misses() {
+        let document = Document::from_str("<a><b/></a>").unwrap();
+        let b = document.children(document.document_element().unwrap())[0];
+
+        let documents = Documents::new();
+        assert!(documents.is_empty());
+        assert_eq!(documents.len(), 0);
+        assert_eq!(documents.lookup("missing.xml", None), None);
+        assert_eq!(documents.missing().len(), 1);
+        documents.clear_missing();
+        assert!(documents.missing().is_empty());
+
+        let mut namespaces = Namespaces::new();
+        assert!(namespaces.is_empty());
+        namespaces.insert("p", "urn:p");
+        assert_eq!(namespaces.iter().collect::<Vec<_>>(), vec![("p", "urn:p")]);
+
+        let mut keys = Keys::new();
+        assert!(keys.is_empty());
+        assert_eq!(keys.len(), 0);
+        keys.declare("empty");
+        keys.insert("parts", "x", b);
+        assert_eq!(keys.len(), 2);
+        assert!(!keys.is_empty());
+        assert!(keys.is_declared("empty"));
+        assert_eq!(keys.lookup("parts", "x"), vec![b]);
+    }
+
+    #[test]
+    fn variable_names_and_poisoned_document_miss_tracking_are_total() {
+        let mut variables = Variables::new();
+        variables.bind("outer", Value::String("x".into()));
+        variables.bind("inner", Value::String("y".into()));
+        assert_eq!(variables.names().collect::<Vec<_>>(), vec!["outer", "inner"]);
+
+        let documents = Documents::new();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = documents.missing.lock().unwrap();
+            panic!("poison the miss registry for its recovery contract");
+        }));
+        assert_eq!(documents.lookup("missing.xml", None), None);
+        assert!(documents.missing().is_empty());
+        documents.clear_missing();
+    }
 }

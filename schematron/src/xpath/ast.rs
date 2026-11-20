@@ -681,4 +681,119 @@ mod tests {
         assert_eq!(n.local, "a");
         assert_eq!(NameTest::parse("a").prefix, None);
     }
+
+    #[test]
+    fn sequence_types_render_every_supported_item_shape() {
+        assert_eq!(Occurrence::One.as_str(), "");
+        assert_eq!(Occurrence::ZeroOrOne.as_str(), "?");
+        assert_eq!(Occurrence::ZeroOrMore.as_str(), "*");
+        assert_eq!(Occurrence::OneOrMore.as_str(), "+");
+        assert!(Occurrence::ZeroOrOne.admits(0));
+        assert!(!Occurrence::OneOrMore.admits(0));
+        assert!(Occurrence::ZeroOrMore.admits(100));
+
+        let render = |item_type| {
+            SequenceType {
+                item_type,
+                occurrence: Occurrence::ZeroOrOne,
+            }
+            .as_written()
+        };
+        assert_eq!(render(ItemType::AnyItem), "item()?");
+        assert_eq!(render(ItemType::EmptySequence), "empty-sequence()?");
+        assert_eq!(render(ItemType::Atomic("xs:string".into())), "xs:string?");
+        assert_eq!(
+            render(ItemType::Node {
+                kind: None,
+                name: None,
+            }),
+            "node()?"
+        );
+        for (kind, name) in [
+            (crate::xml::NodeKind::Element, "element"),
+            (crate::xml::NodeKind::Attribute, "attribute"),
+            (crate::xml::NodeKind::Text, "text"),
+            (crate::xml::NodeKind::Comment, "comment"),
+            (
+                crate::xml::NodeKind::ProcessingInstruction,
+                "processing-instruction",
+            ),
+            (crate::xml::NodeKind::Root, "document-node"),
+            (crate::xml::NodeKind::Namespace, "namespace-node"),
+        ] {
+            assert_eq!(
+                render(ItemType::Node {
+                    kind: Some(kind),
+                    name: None,
+                }),
+                format!("{name}()?")
+            );
+        }
+        assert_eq!(
+            render(ItemType::Node {
+                kind: Some(crate::xml::NodeKind::Element),
+                name: Some(NameTest::parse("p:item")),
+            }),
+            "element(p:item)?"
+        );
+    }
+
+    #[test]
+    fn every_operator_and_axis_has_a_stable_written_name() {
+        let operators = [
+            (BinaryOp::Or, "or"),
+            (BinaryOp::And, "and"),
+            (BinaryOp::Equal, "="),
+            (BinaryOp::NotEqual, "!="),
+            (BinaryOp::Less, "<"),
+            (BinaryOp::LessEqual, "<="),
+            (BinaryOp::Greater, ">"),
+            (BinaryOp::GreaterEqual, ">="),
+            (BinaryOp::Add, "+"),
+            (BinaryOp::Subtract, "-"),
+            (BinaryOp::Multiply, "*"),
+            (BinaryOp::Divide, "div"),
+            (BinaryOp::Modulo, "mod"),
+            (BinaryOp::Union, "|"),
+            (BinaryOp::ValueEqual, "eq"),
+            (BinaryOp::ValueNotEqual, "ne"),
+            (BinaryOp::ValueLess, "lt"),
+            (BinaryOp::ValueLessEqual, "le"),
+            (BinaryOp::ValueGreater, "gt"),
+            (BinaryOp::ValueGreaterEqual, "ge"),
+            (BinaryOp::NodeIs, "is"),
+            (BinaryOp::NodeBefore, "<<"),
+            (BinaryOp::NodeAfter, ">>"),
+            (BinaryOp::Concat, "||"),
+            (BinaryOp::SimpleMap, "!"),
+        ];
+        for (operator, written) in operators {
+            assert_eq!(operator.as_str(), written);
+        }
+
+        for axis in [
+            Axis::Ancestor,
+            Axis::AncestorOrSelf,
+            Axis::Attribute,
+            Axis::Child,
+            Axis::Descendant,
+            Axis::DescendantOrSelf,
+            Axis::Following,
+            Axis::FollowingSibling,
+            Axis::Namespace,
+            Axis::Parent,
+            Axis::Preceding,
+            Axis::PrecedingSibling,
+            Axis::SelfAxis,
+        ] {
+            assert_eq!(Axis::from_name(axis.as_str()), Some(axis));
+        }
+    }
+
+    #[test]
+    fn name_tests_display_prefixed_local_and_eqname_forms() {
+        assert_eq!(NameTest::parse("p:a").to_string(), "p:a");
+        assert_eq!(NameTest::parse("a").to_string(), "a");
+        assert_eq!(NameTest::eqname("urn:x".into(), "a".into()).to_string(), "Q{urn:x}a");
+    }
 }

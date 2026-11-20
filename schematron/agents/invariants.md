@@ -54,7 +54,7 @@ never happened.
 ### Malformed input is an error, never a panic
 
 Every parser and every evaluator returns `Result`. Depth is bounded in the
-XPath parser (64 nested sub-expressions), the XML parser (1024 nested
+XPath parser (see the [nesting limit](../spec/conformance/index.md#limits)), the XML parser (1024 nested
 elements), include resolution (64), and `extends` chains (64). Exceeding a
 bound is an error.
 

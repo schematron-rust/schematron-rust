@@ -16,7 +16,7 @@
     { area: '@flag, @role, @subject, @see, @icon, @fpi', status: 'Full' },
     { area: 'pattern/@documents', status: 'Full' },
     { area: 'key and key()', status: 'Full', note: 'A non-ISO extension — see spec/keys/.' },
-    { area: 'Streaming validation (--stream)', status: 'Full', note: 'A non-ISO extension, for schemas provably local to one record — see spec/streaming/.' },
+    { area: 'Streaming validation (--stream)', status: 'Record-local rules', note: 'Wrapper checks can read attributes. Rules that need other records require whole-document validation.' },
     { area: 'Phases, #ALL, #DEFAULT, @defaultPhase', status: 'Full' },
     { area: 'SVRL output', status: 'Full' },
     { area: 'XPath 1.0 — 13 axes, 27 core functions, exact conversion semantics', status: 'Full' },

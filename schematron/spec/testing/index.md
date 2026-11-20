@@ -13,9 +13,25 @@
 | Fuzz targets | `fuzz/` | Crash and panic freedom on hostile input |
 | Differential | `tests/differential.rs` | Agreement with the ISO reference implementation |
 | Benchmarks | `benches/` | Regression tracking with criterion |
+| Coverage | `cargo llvm-cov` | Executed lines across the complete all-feature Rust suite |
 
 Assertions use the `assertables` crate, matching the house style of the
 sibling SixArm crates.
+
+Coverage is a regression gate, not a substitute for the semantic layers
+above. The complete all-feature suite must cover every function and every
+merged executable Rust source region. CI and `make test-coverage` both run
+`bin/test-coverage` and require exact (100%) source coverage. Tests added to
+preserve the threshold must assert observable behaviour or an invariant
+rather than merely execute a line.
+
+LLVM emits a separately instrumented copy of some Rust functions for the
+unit-test crate and each integration-test crate. Its aggregate line summary
+counts those code-generation copies independently, so a copy unused in one
+test binary can lower that summary even when another binary exercises the
+same source region. The gate therefore checks the JSON report's merged source
+segments, which are the regions presented by LLVM's source report, and also
+checks the function total. It does not exclude files or reduce the test suite.
 
 ## Corpus tests
 
@@ -54,6 +70,7 @@ directory — no Rust code. The cases, and what each pins down:
 | `following-axis-from-attribute` | `following` taken from an attribute node — a documented divergence from the reference |
 | `namespaced-attribute-context` | `@x` and `@p:x` are different attributes — a second documented divergence |
 | `namespaced-sibling-position` | A location counts position within its own namespace, not by local name alone |
+| `xml-whitespace` | A French amount retains its nonbreaking spaces, and an ID list splits on XML whitespace in both forms of the XPath call |
 | `message-inline-whitespace` | Whitespace between two inline elements in a message survives |
 | `phase-default` | `@defaultPhase` applies when no phase is named |
 | `phase-selection` | A named phase activating more patterns |
@@ -415,10 +432,22 @@ the narrowest scope that works. `#![warn(missing_docs)]` is on and CI runs
 documentation in practice: local `cargo doc` only warns, but CI fails without
 it.
 
+## Native runners and packaged features
+
+Linux, macOS and Windows CI run the locked all-feature suite. The CLI file
+encoding test uses a Unicode directory with spaces and checks identical
+SVRL for UTF-8 and BOM-marked UTF-16 in either byte order.
+
+From the monorepo root, `python3 bin/test-packaged-features` builds the
+crate archive, extracts it, and validates a packaged example from a fresh
+downstream application. It checks default, minimal, serde-only and CLI-only
+features, plus the default and CLI-only binaries.
+
 ## Commands
 
 ```sh
 cargo test                        # unit + integration + corpus + doc tests
+cargo check --release --all-features # optimized configuration must compile
 cargo clippy --all-targets -- -D warnings
 cargo doc --no-deps               # must be warning-free
 cargo bench

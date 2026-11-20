@@ -201,6 +201,15 @@ mod tests {
     }
 
     #[test]
+    fn owned_phase_names_use_the_same_conversion() {
+        assert_eq!(PhaseSelection::from("#ALL".to_string()), PhaseSelection::All);
+        assert_eq!(
+            PhaseSelection::from("strict".to_string()),
+            PhaseSelection::Named("strict".to_string())
+        );
+    }
+
+    #[test]
     fn defaults_record_fired_rules() {
         assert!(ValidateOptions::new().record_fired_rules);
         assert_eq!(ValidateOptions::new().max_failures, None);

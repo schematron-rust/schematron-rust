@@ -4,8 +4,9 @@
 //! cannot: argument parsing, output selection, and — most importantly — the
 //! exit codes, which is what a build pipeline actually depends on.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 use assertables::*;
 
@@ -25,12 +26,34 @@ fn run(args: &[&str]) -> Output {
         .expect("the schematron binary should run")
 }
 
+fn run_with_stdin(args: &[&str], input: &[u8]) -> Output {
+    let mut child = Command::new(binary())
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the schematron binary should start");
+    child
+        .stdin
+        .take()
+        .expect("standard input should be piped")
+        .write_all(input)
+        .expect("the test input should be writable");
+    child
+        .wait_with_output()
+        .expect("the schematron binary should finish")
+}
+
 fn stdout(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
 fn code(output: &Output) -> i32 {
-    output.status.code().expect("the process should exit normally")
+    output
+        .status
+        .code()
+        .expect("the process should exit normally")
 }
 
 fn schema_path() -> String {
@@ -78,6 +101,147 @@ fn an_unreadable_document_exits_four() {
 }
 
 #[test]
+fn standard_input_uses_document_exit_codes_in_both_modes() {
+    let schema = temp_schema(
+        "stdin",
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern><rule context="order"><assert test="@id">id</assert></rule></pattern>
+           </schema>"#,
+    );
+    let schema = schema.display().to_string();
+    for mode in [None, Some("--stream")] {
+        let mut args = vec!["--schema", &schema, "--phase", "#ALL"];
+        if let Some(flag) = mode {
+            args.push(flag);
+        }
+        args.push("-");
+
+        let valid = run_with_stdin(&args, b"<orders><order id='ok'/></orders>");
+        assert_eq!(
+            code(&valid),
+            0,
+            "{}",
+            String::from_utf8_lossy(&valid.stderr)
+        );
+
+        let malformed = run_with_stdin(&args, b"<orders><order>");
+        assert_eq!(code(&malformed), 4);
+        assert_contains!(String::from_utf8_lossy(&malformed.stderr), "standard input");
+    }
+    let _ = std::fs::remove_file(schema);
+}
+
+#[test]
+fn streaming_and_parallelism_are_rejected_together() {
+    let output = run(&[
+        "--schema",
+        &schema_path(),
+        "--stream",
+        "--parallel",
+        &good(),
+    ]);
+    assert_eq!(code(&output), 2);
+    assert_contains!(
+        String::from_utf8_lossy(&output.stderr),
+        "cannot be combined"
+    );
+}
+
+#[test]
+fn file_encodings_preserve_relative_references_findings_and_exit_codes() {
+    fn encode(text: &str, encoding: &str) -> Vec<u8> {
+        match encoding {
+            "le" => [0xff, 0xfe]
+                .into_iter()
+                .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
+                .collect(),
+            "be" => [0xfe, 0xff]
+                .into_iter()
+                .chain(text.encode_utf16().flat_map(u16::to_be_bytes))
+                .collect(),
+            _ => text.as_bytes().to_vec(),
+        }
+    }
+    let directory = std::env::temp_dir().join(format!("schéma 東京 {}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    let schema = directory.join("règles.sch");
+    let fragment = directory.join("共通.sch");
+    let lookup = directory.join("品.xml");
+    let instance = directory.join("entrée.xml");
+    let run_files = || {
+        Command::new(binary())
+            .arg("--schema")
+            .arg(&schema)
+            .args(["--format", "svrl"])
+            .arg(&instance)
+            .output()
+            .unwrap()
+    };
+    let mut baseline = None;
+    for encoding in ["utf8", "le", "be"] {
+        for (path, contents) in [
+            (
+                &schema,
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron"><include href="共通.sch#p"/></schema>"#,
+            ),
+            (
+                &fragment,
+                r#"<pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="p"><rule context="lot"><assert test="document('品.xml')/品 = @ref">Référence inconnue 📦</assert></rule></pattern>"#,
+            ),
+            (&lookup, "<品>abc</品>"),
+            (&instance, "<lot ref='xyz'/>"),
+        ] {
+            std::fs::write(path, encode(contents, encoding)).unwrap();
+        }
+        let compiled = schematron::Schema::from_path(&schema).unwrap();
+        let document = schematron::Document::from_path(&instance).unwrap();
+        let report = compiled.validate(&document).unwrap();
+        let failure = report.failures().next().unwrap();
+        assert_eq!(failure.location, "/lot[1]");
+        assert_eq!(failure.text, "Référence inconnue 📦");
+        let output = run_files();
+        assert_eq!(
+            code(&output),
+            1,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let svrl = stdout(&output);
+        assert_contains!(svrl, "Référence inconnue 📦");
+        assert_eq!(baseline.get_or_insert_with(|| svrl.clone()), &svrl);
+    }
+    std::fs::write(&lookup, [0xfe, 0xff, 0x01]).unwrap();
+    let loaded = schematron::Schema::from_path(&schema).unwrap();
+    let document = schematron::Document::from_path(&instance).unwrap();
+    let error = loaded.validate(&document).unwrap_err().to_string();
+    assert!(
+        error.contains(lookup.to_str().unwrap()) && error.contains("UTF-16"),
+        "{error}"
+    );
+    for path in [&fragment, &schema] {
+        std::fs::write(path, [0xff, 0xfe, 0x01]).unwrap();
+        let error = schematron::Schema::from_path(&schema)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains(path.to_str().unwrap()) && error.contains("UTF-16"),
+            "{error}"
+        );
+        assert_eq!(code(&run_files()), 3);
+    }
+    std::fs::write(&schema, r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron"><pattern><rule context="order"><assert test="@id">id</assert></rule></pattern></schema>"#).unwrap();
+    std::fs::write(&instance, "<orders><order/><unclosed>").unwrap();
+    let streamed = Command::new(binary())
+        .args(["--stream", "--max-failures", "1", "--schema"])
+        .arg(&schema)
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert_eq!(code(&streamed), 4);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn the_default_phase_applies_when_none_is_named() {
     // The default phase runs only the structure pattern, so the totals
     // warning from the bad invoice does not appear.
@@ -90,19 +254,49 @@ fn the_default_phase_applies_when_none_is_named() {
 #[test]
 fn svrl_output_is_well_formed_and_carries_findings() {
     let output = run(&[
-        "--schema", &schema_path(), "--phase", "#ALL", "--format", "svrl", &bad(),
+        "--schema",
+        &schema_path(),
+        "--phase",
+        "#ALL",
+        "--format",
+        "svrl",
+        &bad(),
     ]);
     let text = stdout(&output);
     assert!(text.starts_with("<?xml"), "{text}");
     assert_contains!(text, "svrl:schematron-output");
     assert_contains!(text, "svrl:failed-assert");
     assert_contains!(text, "</svrl:schematron-output>");
+    assert_contains!(text, "svrl:fired-rule");
+
+    let findings_only = run(&[
+        "--schema",
+        &schema_path(),
+        "--phase",
+        "#ALL",
+        "--format",
+        "svrl",
+        "--svrl-findings-only",
+        &bad(),
+    ]);
+    assert_eq!(code(&findings_only), code(&output));
+    let findings = stdout(&findings_only);
+    assert!(findings.lines().eq(text
+        .lines()
+        .filter(|line| !line.contains("<svrl:fired-rule"))));
 }
 
 #[test]
+#[cfg(feature = "serde")]
 fn json_output_parses_as_json() {
     let output = run(&[
-        "--schema", &schema_path(), "--phase", "#ALL", "--format", "json", &bad(),
+        "--schema",
+        &schema_path(),
+        "--phase",
+        "#ALL",
+        "--format",
+        "json",
+        &bad(),
     ]);
     let text = stdout(&output);
     assert_contains!(text, "\"patterns\"");
@@ -113,7 +307,13 @@ fn json_output_parses_as_json() {
 fn flag_filtering_narrows_both_output_and_exit_code() {
     // Only the warning-flagged finding survives, so it is still an exit 1.
     let output = run(&[
-        "--schema", &schema_path(), "--phase", "#ALL", "--flag", "warning", &bad(),
+        "--schema",
+        &schema_path(),
+        "--phase",
+        "#ALL",
+        "--flag",
+        "warning",
+        &bad(),
     ]);
     let text = stdout(&output);
     assert_contains!(text, "the lines plus tax");
@@ -123,7 +323,14 @@ fn flag_filtering_narrows_both_output_and_exit_code() {
 
 #[test]
 fn quiet_suppresses_output_but_keeps_the_exit_code() {
-    let output = run(&["--schema", &schema_path(), "--phase", "#ALL", "--quiet", &bad()]);
+    let output = run(&[
+        "--schema",
+        &schema_path(),
+        "--phase",
+        "#ALL",
+        "--quiet",
+        &bad(),
+    ]);
     assert_eq!(code(&output), 1);
     assert_is_empty!(stdout(&output));
 }
@@ -131,7 +338,13 @@ fn quiet_suppresses_output_but_keeps_the_exit_code() {
 #[test]
 fn max_failures_stops_early() {
     let output = run(&[
-        "--schema", &schema_path(), "--phase", "#ALL", "--max-failures", "1", &bad(),
+        "--schema",
+        &schema_path(),
+        "--phase",
+        "#ALL",
+        "--max-failures",
+        "1",
+        &bad(),
     ]);
     let text = stdout(&output);
     assert_contains!(text, "1 finding");
@@ -149,6 +362,20 @@ fn list_phases_prints_the_phases_and_the_default() {
 }
 
 #[test]
+fn list_phases_explains_when_none_are_declared() {
+    let path = temp_schema(
+        "no-phases",
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern><rule context="a"><assert test="true()">m</assert></rule></pattern>
+           </schema>"#,
+    );
+    let output = run(&["--schema", &path.display().to_string(), "--list-phases"]);
+    assert_eq!(code(&output), 0);
+    assert_contains!(stdout(&output), "declares no phases");
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn explain_shows_the_compiled_schema() {
     let output = run(&["--schema", &schema_path(), "--explain"]);
     let text = stdout(&output);
@@ -161,7 +388,12 @@ fn explain_shows_the_compiled_schema() {
 #[test]
 fn verbose_shows_tests_and_rules() {
     let output = run(&[
-        "--schema", &schema_path(), "--phase", "#ALL", "--verbose", &bad(),
+        "--schema",
+        &schema_path(),
+        "--phase",
+        "#ALL",
+        "--verbose",
+        &bad(),
     ]);
     let text = stdout(&output);
     assert_contains!(text, "test: @id");
@@ -170,7 +402,14 @@ fn verbose_shows_tests_and_rules() {
 
 #[test]
 fn several_documents_are_validated_in_one_run() {
-    let output = run(&["--schema", &schema_path(), "--phase", "#ALL", &good(), &bad()]);
+    let output = run(&[
+        "--schema",
+        &schema_path(),
+        "--phase",
+        "#ALL",
+        &good(),
+        &bad(),
+    ]);
     let text = stdout(&output);
     assert_contains!(text, "invoice-good.xml");
     assert_contains!(text, "invoice-bad.xml");
@@ -183,15 +422,44 @@ fn output_can_be_written_to_a_file() {
     let target = std::env::temp_dir().join("schematron-cli-test.svrl");
     let _ = std::fs::remove_file(&target);
     let output = run(&[
-        "--schema", &schema_path(), "--phase", "#ALL",
-        "--format", "svrl",
-        "--output", &target.display().to_string(),
+        "--schema",
+        &schema_path(),
+        "--phase",
+        "#ALL",
+        "--format",
+        "svrl",
+        "--output",
+        &target.display().to_string(),
         &bad(),
     ]);
     assert_eq!(code(&output), 1);
     let written = std::fs::read_to_string(&target).expect("the report should have been written");
     assert_contains!(written, "svrl:schematron-output");
     let _ = std::fs::remove_file(&target);
+}
+
+#[test]
+fn report_and_lint_output_write_failures_are_usage_errors() {
+    let directory = std::env::temp_dir().display().to_string();
+    let report = run(&[
+        "--schema",
+        &schema_path(),
+        "--output",
+        &directory,
+        &good(),
+    ]);
+    assert_eq!(code(&report), 2);
+    assert_contains!(String::from_utf8_lossy(&report.stderr), "cannot write");
+
+    let lint = run(&[
+        "--schema",
+        &schema_path(),
+        "--lint",
+        "--output",
+        &directory,
+    ]);
+    assert_eq!(code(&lint), 2);
+    assert_contains!(String::from_utf8_lossy(&lint.stderr), "cannot write");
 }
 
 #[test]
@@ -215,9 +483,7 @@ fn long_flags(source: &str) -> std::collections::BTreeSet<String> {
         if bytes[i] == b'-' && bytes[i + 1] == b'-' && bytes[i + 2].is_ascii_alphabetic() {
             let start = i + 2;
             let mut end = start;
-            while end < bytes.len()
-                && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'-')
-            {
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'-') {
                 end += 1;
             }
             // Trim a trailing hyphen left by a line break or an em-dash.
@@ -286,7 +552,11 @@ fn every_documented_exit_code_is_described_consistently() {
         (3, "schema error"),
         (4, "document error"),
     ] {
-        for (name, text) in [("--help", &help), ("spec/cli/", &spec), ("README.md", &readme)] {
+        for (name, text) in [
+            ("--help", &help),
+            ("spec/cli/", &spec),
+            ("README.md", &readme),
+        ] {
             // Case-insensitive: a table cell reasonably starts with a capital.
             let text = text.to_lowercase();
             assert!(
@@ -381,7 +651,12 @@ fn parallel_produces_the_same_output_as_sequential() {
     // ever diverge, that is the bug this catches.
     let sequential = run(&["--schema", &schema_path(), "--phase", "#ALL", &bad()]);
     let parallel = run(&[
-        "--schema", &schema_path(), "--phase", "#ALL", "--parallel", &bad(),
+        "--schema",
+        &schema_path(),
+        "--phase",
+        "#ALL",
+        "--parallel",
+        &bad(),
     ]);
 
     assert_eq!(stdout(&sequential), stdout(&parallel));

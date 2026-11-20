@@ -27,6 +27,9 @@ jobs:
   crate:
     name: Crate
     runs-on: ubuntu-latest
+    env:
+      # Cargo must use the same toolchain on which the setup step installs Clippy.
+      RUSTUP_TOOLCHAIN: stable
     defaults:
       run:
         working-directory: schematron
@@ -45,7 +48,13 @@ jobs:
           workspaces: schematron
 
       - name: Test
-        run: cargo test --all-features
+        run: cargo test --locked --all-features
+
+      - name: Check optimized build
+        run: cargo check --release --locked --all-features
+
+      - name: Test packaged features
+        run: python3 ../bin/test-packaged-features
 
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -56,6 +65,42 @@ jobs:
         run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
+
+  native:
+    name: Native crate tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    defaults:
+      run:
+        working-directory: schematron
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: schematron
+      - run: cargo test --locked --all-features
+
+  coverage:
+    name: Coverage (100% of merged source)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: schematron
+      - run: bin/test-coverage
 
   msrv:
     name: MSRV boundary
@@ -86,7 +131,9 @@ jobs:
           workspaces: schematron
 
       - name: Test
-        run: cargo test --all-features
+        run: cargo test --locked --all-features
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
 
   site:
     name: Site

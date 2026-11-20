@@ -1,6 +1,6 @@
 [package]
 name = "schematron"
-version = "0.17.0"
+version = "0.17.1"
 edition = "2021"
 rust-version = "1.98"  # Policy: current stable minus two. See spec/rust-msrv-n-minus-2/index.md.
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -37,6 +37,14 @@ cli = ["dep:clap"]
 [[bin]]
 name = "schematron"
 path = "src/main.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli"
+required-features = ["cli"]
+
+[[test]]
+name = "differential"
 required-features = ["cli"]
 
 [[bench]]
@@ -88,7 +96,6 @@ codegen-units = 1
 
 [profile.dev]
 debug = "line-tables-only"
-split-debuginfo = "unpacked"
 
 [profile.dev.package."*"]
 debug = false

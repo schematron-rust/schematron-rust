@@ -8,8 +8,8 @@
 
 use super::model::{
     Assertion, AssertionKind, Content, Diagnostic, Key, Let, LetValue, Ns, Paragraph, Param,
-    Pattern, Phase, Property, QueryBinding, Rule, RuleChild, SchemaModel,
-    SCHEMATRON_1_5_NAMESPACE, SCHEMATRON_NAMESPACE,
+    Pattern, Phase, Property, QueryBinding, Rule, RuleChild, SchemaModel, SCHEMATRON_1_5_NAMESPACE,
+    SCHEMATRON_NAMESPACE,
 };
 use crate::error::{Error, Result};
 use crate::xml::{Document, NodeId, NodeKind};
@@ -20,7 +20,7 @@ use crate::xml::{Document, NodeId, NodeKind};
 pub(crate) fn parse_schema(document: &Document) -> Result<SchemaModel> {
     let root = document
         .document_element()
-        .ok_or_else(|| Error::schema("schema", None, "the document has no root element"))?;
+        .expect("the XML parser accepts only documents with a root element");
 
     let parser = Parser { document };
     if !parser.is_schematron(root) {
@@ -107,12 +107,7 @@ impl Parser<'_> {
             .map(|a| self.document.value(a).to_string())
     }
 
-    fn required_attribute(
-        &self,
-        node: NodeId,
-        name: &str,
-        location: &str,
-    ) -> Result<String> {
+    fn required_attribute(&self, node: NodeId, name: &str, location: &str) -> Result<String> {
         self.attribute(node, name).ok_or_else(|| {
             Error::schema(
                 self.local_name(node),
@@ -452,9 +447,8 @@ impl Parser<'_> {
             match self.document.kind(child) {
                 NodeKind::Text => {
                     let text = self.document.value(child);
-                    if !text.is_empty() {
-                        out.push(Content::Text(text.to_string()));
-                    }
+                    // The XML parser never creates empty text nodes.
+                    out.push(Content::Text(text.to_string()));
                 }
                 NodeKind::Element if self.is_schematron(child) => {
                     match self.local_name(child).as_str() {
@@ -692,5 +686,141 @@ mod tests {
         assert!(matches!(body[0], RuleChild::Assertion(_)));
         assert!(matches!(body[1], RuleChild::Extends(_)));
         assert!(matches!(body[2], RuleChild::Assertion(_)));
+    }
+
+    #[test]
+    fn parses_all_metadata_and_mixed_content_forms() {
+        let m = model(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:h="urn:h">
+                 <p id="intro" class="lead" icon="i">A <emph>bold</emph> <span class="x">span</span> <dir value="rtl">right</dir></p>
+                 <phase id="quick"><let name="limit" value="1"/><p>phase note</p><active pattern="p"/></phase>
+                 <key name="by-id" match="item" use="@id"/>
+                 <pattern id="p" documents="catalog.xml"><title>Products</title><let name="x" value="1"/><p>pattern note</p>
+                   <rule context="item" id="r" flag="warning" role="business" subject="@id">
+                     <let name="y">text</let>
+                     <report test="true()" id="a" flag="error" role="fatal" subject="." diagnostics="d" properties="prop">Before <h:b>foreign</h:b> <title>nested</title><!-- note --><?check now?> <emph>bold</emph> <span class="s">span</span> <dir value="ltr">left</dir> <name path="@id"/> <value-of/>.</report>
+                   </rule>
+                 </pattern>
+                 <diagnostics><title>ignored</title><diagnostic id="d" xml:lang="fr" role="detail">detail</diagnostic></diagnostics>
+                 <properties><title>ignored</title><property id="prop" role="r" scheme="urn:s">value</property></properties>
+               </schema>"#,
+        );
+        assert_eq!(m.paragraphs[0].id.as_deref(), Some("intro"));
+        assert_eq!(m.paragraphs[0].class.as_deref(), Some("lead"));
+        assert_eq!(m.paragraphs[0].icon.as_deref(), Some("i"));
+        assert_eq!(m.phases[0].lets.len(), 1);
+        assert_eq!(m.phases[0].paragraphs.len(), 1);
+        assert_eq!(m.keys[0].name, "by-id");
+        assert_eq!(m.patterns[0].documents.as_deref(), Some("catalog.xml"));
+        assert_eq!(m.patterns[0].title.as_deref(), Some("Products"));
+        assert_eq!(m.patterns[0].lets.len(), 1);
+        assert_eq!(m.patterns[0].paragraphs.len(), 1);
+        let rule = &m.patterns[0].rules[0];
+        assert_eq!(rule.id.as_deref(), Some("r"));
+        assert_eq!(rule.flag.as_deref(), Some("warning"));
+        assert_eq!(rule.role.as_deref(), Some("business"));
+        assert_eq!(rule.subject.as_deref(), Some("@id"));
+        let assertion = rule.assertions().next().unwrap();
+        assert_eq!(assertion.kind, AssertionKind::Report);
+        assert_eq!(assertion.id.as_deref(), Some("a"));
+        assert_eq!(assertion.diagnostics, ["d"]);
+        assert_eq!(assertion.properties, ["prop"]);
+        assert!(assertion
+            .content
+            .iter()
+            .any(|part| matches!(part, Content::Emph(_))));
+        assert!(assertion
+            .content
+            .iter()
+            .any(|part| matches!(part, Content::Span { .. })));
+        assert!(assertion
+            .content
+            .iter()
+            .any(|part| matches!(part, Content::Dir { .. })));
+        assert!(assertion
+            .content
+            .iter()
+            .any(|part| { matches!(part, Content::Text(text) if text.contains("nested")) }));
+        assert_eq!(m.diagnostics[0].lang.as_deref(), Some("fr"));
+        assert_eq!(m.properties[0].role.as_deref(), Some("r"));
+        assert_eq!(m.properties[0].scheme.as_deref(), Some("urn:s"));
+    }
+
+    #[test]
+    fn rejects_invalid_children_at_each_schema_level() {
+        for (container, expected) in [
+            ("<phase id='x'><title/></phase>", "inside <phase>"),
+            ("<pattern><diagnostics/></pattern>", "inside <pattern>"),
+            (
+                "<pattern><rule context='a'><title/></rule></pattern>",
+                "inside <rule>",
+            ),
+        ] {
+            let message = error(&format!(
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">{container}<pattern><rule context="fallback"><assert test="true()">m</assert></rule></pattern></schema>"#
+            ));
+            assert!(message.contains(expected), "{message}");
+        }
+    }
+
+    #[test]
+    fn rejects_incomplete_abstract_constructs_and_unresolved_includes() {
+        for (body, expected) in [
+            ("<ns uri='urn:x'/>", "@prefix"),
+            ("<ns prefix='x'/>", "@uri"),
+            ("<let value='1'/>", "@name"),
+            ("<phase><active pattern='p'/></phase>", "@id"),
+            ("<phase id='p'><active/></phase>", "@pattern"),
+            ("<phase id='p'><let value='1'/></phase>", "@name"),
+            (
+                "<pattern abstract='true'/>",
+                "abstract pattern needs an @id",
+            ),
+            (
+                "<pattern is-a='base'><param value='x'/></pattern>",
+                "@name",
+            ),
+            (
+                "<pattern is-a='base'><param name='x'/></pattern>",
+                "@value",
+            ),
+            (
+                "<pattern is-a='base'><rule context='a'/></pattern>",
+                "may contain only <param>",
+            ),
+            ("<pattern><let value='1'/></pattern>", "@name"),
+            (
+                "<pattern><rule abstract='true'/></pattern>",
+                "abstract rule needs an @id",
+            ),
+            (
+                "<pattern><rule context='a'><let value='1'/></rule></pattern>",
+                "@name",
+            ),
+            (
+                "<pattern><rule context='a'><report/></rule></pattern>",
+                "@test",
+            ),
+            (
+                "<pattern><rule context='a'><extends/></rule></pattern>",
+                "needs @rule or @href",
+            ),
+            ("<include href='x.sch'/>", "survived resolution"),
+            ("<diagnostics><diagnostic/></diagnostics>", "@id"),
+            ("<properties><property/></properties>", "@id"),
+        ] {
+            let message = error(&format!(
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">{body}</schema>"#
+            ));
+            assert!(message.contains(expected), "{message}");
+        }
+    }
+
+    #[test]
+    fn schematron_root_must_actually_be_schema() {
+        let message = error(
+            r#"<pattern xmlns="http://purl.oclc.org/dsdl/schematron"><rule context="a"/></pattern>"#,
+        );
+        assert!(message.contains("root element of a schema"), "{message}");
     }
 }

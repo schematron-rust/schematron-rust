@@ -195,6 +195,10 @@ impl Schema {
     /// assert_eq!(schema.portability().len(), 1);
     /// ```
     #[must_use]
+    // Compilation populates the expression table for every construct visited
+    // here; a missing entry is an internal invariant violation, not an input
+    // condition callers can trigger on a successfully constructed `Schema`.
+    #[allow(clippy::missing_panics_doc)]
     pub fn portability(&self) -> Vec<Lint> {
         let mut lints = Vec::new();
         let model = self.model();
@@ -228,7 +232,10 @@ impl Schema {
                 .iter()
                 .filter_map(|rule| rule.context.as_deref())
                 .filter_map(|context| {
-                    let Ok(Expr::Path(path)) = self.expression(context) else {
+                    let Expr::Path(path) = self
+                        .expression(context)
+                        .expect("rule contexts were compiled before linting")
+                    else {
                         return None;
                     };
                     let step = path.steps.last()?;
@@ -251,9 +258,7 @@ impl Schema {
                     lints.push(Lint::new(
                         LintKind::CollidingAttributeContexts,
                         format!("{location}/rule[@context='{context}']"),
-                        format!(
-                            "this pattern has rules on both {earlier} and {context}"
-                        ),
+                        format!("this pattern has rules on both {earlier} and {context}"),
                         "an unprefixed attribute name test matches only the \
                          no-namespace attribute here, correctly; the reference's \
                          template matcher ignores the namespace, so its earlier rule \
@@ -277,14 +282,22 @@ impl Schema {
     }
 
     /// The rule-level portability checks.
-    fn portability_of_rule(&self, rule: &crate::schema::Rule, location: &str, lints: &mut Vec<Lint>) {
+    fn portability_of_rule(
+        &self,
+        rule: &crate::schema::Rule,
+        location: &str,
+        lints: &mut Vec<Lint>,
+    ) {
         let context = rule.context.as_deref().unwrap_or_default();
         let at = format!("{location}/rule[@context='{context}']");
 
         // A context selecting text, comment or processing-instruction nodes.
         // The reference walks the tree with `@*|*`, so it never offers such a
         // node to a rule and the rule silently never fires.
-        if let Ok(Expr::Path(path)) = self.expression(context) {
+        if let Expr::Path(path) = self
+            .expression(context)
+            .expect("rule contexts were compiled before linting")
+        {
             if let Some(step) = path.steps.last() {
                 let kind = match step.node_test {
                     NodeTest::Text => Some("text()"),
@@ -314,8 +327,7 @@ impl Schema {
             lints.push(Lint::new(
                 LintKind::FlagOrRoleOnTheRule,
                 at.clone(),
-                "the rule sets @flag or @role, and an assertion below it sets neither"
-                    .to_string(),
+                "the rule sets @flag or @role, and an assertion below it sets neither".to_string(),
                 "findings inherit the rule's value here; the ISO reference \
                  implementation leaves them off, so anything filtering on the \
                  flag sees different results. Set it on the assertion to be \
@@ -328,29 +340,30 @@ impl Schema {
         let mut sources: Vec<(&str, String)> = vec![(context, at.clone())];
         for binding in &rule.lets {
             if let crate::schema::LetValue::Expression(value) = &binding.value {
-                sources.push((value.as_str(), format!("{at}/let[@name='{}']", binding.name)));
+                sources.push((
+                    value.as_str(),
+                    format!("{at}/let[@name='{}']", binding.name),
+                ));
             }
         }
         for assertion in rule.assertions() {
             sources.push((assertion.test.as_str(), at.clone()));
         }
         for (source, where_) in sources {
-            if source.is_empty() {
-                continue;
-            }
-            if let Ok(expr) = self.expression(source) {
-                if following_from_an_attribute(expr) {
-                    lints.push(Lint::new(
-                        LintKind::FollowingFromAnAttribute,
-                        where_,
-                        format!("{source} takes the following axis from an attribute"),
-                        "an attribute's following nodes include its own element's \
-                         children here, which is what XPath 1.0 says and what Java's \
-                         engine gives; the ISO reference implementation excludes them. \
-                         See spec/conformance/.",
-                    ));
-                    break;
-                }
+            let expr = self
+                .expression(source)
+                .expect("rule expressions were compiled before linting");
+            if following_from_an_attribute(expr) {
+                lints.push(Lint::new(
+                    LintKind::FollowingFromAnAttribute,
+                    where_,
+                    format!("{source} takes the following axis from an attribute"),
+                    "an attribute's following nodes include its own element's \
+                     children here, which is what XPath 1.0 says and what Java's \
+                     engine gives; the ISO reference implementation excludes them. \
+                     See spec/conformance/.",
+                ));
+                break;
             }
         }
 
@@ -373,7 +386,9 @@ impl Schema {
 
         // `@subject`, which moves the reported location.
         let subject = rule.subject.is_some()
-            || rule.assertions().any(|assertion| assertion.subject.is_some());
+            || rule
+                .assertions()
+                .any(|assertion| assertion.subject.is_some());
         if subject {
             lints.push(Lint::new(
                 LintKind::SubjectMovesTheLocation,
@@ -440,9 +455,10 @@ impl Schema {
         // matches everything it would. Comparison is pairwise, because the
         // relation is between two contexts rather than a property of one.
         for (index, rule) in pattern.rules.iter().enumerate() {
-            let Some(context) = rule.context.as_deref() else {
-                continue;
-            };
+            let context = rule
+                .context
+                .as_deref()
+                .expect("concrete rules have a context after compilation");
             let rule_location = format!("{location}/{}", rule_step(index));
 
             let duplicate = pattern.rules[..index]
@@ -456,7 +472,10 @@ impl Schema {
                 None
             } else {
                 pattern.rules[..index].iter().find_map(|earlier| {
-                    let earlier_context = earlier.context.as_deref()?;
+                    let earlier_context = earlier
+                        .context
+                        .as_deref()
+                        .expect("compiled concrete rules have contexts");
                     self.subsumes(earlier_context, context)
                         .then_some(earlier_context)
                 })
@@ -492,9 +511,11 @@ impl Schema {
     }
 
     fn lint_rule(&self, rule: &Rule, location: &str, lints: &mut Vec<Lint>) {
-        if let Some(context) = rule.context.as_deref() {
-            self.lint_unprefixed(context, location, "@context", lints);
-        }
+        let context = rule
+            .context
+            .as_deref()
+            .expect("concrete rules have a context after compilation");
+        self.lint_unprefixed(context, location, "@context", lints);
 
         if rule.assertions().next().is_none() {
             lints.push(Lint::new(
@@ -514,10 +535,7 @@ impl Schema {
                 lints.push(Lint::new(
                     LintKind::DuplicateAssertionTest,
                     location,
-                    format!(
-                        "two assertions in this rule test {:?}",
-                        assertion.test
-                    ),
+                    format!("two assertions in this rule test {:?}", assertion.test),
                     "merge them, or check whether one was meant to test something \
                      else.",
                 ));
@@ -526,11 +544,7 @@ impl Schema {
         }
 
         for (index, assertion) in rule.assertions().enumerate() {
-            let where_ = format!(
-                "{location}/{}[{}]",
-                assertion.kind.as_str(),
-                index + 1
-            );
+            let where_ = format!("{location}/{}[{}]", assertion.kind.as_str(), index + 1);
 
             if is_message_empty(&assertion.content) {
                 lints.push(Lint::new(
@@ -571,9 +585,9 @@ impl Schema {
         if self.namespaces().is_empty() {
             return;
         }
-        let Ok(expr) = self.expression(source) else {
-            return;
-        };
+        let expr = self
+            .expression(source)
+            .expect("linted expressions were compiled with the schema");
         let Some(name) = first_unprefixed_element_name(expr) else {
             return;
         };
@@ -617,22 +631,17 @@ fn looks_up_key(expr: &Expr, name: &str) -> bool {
         // A named reference to `key` itself only names it; nothing is
         // called until a dynamic call invokes it, which `DynamicCall`'s arm
         // below already walks into.
-        Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) | Expr::NamedFunctionRef { .. } => {
-            false
-        }
+        Expr::Literal(_)
+        | Expr::Number(_, _)
+        | Expr::Variable(_)
+        | Expr::NamedFunctionRef { .. } => false,
         Expr::Negate(inner) => looks_up_key(inner, name),
-        Expr::Binary(_, left, right) => {
-            looks_up_key(left, name) || looks_up_key(right, name)
-        }
+        Expr::Binary(_, left, right) => looks_up_key(left, name) || looks_up_key(right, name),
         Expr::TypeOp { value, .. } => looks_up_key(value, name),
         Expr::Sequence(members) => members.iter().any(|m| looks_up_key(m, name)),
         Expr::Range(from, to) => looks_up_key(from, name) || looks_up_key(to, name),
-        Expr::For { input, body, .. } => {
-            looks_up_key(input, name) || looks_up_key(body, name)
-        }
-        Expr::Let { value, body, .. } => {
-            looks_up_key(value, name) || looks_up_key(body, name)
-        }
+        Expr::For { input, body, .. } => looks_up_key(input, name) || looks_up_key(body, name),
+        Expr::Let { value, body, .. } => looks_up_key(value, name) || looks_up_key(body, name),
         Expr::Quantified { input, test, .. } => {
             looks_up_key(input, name) || looks_up_key(test, name)
         }
@@ -653,8 +662,7 @@ fn looks_up_key(expr: &Expr, name: &str) -> bool {
         Expr::Path(path) => {
             let start = match &path.start {
                 PathStart::Expr(expr, predicates) => {
-                    looks_up_key(expr, name)
-                        || predicates.iter().any(|p| looks_up_key(p, name))
+                    looks_up_key(expr, name) || predicates.iter().any(|p| looks_up_key(p, name))
                 }
                 PathStart::Root | PathStart::Context => false,
             };
@@ -712,8 +720,7 @@ impl Schema {
             .iter()
             .zip(&narrow.steps[offset..])
             .all(|(broad, narrow)| {
-                broad.axis == narrow.axis
-                    && node_test_subsumes(&broad.node_test, &narrow.node_test)
+                broad.axis == narrow.axis && node_test_subsumes(&broad.node_test, &narrow.node_test)
             })
     }
 }
@@ -739,12 +746,8 @@ fn node_test_subsumes(broad: &NodeTest, narrow: &NodeTest) -> bool {
 fn constant_test(schema: &Schema, source: &str) -> Option<&'static str> {
     let expr = schema.expression(source).ok()?;
     match expr {
-        Expr::Function { name, args } if args.is_empty() && name == "true" => {
-            Some("always holds")
-        }
-        Expr::Function { name, args } if args.is_empty() && name == "false" => {
-            Some("never holds")
-        }
+        Expr::Function { name, args } if args.is_empty() && name == "true" => Some("always holds"),
+        Expr::Function { name, args } if args.is_empty() && name == "false" => Some("never holds"),
         Expr::Number(_, _) | Expr::Literal(_) => Some("has a fixed outcome"),
         _ => None,
     }
@@ -757,9 +760,10 @@ fn constant_test(schema: &Schema, source: &str) -> Option<&'static str> {
 /// attribute really is in no namespace.
 fn first_unprefixed_element_name(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Literal(_) | Expr::Number(_, _) | Expr::Variable(_) | Expr::NamedFunctionRef { .. } => {
-            None
-        }
+        Expr::Literal(_)
+        | Expr::Number(_, _)
+        | Expr::Variable(_)
+        | Expr::NamedFunctionRef { .. } => None,
         Expr::Negate(inner) => first_unprefixed_element_name(inner),
         Expr::Binary(_, left, right) => {
             first_unprefixed_element_name(left).or_else(|| first_unprefixed_element_name(right))
@@ -807,7 +811,10 @@ fn first_unprefixed_element_name(expr: &Expr) -> Option<String> {
                         }
                     }
                 }
-                if let Some(found) = step.predicates.iter().find_map(first_unprefixed_element_name)
+                if let Some(found) = step
+                    .predicates
+                    .iter()
+                    .find_map(first_unprefixed_element_name)
                 {
                     return Some(found);
                 }
@@ -882,9 +889,9 @@ fn lint_phases(schema: &Schema, lints: &mut Vec<Lint>) {
 /// Whether an expression takes the `following` axis from an attribute node.
 fn following_from_an_attribute(expr: &Expr) -> bool {
     fn in_path(path: &crate::xpath::PathExpr) -> bool {
-        path.steps.windows(2).any(|pair| {
-            pair[0].axis == Axis::Attribute && pair[1].axis == Axis::Following
-        })
+        path.steps
+            .windows(2)
+            .any(|pair| pair[0].axis == Axis::Attribute && pair[1].axis == Axis::Following)
     }
     match expr {
         Expr::Path(path) => in_path(path),
@@ -928,10 +935,7 @@ fn shadowing(
     lints.push(Lint::new(
         LintKind::VariableShadowsAnOuterScope,
         format!("{location}/let[@name='{}']", binding.name),
-        format!(
-            "${} is already bound at {where_} level",
-            binding.name
-        ),
+        format!("${} is already bound at {where_} level", binding.name),
         "the four nested scopes are what the standard describes, and this \
          crate implements them — but the ISO reference implementation compiles \
          every binding into one XSLT scope and refuses the schema outright. \
@@ -976,7 +980,10 @@ fn lint_variables(schema: &Schema, lints: &mut Vec<Lint>) {
     for (index, pattern) in model.patterns.iter().enumerate() {
         let where_ = pattern_location(pattern, index);
         for binding in &pattern.lets {
-            report(&binding.name, format!("{where_}/let[@name='{}']", binding.name));
+            report(
+                &binding.name,
+                format!("{where_}/let[@name='{}']", binding.name),
+            );
         }
         for (rule_index, rule) in pattern.rules.iter().enumerate() {
             for binding in &rule.lets {
@@ -1005,9 +1012,7 @@ fn references_variable(expr: &Expr, name: &str) -> bool {
         Expr::Function { args, .. } => args.iter().any(|a| references_variable(a, name)),
         Expr::TypeOp { value, .. } => references_variable(value, name),
         Expr::Sequence(members) => members.iter().any(|m| references_variable(m, name)),
-        Expr::Range(from, to) => {
-            references_variable(from, name) || references_variable(to, name)
-        }
+        Expr::Range(from, to) => references_variable(from, name) || references_variable(to, name),
         Expr::For { input, body, .. } => {
             references_variable(input, name) || references_variable(body, name)
         }
@@ -1228,7 +1233,10 @@ mod tests {
                </pattern>"#,
         ] {
             let found = kinds(body);
-            assert!(!found.contains(&LintKind::UnreachableRule), "{body} -> {found:?}");
+            assert!(
+                !found.contains(&LintKind::UnreachableRule),
+                "{body} -> {found:?}"
+            );
         }
     }
 
@@ -1334,7 +1342,8 @@ mod tests {
 
     #[test]
     fn empty_messages_are_reported() {
-        let found = kinds(r#"<pattern><rule context="a"><assert test="b">   </assert></rule></pattern>"#);
+        let found =
+            kinds(r#"<pattern><rule context="a"><assert test="b">   </assert></rule></pattern>"#);
         assert_eq!(found, vec![LintKind::EmptyMessage]);
     }
 
@@ -1350,10 +1359,14 @@ mod tests {
 
     #[test]
     fn constant_tests_are_reported() {
-        let found = kinds(r#"<pattern><rule context="a"><assert test="true()">m</assert></rule></pattern>"#);
+        let found = kinds(
+            r#"<pattern><rule context="a"><assert test="true()">m</assert></rule></pattern>"#,
+        );
         assert_eq!(found, vec![LintKind::ConstantTest]);
 
-        let found = kinds(r#"<pattern><rule context="a"><assert test="false()">m</assert></rule></pattern>"#);
+        let found = kinds(
+            r#"<pattern><rule context="a"><assert test="false()">m</assert></rule></pattern>"#,
+        );
         assert_eq!(found, vec![LintKind::ConstantTest]);
     }
 
@@ -1504,5 +1517,292 @@ mod tests {
             assert!(lint.help.is_some(), "{lint:?}");
             assert!(!lint.kind.as_str().is_empty());
         }
+    }
+
+    #[test]
+    fn lint_kind_identifiers_and_display_are_stable() {
+        let kinds = [
+            LintKind::VariableShadowsAnOuterScope,
+            LintKind::FollowingFromAnAttribute,
+            LintKind::CollidingAttributeContexts,
+            LintKind::SpaceBetweenInlineElements,
+            LintKind::ContextSelectsANonElementKind,
+            LintKind::FlagOrRoleOnTheRule,
+            LintKind::SubjectMovesTheLocation,
+            LintKind::UnreachableRule,
+            LintKind::DuplicateRuleContext,
+            LintKind::UnprefixedNameInNamespacedSchema,
+            LintKind::UnreferencedDiagnostic,
+            LintKind::UnreferencedProperty,
+            LintKind::EmptyMessage,
+            LintKind::ConstantTest,
+            LintKind::PatternInNoPhase,
+            LintKind::UnreferencedKey,
+            LintKind::UnreferencedVariable,
+            LintKind::RuleWithNoAssertions,
+            LintKind::PatternWithNoRules,
+            LintKind::DuplicateAssertionTest,
+            LintKind::PhaseWithNoPatterns,
+        ];
+        for kind in kinds {
+            assert!(!kind.as_str().is_empty());
+        }
+        let lint = Lint::new(LintKind::ConstantTest, "pattern[1]", "fixed", "change it");
+        assert_eq!(lint.to_string(), "pattern[1]: fixed");
+    }
+
+    #[test]
+    fn unreferenced_keys_properties_and_every_variable_scope_are_reported() {
+        let found = lints_of(
+            r#"<let name="schema-unused" value="1"/>
+               <phase id="p"><let name="phase-unused" value="1"/><active pattern="used"/></phase>
+               <key name="unused-key" match="a" use="@id"/>
+               <pattern id="used"><let name="pattern-unused" value="1"/><rule context="a">
+                 <let name="rule-unused" value="1"/><assert test="b" properties="used-property">m</assert>
+               </rule></pattern>
+               <properties>
+                 <property id="unused-property">p</property>
+                 <property id="used-property">p</property>
+               </properties>"#,
+        );
+        assert!(found
+            .iter()
+            .any(|lint| lint.kind == LintKind::UnreferencedKey));
+        assert!(found
+            .iter()
+            .any(|lint| lint.kind == LintKind::UnreferencedProperty));
+        let variables: Vec<&Lint> = found
+            .iter()
+            .filter(|lint| lint.kind == LintKind::UnreferencedVariable)
+            .collect();
+        assert_eq!(variables.len(), 4, "{found:?}");
+        assert!(variables
+            .iter()
+            .any(|lint| lint.location.contains("phase[@id='p']")));
+        assert!(variables
+            .iter()
+            .any(|lint| lint.location.contains("pattern[@id='used']")));
+        assert!(variables
+            .iter()
+            .any(|lint| lint.location.contains("rule[1]")));
+    }
+
+    #[test]
+    fn an_unnamed_pattern_cannot_be_activated_by_a_phase() {
+        let found = kinds(
+            r#"<phase id="p"/>
+               <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>"#,
+        );
+        assert!(found.contains(&LintKind::PatternInNoPhase), "{found:?}");
+    }
+
+    #[test]
+    fn numeric_and_string_literals_are_constant_tests() {
+        for test in ["1", "'fixed'"] {
+            let found = kinds(&format!(
+                r#"<pattern><rule context="a"><assert test="{test}">m</assert></rule></pattern>"#
+            ));
+            assert!(found.contains(&LintKind::ConstantTest), "{test}: {found:?}");
+        }
+    }
+
+    #[test]
+    fn expression_walkers_reach_every_nested_xpath_shape() {
+        let expressions = [
+            "-key('k', 'x')",
+            "key('k', 'x') + 1",
+            "key('k', 'x') instance of node()*",
+            "(1, key('k', 'x'))",
+            "1 to count(key('k', 'x'))",
+            "for $x in key('k', 'x') return $x",
+            "let $x := key('k', 'x') return $x",
+            "some $x in key('k', 'x') satisfies true()",
+            "if (key('k', 'x')) then 1 else 0",
+            "function($x) { key('k', $x) }",
+            "(function($x) { $x }) (key('k', 'x'))",
+            "key('k', 'x') => count()",
+            "(key('k', 'x'))[true()]/a[key('k', 'x')]",
+        ];
+        for source in expressions {
+            let expression = crate::xpath::parse(source).expect("expression should parse");
+            assert!(looks_up_key(&expression, "k"), "{source}");
+        }
+
+        for source in [
+            "-$v",
+            "$v + 1",
+            "$v instance of xs:integer",
+            "(1, $v)",
+            "1 to $v",
+            "for $x in $v return $x",
+            "let $x := $v return $x",
+            "some $x in $v satisfies true()",
+            "if ($v) then 1 else 0",
+            "function($x) { $v }",
+            "(function($x) { $x }) ($v)",
+            "$v => string()",
+            "($v)[true()]/a[$v]",
+        ] {
+            let expression = crate::xpath::parse(source).expect("expression should parse");
+            assert!(references_variable(&expression, "v"), "{source}");
+        }
+
+        for source in [
+            "-a",
+            "1 + a",
+            "a instance of node()*",
+            "(1, a)",
+            "1 to count(a)",
+            "for $x in a return $x",
+            "let $x := a return $x",
+            "some $x in a satisfies true()",
+            "if (a) then 1 else 0",
+            "function($x) { a }",
+            "(function($x) { $x }) (a)",
+            "a => count()",
+            "(a)[b]/c[d]",
+        ] {
+            let expression = crate::xpath::parse(source).expect("expression should parse");
+            assert!(
+                first_unprefixed_element_name(&expression).is_some(),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn defensive_expression_walkers_cover_false_and_late_branches() {
+        let computed_key = crate::xpath::parse("key(concat('k', ''), 'x')").unwrap();
+        assert!(looks_up_key(&computed_key, "anything"));
+        let no_argument_key = Expr::Function {
+            name: "key".into(),
+            args: Vec::new(),
+        };
+        assert!(!looks_up_key(&no_argument_key, "k"));
+
+        for source in ["-(@x/following::*)", "(1, @x/following::*)"] {
+            assert!(following_from_an_attribute(
+                &crate::xpath::parse(source).unwrap()
+            ));
+        }
+
+        let late_key = crate::xpath::parse("if (false()) then 0 else key('k', 'x')").unwrap();
+        assert!(looks_up_key(&late_key, "k"));
+        let late_variable = crate::xpath::parse("if (false()) then 0 else $v").unwrap();
+        assert!(references_variable(&late_variable, "v"));
+        for source in [
+            "1 + count(key('k', 'x'))",
+            "for $x in 1 return key('k', 'x')",
+            "let $x := 1 return key('k', 'x')",
+            "some $x in 1 satisfies key('k', 'x')",
+            "(1)[key('k', 'x')]/a",
+            "(1)[false()]/a[key('k', 'x')]",
+        ] {
+            assert!(looks_up_key(&crate::xpath::parse(source).unwrap(), "k"));
+        }
+        for source in [
+            "1 + $v",
+            "1 to $v",
+            "for $x in 1 return $v",
+            "let $x := 1 return $v",
+            "some $x in 1 satisfies $v",
+            "(1)[$v]/a",
+            "(1)[false()]/a[$v]",
+        ] {
+            assert!(references_variable(
+                &crate::xpath::parse(source).unwrap(),
+                "v"
+            ));
+        }
+        let predicate_name = crate::xpath::parse("(1)[a]/b").unwrap();
+        assert_eq!(
+            first_unprefixed_element_name(&predicate_name).as_deref(),
+            Some("a")
+        );
+
+        assert!(is_message_empty(&[Content::Dir {
+            value: None,
+            content: vec![Content::Text("  ".into())],
+        }]));
+
+        let schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern>
+                   <rule context="a | b"><assert test="true()">m</assert></rule>
+                   <rule context="/"><assert test="true()">m</assert></rule>
+                 </pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let _ = schema.portability();
+        assert!(constant_test(&schema, "not compiled").is_none());
+    }
+
+    #[test]
+    fn portability_audit_reaches_every_rule_level_check() {
+        let schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <ns prefix="p" uri="urn:p"/>
+                 <pattern>
+                   <rule context="text()"><assert test="true()">m</assert></rule>
+                   <rule context="comment()"><assert test="true()">m</assert></rule>
+                   <rule context="processing-instruction()"><assert test="true()">m</assert></rule>
+                   <rule context="element"><assert test="child">m</assert></rule>
+                   <rule context="@*"><assert test="true()">m</assert></rule>
+                 </pattern>
+                 <pattern>
+                   <rule context="@x" flag="warning">
+                     <let name="content">text</let>
+                     <let name="next" value="@x/following::*"/>
+                     <assert test="true()"><emph>a</emph> <span>b</span></assert>
+                   </rule>
+                   <rule context="@p:x"><assert test="true()">m</assert></rule>
+                 </pattern>
+               </schema>"#,
+        )
+        .unwrap();
+        let kinds: Vec<LintKind> = schema
+            .portability()
+            .into_iter()
+            .map(|lint| lint.kind)
+            .collect();
+        for expected in [
+            LintKind::ContextSelectsANonElementKind,
+            LintKind::FlagOrRoleOnTheRule,
+            LintKind::FollowingFromAnAttribute,
+            LintKind::SpaceBetweenInlineElements,
+            LintKind::CollidingAttributeContexts,
+        ] {
+            assert!(kinds.contains(&expected), "{expected:?}: {kinds:?}");
+        }
+    }
+
+    #[test]
+    fn lint_walkers_cover_nonmatching_path_and_reference_shapes() {
+        let schema = Schema::from_str(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern>
+                   <rule context="/a"><assert test="b">m</assert></rule>
+                   <rule context="a"><assert test="b">m</assert></rule>
+                 </pattern>
+                 <properties><property id="used">p</property></properties>
+               </schema>"#,
+        )
+        .unwrap();
+        assert!(!schema.subsumes("(", "a"));
+        assert!(!schema.subsumes("/a", "a"));
+        assert_eq!(
+            first_unprefixed_element_name(&crate::xpath::parse("(1)[true()]/a").unwrap())
+                .as_deref(),
+            Some("a")
+        );
+        assert_eq!(
+            first_unprefixed_element_name(&crate::xpath::parse("@x[a]").unwrap()).as_deref(),
+            Some("a")
+        );
+        assert!(references_variable(
+            &crate::xpath::parse("(1)[$v]/a").unwrap(),
+            "v"
+        ));
     }
 }
