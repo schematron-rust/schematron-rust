@@ -78,7 +78,7 @@ the policy allows.
 
 ## Local verification
 
-From the repository root, `make test-minimum-supported-rust-version` checks
+From the repository root, `make ci-minimum-supported-rust-version` checks
 all crate targets with all features, then runs the full suite on each of
 the two older supported Rust minors. It uses the committed lockfile and
 accepts rustup host toolchains installed by minor or by patch version.

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Run the criterion benchmarks.
+set -eu
+cd "$(dirname "$0")/../schematron"
+cargo bench
