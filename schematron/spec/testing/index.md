@@ -447,6 +447,7 @@ features, plus the default and CLI-only binaries.
 
 ```sh
 cargo test                        # unit + integration + corpus + doc tests
+cargo check --release --all-features # optimized configuration must compile
 cargo clippy --all-targets -- -D warnings
 cargo doc --no-deps               # must be warning-free
 cargo bench

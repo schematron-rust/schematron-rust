@@ -806,16 +806,18 @@ fn matched_nodes(run: Run<'_>, rule: &Rule, variables: &Variables) -> Result<Vec
     if let Some(test) = simple_descendant_test(&rooted) {
         let matched = descendant_matches(document, test, &context);
         #[cfg(debug_assertions)]
-        let evaluated = evaluate(&rooted, &context)
-            .expect("a compiled rule context must evaluate")
-            .as_node_set()
-            .expect("a compiled rule context must return a node-set")
-            .to_vec();
-        debug_assert_eq!(
-            matched,
-            evaluated,
-            "the fast path for rule context {source:?} disagreed with the evaluator"
-        );
+        {
+            let evaluated = evaluate(&rooted, &context)
+                .expect("a compiled rule context must evaluate")
+                .as_node_set()
+                .expect("a compiled rule context must return a node-set")
+                .to_vec();
+            debug_assert_eq!(
+                matched,
+                evaluated,
+                "the fast path for rule context {source:?} disagreed with the evaluator"
+            );
+        }
         return Ok(matched);
     }
 

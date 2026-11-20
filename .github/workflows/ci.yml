@@ -50,6 +50,9 @@ jobs:
       - name: Test
         run: cargo test --locked --all-features
 
+      - name: Check optimized build
+        run: cargo check --release --locked --all-features
+
       - name: Test packaged features
         run: python3 ../bin/test-packaged-features
 

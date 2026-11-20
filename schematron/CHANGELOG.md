@@ -5,9 +5,13 @@ git history; this file starts where the first output-affecting change did.
 
 ## Unreleased
 
+## 0.17.1
+
 - Add the XPath 2.0 atomic constructors `xs:string()`, `xs:boolean()`,
   `xs:integer()`, `xs:decimal()`, `xs:float()`, and `xs:double()`, using the
   same lexical conversions and numeric type tags as `cast as`.
+- Exercise every function and merged executable source region in the complete
+  all-feature test suite, and enforce exact source coverage in CI.
 
 ## 0.17.0
 
