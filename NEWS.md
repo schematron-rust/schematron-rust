@@ -6,6 +6,14 @@ crate's behavior. The crate's own release notes are
 everything else that is worth a reader noticing, starting from when this file
 was created.
 
+## 2026-11-21
+
+- **License grant widened to seven licenses.** The crate and repository are
+  now offered under any one of MIT, Apache-2.0, BSD-3-Clause, GPL-2.0-only,
+  GPL-3.0-only, OGL-UK-3.0, or CC-BY-NC-SA-4.0, at the recipient's option; the
+  previous grant was the first, second, fourth, and fifth. See
+  [`LICENSE.md`](LICENSE.md) and [`spec/licenses/`](spec/licenses/index.md).
+
 ## 2026-09-06
 
 - **The autonomous release decision widened to cover the git side, not

@@ -208,14 +208,17 @@ fn repository_governance_and_license_files_are_present() {
         );
     }
     for name in [
-        "MIT.txt",
-        "Apache-2.0.txt",
-        "GPL-2.0-only.txt",
-        "GPL-3.0-only.txt",
+        "mit",
+        "apache-2.0",
+        "bsd-3-clause",
+        "gpl-2.0-only",
+        "gpl-3.0-only",
+        "ogl-uk-3.0",
+        "cc-by-nc-sa-4.0",
     ] {
         assert!(
-            crate_root.join("licenses").join(name).is_file(),
-            "the crate must ship licenses/{name}"
+            crate_root.join("LICENSES").join(name).join("index.md").is_file(),
+            "the crate must ship LICENSES/{name}/index.md"
         );
     }
 }
@@ -580,7 +583,8 @@ fn directories_are_lowercase() {
         }
         let name = path.file_name().unwrap().to_string_lossy().to_string();
         // Skip build output and version control, which are not ours to name.
-        if name.starts_with('.') || name == "target" {
+        // `LICENSES` is the fixed, uppercase license-text layout shared by every repository.
+        if name.starts_with('.') || name == "target" || name == "LICENSES" {
             continue;
         }
         if name != name.to_lowercase() {

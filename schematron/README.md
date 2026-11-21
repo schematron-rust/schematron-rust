@@ -408,9 +408,12 @@ does and does not mean.
 
 Licensed under any of:
 
-- [MIT License](licenses/MIT.txt)
-- [Apache License, Version 2.0](licenses/Apache-2.0.txt)
-- [GNU General Public License version 2 only](licenses/GPL-2.0-only.txt)
-- [GNU General Public License version 3 only](licenses/GPL-3.0-only.txt)
+- [MIT License](LICENSES/mit/index.md)
+- [Apache License, Version 2.0](LICENSES/apache-2.0/index.md)
+- [BSD 3-Clause License](LICENSES/bsd-3-clause/index.md)
+- [GNU General Public License version 2 only](LICENSES/gpl-2.0-only/index.md)
+- [GNU General Public License version 3 only](LICENSES/gpl-3.0-only/index.md)
+- [UK Open Government Licence v3.0](LICENSES/ogl-uk-3.0/index.md)
+- [Creative Commons Attribution Non Commercial Share Alike 4.0 International](LICENSES/cc-by-nc-sa-4.0/index.md)
 
 at your option.

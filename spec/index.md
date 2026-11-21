@@ -20,6 +20,7 @@ track cross-platform checks and remaining operational work.
 | [Trusted publishing](trusted-publishing/index.md) | Planned — blocked on Codeberg/Forgejo support |
 | [Release process](release-process/index.md) | Implemented — who decides a release is ready and executes it, and the bounds on that |
 | [Dependabot](dependabot/index.md) | Implemented |
+| [Licenses](licenses/index.md) | Implemented — any one of seven licenses, at the recipient's option |
 | [Rust MSRV policy](rust-msrv-n-minus-2/index.md) | Implemented — 1.98 |
 | [Agent skills](agent-skills/index.md) | Implemented — `schematron-skill`, `schematron-rust-maintainer-skill` |
 | [llms.json and llms.txt](llms-json-and-llms-txt/index.md) | Implemented — at the repository root and the website root |

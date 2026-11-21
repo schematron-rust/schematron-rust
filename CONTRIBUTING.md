@@ -79,8 +79,8 @@ is planned but not yet live.
 ## License
 
 By contributing, you agree your contribution is licensed under the same
-terms as the crate: MIT, Apache-2.0, GPL-2.0-only, or GPL-3.0-only, at the
-user's option. [LICENSE.md](LICENSE.md) links the complete license texts.
+terms as the crate: MIT, Apache-2.0, BSD-3-Clause, GPL-2.0-only, GPL-3.0-only,
+OGL-UK-3.0, or CC-BY-NC-SA-4.0, at the user's option. [LICENSE.md](LICENSE.md) links the complete license texts.
 
 Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md),
 not in a public issue.
