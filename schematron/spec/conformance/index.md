@@ -116,6 +116,17 @@ XPath 1.0 numbers are IEEE 754 doubles, and the crate uses `f64` directly, so
 `0.1 + 0.2 != 0.3` here exactly as it does in every other conformant engine.
 Number-to-string conversion follows XPath 1.0's format, not Rust's `Display`.
 
+That does not change under an XPath 2.0 binding, and there it is a
+divergence rather than the standard's answer. XPath 2.0 makes `xs:decimal`
+an exact decimal type and computes `0.1 + 0.2 = 0.3` as true; this crate
+tags a decimal value but still computes with `f64`, so the same expression
+is false, with or without `cast as xs:decimal` on the operands, and
+`string(0.1 + 0.2)` is `"0.30000000000000004"`. The expression is evaluated,
+not refused, so a schema ported from a conformant 2.0 engine can silently
+change verdict. Compare with a tolerance instead. See
+[xpath2/](../xpath2/index.md#numbers-and-what-instance-of-reports) for the
+expressions and the workaround.
+
 ## Limits
 
 | Limit | Value | Why |

@@ -5,6 +5,12 @@ git history; this file starts where the first output-affecting change did.
 
 ## Unreleased
 
+- Document and test the XPath 2.0 decimal divergence instead of leaving it
+  to be discovered: `xs:decimal` is a type tag on an `f64`, arithmetic
+  widens to `xs:double`, and `0.1 + 0.2 = 0.3` is false where a conformant
+  2.0 engine computes it exactly. The spec now names the tolerance
+  workaround and says the expression is evaluated rather than refused.
+
 ## 0.17.1
 
 - Add the XPath 2.0 atomic constructors `xs:string()`, `xs:boolean()`,

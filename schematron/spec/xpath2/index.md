@@ -382,6 +382,26 @@ without taking it on:
 | `(1 + 1) instance of xs:double` | true |
 | `count((1, 2)) instance of xs:double` | true |
 
+**A tagged decimal is still a double underneath, so decimal arithmetic is
+inexact.** XPath 2.0 requires `xs:decimal` arithmetic to be exact, with at
+least 18 digits of precision, and answers `0.1 + 0.2 = 0.3` with true. Here
+every number is an `f64` whatever its tag, arithmetic always produces
+`xs:double`, and casting the operands first does not help:
+
+| Expression | This crate | Conformant XPath 2.0 |
+|---|---|---|
+| `0.1 + 0.2 = 0.3` | false | true |
+| `string(0.1 + 0.2)` | `"0.30000000000000004"` | `"0.3"` |
+| `xs:decimal('0.1') + xs:decimal('0.2') = xs:decimal('0.3')` | false | true |
+| `(xs:decimal('0.1') + xs:decimal('0.2')) instance of xs:decimal` | false | true |
+
+A schema that needs decimal equality must compare with an epsilon —
+`abs((0.1 + 0.2) - 0.3) < 0.000001` — or quantise both sides to integers
+first. Exact `xs:decimal` would replace the `f64` representation and the
+promotion rules throughout arithmetic, comparison, `sum()`/`avg()` and
+formatting; this crate does not implement it. See
+[conformance/](../conformance/index.md#numeric-behaviour).
+
 Casting and `castable as` themselves are unaffected by any of this, because
 they still read the lexical form rather than a tracked type — lexical is the
 right reading for the untyped values a schema actually inspects.

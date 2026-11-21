@@ -1460,6 +1460,30 @@ fn computed_numbers_are_still_double() {
 }
 
 #[test]
+fn decimal_arithmetic_is_inexact_and_yields_a_double() {
+    // XPath 2.0 makes `xs:decimal` exact, so `0.1 + 0.2 = 0.3` is true
+    // there. This crate carries the tag on an `f64` and widens every
+    // arithmetic result to `xs:double`, so it is false even when both
+    // operands were cast first. Documented in spec/conformance/ and
+    // spec/xpath2/; a schema has to compare with a tolerance instead.
+    assert!(!check("0.1 + 0.2 = 0.3", "<a/>"));
+    assert!(check("string(0.1 + 0.2) = '0.30000000000000004'", "<a/>"));
+    assert!(!check(
+        "xs:decimal('0.1') + xs:decimal('0.2') = xs:decimal('0.3')",
+        "<a/>"
+    ));
+    assert!(!check(
+        "(xs:decimal('0.1') + xs:decimal('0.2')) instance of xs:decimal",
+        "<a/>"
+    ));
+    assert!(check(
+        "(xs:decimal('0.1') + xs:decimal('0.2')) instance of xs:double",
+        "<a/>"
+    ));
+    assert!(check("abs((0.1 + 0.2) - 0.3) < 0.000001", "<a/>"));
+}
+
+#[test]
 fn occurrence_indicators_bound_the_length() {
     let doc = "<a><b/><b/></a>";
     assert!(check("b instance of element()*", doc));
