@@ -513,46 +513,67 @@ pub fn format_number(value: f64) -> String {
 }
 
 /// Rewrites a Rust exponential rendering into plain decimal notation.
+///
+/// Fallback: `input`, unchanged — an exponential rendering is still a correct
+/// rendering of the same number, so a rendering this function cannot expand
+/// (an unparseable exponent, or a width that does not fit) loses nothing.
 fn expand_exponential(input: &str) -> String {
-    let (mantissa, exponent) = input
-        .split_once(['e', 'E'])
-        .expect("caller checked that an exponent is present");
-    let exponent: i32 = exponent.parse().unwrap_or(0);
+    expand_exponential_checked(input).unwrap_or_else(|| input.to_string())
+}
+
+/// The most zeros an expansion writes. A rendered `f64` has an exponent within
+/// about ±324, so a larger one is not a rendering of an `f64`, and writing its
+/// zeros would be an unbounded allocation (RCA-LEN-4).
+const MAX_EXPANDED_ZEROS: u64 = 400;
+
+/// [`expand_exponential`], or `None` when the rendering cannot be expanded.
+fn expand_exponential_checked(input: &str) -> Option<String> {
+    let (mantissa, exponent) = input.split_once(['e', 'E'])?;
+    let exponent: i64 = exponent.parse().ok()?;
 
     let negative = mantissa.starts_with('-');
     let mantissa = mantissa.trim_start_matches('-');
     let (int_part, frac_part) = mantissa.split_once('.').unwrap_or((mantissa, ""));
     let digits: String = format!("{int_part}{frac_part}");
     // Where the decimal point sits after shifting by the exponent.
-    let point = i32::try_from(int_part.len()).unwrap_or(i32::MAX) + exponent;
+    let point = i64::try_from(int_part.len()).ok()?.checked_add(exponent)?;
 
     let mut out = String::new();
     if negative {
         out.push('-');
     }
     if point <= 0 {
+        let zeros = point.unsigned_abs();
+        if zeros > MAX_EXPANDED_ZEROS {
+            return None;
+        }
         out.push_str("0.");
-        for _ in 0..-point {
+        for _ in 0..zeros {
             out.push('0');
         }
         out.push_str(digits.trim_end_matches('0'));
     } else {
-        let point = usize::try_from(point).unwrap_or(0);
+        let point = usize::try_from(point).ok()?;
         if point >= digits.len() {
             out.push_str(&digits);
-            for _ in 0..point - digits.len() {
+            let zeros = point.checked_sub(digits.len())?;
+            if u64::try_from(zeros).ok()? > MAX_EXPANDED_ZEROS {
+                return None;
+            }
+            for _ in 0..zeros {
                 out.push('0');
             }
         } else {
-            out.push_str(&digits[..point]);
-            let tail = digits[point..].trim_end_matches('0');
+            let (whole, tail) = digits.split_at_checked(point)?;
+            out.push_str(whole);
+            let tail = tail.trim_end_matches('0');
             if !tail.is_empty() {
                 out.push('.');
                 out.push_str(tail);
             }
         }
     }
-    out
+    Some(out)
 }
 
 #[cfg(test)]
@@ -781,5 +802,15 @@ mod tests {
         assert_eq!(expand_exponential("-1.25e-7"), "-0.000000125");
         assert_eq!(expand_exponential("1.20e1"), "12");
         assert_eq!(expand_exponential("1E2"), "100");
+        // Fallback: the input unchanged, at the first exponent that cannot be expanded.
+        assert_eq!(expand_exponential("1e9223372036854775807"), "1e9223372036854775807");
+        assert_eq!(expand_exponential("1e9223372036854775808"), "1e9223372036854775808");
+        assert_eq!(expand_exponential("1ex"), "1ex");
+        assert_eq!(expand_exponential("1e-9223372036854775808"), "1e-9223372036854775808");
+        // The most zeros written is 400; one more keeps the exponential form.
+        assert_eq!(expand_exponential("1e400").len(), 401);
+        assert_eq!(expand_exponential("1e401"), "1e401");
+        assert_eq!(expand_exponential("1e-401").len(), 403);
+        assert_eq!(expand_exponential("1e-402"), "1e-402");
     }
 }

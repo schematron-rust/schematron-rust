@@ -298,15 +298,13 @@ fn resolve_entity(name: &str) -> std::result::Result<char, String> {
 }
 
 fn line_column(source: &str, position: usize) -> (usize, usize) {
-    let mut position = position.min(source.len());
     // quick-xml's own byte offset does not promise to land on a char
     // boundary — a multi-byte character (anything above ASCII, not just
     // an exotic one) straddling the position it reports would otherwise
     // panic slicing `source` below. Rounding down to the nearest boundary
-    // is always safe: 0 always is one, so this loop always terminates.
-    while !source.is_char_boundary(position) {
-        position -= 1;
-    }
+    // is always safe: 0 always is one. `floor_char_boundary` also bounds the
+    // position by the length of `source`.
+    let position = source.floor_char_boundary(position);
     let before = &source[..position];
     let line = before.matches('\n').count() + 1;
     let column = before.rfind('\n').map_or(position, |i| position - i - 1) + 1;
@@ -599,7 +597,9 @@ fn parse(source: &str) -> Result<Document> {
 
     loop {
         // The buffer position cannot exceed the source length, which is
-        // already a usize, so this conversion cannot lose anything.
+        // already a usize, so this conversion cannot fail. Fallback: `usize::MAX`,
+        // the end of the source — the position only locates an error, and
+        // `line_column` bounds it by the source length.
         let position = usize::try_from(reader.buffer_position()).unwrap_or(usize::MAX);
         let event = reader
             .read_event()

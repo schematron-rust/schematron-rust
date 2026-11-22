@@ -5,6 +5,19 @@ git history; this file starts where the first output-affecting change did.
 
 ## Unreleased
 
+- **Checked arithmetic** (`spec/rust-checked-arithmetic`). No `saturating_*`, no
+  unchecked numeric `as`, and no panicking operator on the date and duration
+  figures. Breaking for 0.x: `add_months`, `add_seconds`, `adjust_to_timezone`
+  and `from_unix_seconds` return `Option<Temporal>`, and `Temporal::to_seconds`
+  and `to_seconds_in` return `Option<f64>`, where the date is too far from the
+  epoch to be an exact `f64` (it was a wrapped or panicking day count). A
+  duration with a fractional or overflowing year or month count is now rejected
+  by `Duration::parse` rather than truncated. A timezone designator that splits
+  a multibyte character is malformed, no longer a panic. `insert-before()` with a
+  `NaN` position is an error. A scale in `xs:double` formatting that cannot be
+  expanded keeps its exponential form. `[profile.release]` turns on
+  `overflow-checks`.
+
 ## 0.17.1
 
 - Add the XPath 2.0 atomic constructors `xs:string()`, `xs:boolean()`,

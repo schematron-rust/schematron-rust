@@ -49,7 +49,10 @@ test = false
 doc = false
 bench = false
 
+# RCA-ENF-4: a backstop. Any operator the lints miss panics, which is detectable,
+# instead of wrapping, which is not. RCA-P-1 still forbids the panic.
 [profile.release]
+overflow-checks = true
 debug = 1
 
 [profile.dev]

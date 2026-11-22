@@ -9,6 +9,7 @@
 
 use super::context::EvalContext;
 use super::eval::{cast_item, EvalError};
+use super::numeric;
 use super::temporal::{
     adjust_to_timezone, from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind,
 };
@@ -340,11 +341,11 @@ fn call_known(
 ) -> Result<Value, EvalError> {
     let document = context.document;
     match name {
-        "last" => Ok(double(as_f64(context.size))),
-        "position" => Ok(double(as_f64(context.position))),
+        "last" => Ok(double(as_f64(context.size)?)),
+        "position" => Ok(double(as_f64(context.position)?)),
         "count" => Ok(double(as_f64(
             aggregate_items(name, &args[0], context.version)?.len(),
-        ))),
+        )?)),
         "id" => Ok(Value::NodeSet(id_function(args, context))),
 
         "local-name" => Ok(Value::String(
@@ -377,20 +378,22 @@ fn call_known(
             let (haystack, needle) = two_strings(args, document);
             Ok(Value::String(
                 haystack
-                    .find(&needle)
-                    .map_or_default(|i| haystack[..i].to_string()),
+                    .split_once(needle.as_str())
+                    .map_or_default(|(before, _)| before.to_string()),
             ))
         }
         "substring-after" => {
             let (haystack, needle) = two_strings(args, document);
-            Ok(Value::String(haystack.find(&needle).map_or_default(|i| {
-                haystack[i + needle.len()..].to_string()
-            })))
+            Ok(Value::String(
+                haystack
+                    .split_once(needle.as_str())
+                    .map_or_default(|(_, after)| after.to_string()),
+            ))
         }
-        "substring" => Ok(Value::String(substring(args, document))),
+        "substring" => Ok(Value::String(substring(args, document)?)),
         "string-length" => Ok(double(as_f64(
             string_argument(args, context).chars().count(),
-        ))),
+        )?)),
         "normalize-space" => Ok(Value::String(normalize_space(&string_argument(
             args, context,
         )))),
@@ -489,8 +492,7 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             }
             // Folded from `0.0` for the same reason as `sum()` above.
             let total: f64 = numbers.iter().fold(0.0, |a, b| a + b);
-            #[allow(clippy::cast_precision_loss)]
-            let count = numbers.len() as f64;
+            let count = as_f64(numbers.len())?;
             Ok(double(total / count))
         }
         "exists" => Ok(Value::Boolean(!sequence_items(&args[0]).is_empty())),
@@ -646,8 +648,17 @@ fn adjust_to_timezone_call(
         Some(_) => match sequence_items(&args[1]).as_slice() {
             [] => None,
             [Item::Duration(duration)] if duration.kind() == DurationKind::DayTime => {
-                #[allow(clippy::cast_possible_truncation)]
-                let minutes = (duration.to_seconds() / 60.0).round() as i32;
+                let rounded = (duration.to_seconds() / 60.0).round();
+                // A timezone that is not a whole number of minutes in `i32` is
+                // invalid data (RCA-DECL-5): refused like any out-of-range one.
+                let Some(minutes) =
+                    numeric::f64_to_i64(rounded).and_then(|minutes| i32::try_from(minutes).ok())
+                else {
+                    return Err(EvalError::new(format!(
+                        "{name}()'s timezone is {rounded} minutes, outside the valid \
+                         range of -14:00 to +14:00"
+                    )));
+                };
                 if !(-840..=840).contains(&minutes) {
                     return Err(EvalError::new(format!(
                         "{name}()'s timezone is {minutes} minutes, outside the valid \
@@ -664,9 +675,10 @@ fn adjust_to_timezone_call(
         },
     };
 
-    Ok(Value::Sequence(vec![Item::Temporal(adjust_to_timezone(
-        &temporal, target,
-    ))]))
+    let adjusted = adjust_to_timezone(&temporal, target).ok_or_else(|| {
+        EvalError::new("the adjusted value is outside the range of dates and times represented")
+    })?;
+    Ok(Value::Sequence(vec![Item::Temporal(adjusted)]))
 }
 
 /// The remaining XPath 2.0 functions.
@@ -680,9 +692,8 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
                 .iter()
                 .enumerate()
                 .filter(|(_, item)| item.to_xpath_string(document) == wanted)
-                // XPath positions are one-based.
-                .map(|(index, _)| Item::Number(as_f64(index + 1), NumericType::Double))
-                .collect();
+                .map(|(index, _)| Ok(Item::Number(one_based(index)?, NumericType::Double)))
+                .collect::<Result<Vec<_>, EvalError>>()?;
             Ok(Value::Sequence(positions))
         }
 
@@ -698,7 +709,7 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
         // one is easier to write a test against than any other.
         "unordered" => Ok(Value::Sequence(sequence_items(&args[0]))),
 
-        "subsequence" => Ok(Value::Sequence(subsequence(args, context))),
+        "subsequence" => Ok(Value::Sequence(subsequence(args, context)?)),
 
         "insert-before" => {
             let mut items = sequence_items(&args[0]);
@@ -708,17 +719,22 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
             // mirrors `fn:round`'s own tie-breaking, so this agrees with
             // `subsequence()` on where a fractional position lands.
             let position = round_half_up(args[1].to_number(document));
-            #[allow(
-                clippy::cast_precision_loss,
-                clippy::cast_sign_loss,
-                clippy::cast_possible_truncation
-            )]
+            // `NaN` names no position, and F&O declares no fallback for it, so it
+            // is refused (RCA-P-3) rather than read as the front or the end.
+            if position.is_nan() {
+                return Err(EvalError::new(
+                    "insert-before()'s position must be a number, not NaN",
+                ));
+            }
+            // F&O declares the bounds: before the start is the front, past the
+            // end appends. `round_half_up` returns an integral value or an infinity.
+            let end = items.len();
             let index = if position < 1.0 {
                 0
-            } else if position > items.len() as f64 {
-                items.len()
             } else {
-                (position - 1.0) as usize
+                numeric::f64_to_usize(position - 1.0)
+                    .filter(|index| *index < end)
+                    .unwrap_or(end)
             };
             items.splice(index..index, inserts);
             Ok(Value::Sequence(items))
@@ -730,10 +746,11 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
             // Out of range — including NaN, for which every comparison
             // below is false — leaves the sequence unchanged, per the F&O
             // definition, rather than an error.
-            #[allow(clippy::cast_precision_loss)]
-            if position >= 1.0 && position <= items.len() as f64 {
-                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-                items.remove(position as usize - 1);
+            let index = numeric::f64_to_usize(position)
+                .and_then(|position| position.checked_sub(1))
+                .filter(|index| *index < items.len());
+            if let Some(index) = index {
+                items.remove(index);
             }
             Ok(Value::Sequence(items))
         }
@@ -842,9 +859,7 @@ fn call_v3(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
         "function-lookup" => function_lookup_call(args, context),
         "function-arity" => {
             let f = single_function_argument(name, args, 0)?;
-            #[allow(clippy::cast_precision_loss)]
-            // No function item has anywhere near 2^52 parameters.
-            Ok(double(f.arity() as f64))
+            Ok(double(as_f64(f.arity())?))
         }
         "function-name" => {
             let f = single_function_argument(name, args, 0)?;
@@ -878,8 +893,11 @@ fn function_lookup_call(args: &[Value], context: &EvalContext<'_>) -> Result<Val
             "function-lookup()'s arity must be a non-negative integer, but {arity} was given"
         )));
     }
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let arity = arity as usize;
+    let Some(arity) = numeric::f64_to_usize(arity) else {
+        // Too large to be any function's arity: no such function exists, which F&O
+        // reports as the empty sequence rather than an error.
+        return Ok(Value::Sequence(Vec::new()));
+    };
     if check_function(&name, arity, context.version).is_err() {
         return Ok(Value::Sequence(Vec::new()));
     }
@@ -1055,7 +1073,7 @@ fn deep_equal_node(a: NodeId, b: NodeId, document: &Document) -> bool {
 /// `NaN` start or length excludes every item, because every comparison
 /// against `NaN` is false, and a `-INF` start includes everything from
 /// position 1, because every finite position is greater.
-fn subsequence(args: &[Value], context: &EvalContext<'_>) -> Vec<Item> {
+fn subsequence(args: &[Value], context: &EvalContext<'_>) -> Result<Vec<Item>, EvalError> {
     let document = context.document;
     let items = sequence_items(&args[0]);
     let start = round_half_up(args[1].to_number(document));
@@ -1063,25 +1081,31 @@ fn subsequence(args: &[Value], context: &EvalContext<'_>) -> Vec<Item> {
         Some(length) => start + round_half_up(length.to_number(document)),
         None => f64::INFINITY,
     };
-    items
-        .into_iter()
-        .enumerate()
-        .filter(|(index, _)| {
-            #[allow(clippy::cast_precision_loss)]
-            let position = (*index + 1) as f64;
-            position >= start && position < end
-        })
-        .map(|(_, item)| item)
-        .collect()
+    let mut kept = Vec::new();
+    for (index, item) in items.into_iter().enumerate() {
+        let position = one_based(index)?;
+        if position >= start && position < end {
+            kept.push(item);
+        }
+    }
+    Ok(kept)
 }
 
 /// Converts a count to `f64` for XPath, which has only one numeric type.
 ///
-/// A document large enough to lose precision here would need more than 2^53
-/// nodes, which is far beyond what fits in memory.
-#[allow(clippy::cast_precision_loss)]
-fn as_f64(value: usize) -> f64 {
-    value as f64
+/// A count above 2^53 would round, so it is refused rather than rounded; that
+/// would take more than 2^53 nodes, far beyond what fits in memory.
+fn as_f64(value: usize) -> Result<f64, EvalError> {
+    numeric::usize_to_f64(value)
+        .ok_or_else(|| EvalError::new("a count is too large to be an exact xs:double"))
+}
+
+/// The one-based XPath position of a zero-based `index`, as an `xs:double`.
+fn one_based(index: usize) -> Result<f64, EvalError> {
+    let position = index
+        .checked_add(1)
+        .ok_or_else(|| EvalError::new("a position is too large to be counted"))?;
+    as_f64(position)
 }
 
 /// Wraps a computed number as `xs:double` — every function result is one,
@@ -1215,9 +1239,10 @@ fn clock(kind: TemporalKind, context: &EvalContext<'_>) -> Result<Value, EvalErr
              see EvalContext::with_current_time",
         ));
     };
-    Ok(Value::Sequence(vec![Item::Temporal(from_unix_seconds(
-        kind, seconds,
-    ))]))
+    let now = from_unix_seconds(kind, seconds).ok_or_else(|| {
+        EvalError::new("the run's instant is outside the range of dates and times represented")
+    })?;
+    Ok(Value::Sequence(vec![Item::Temporal(now)]))
 }
 
 /// `xs:date()`, `xs:dateTime()`, `xs:time()`.
@@ -1289,11 +1314,12 @@ fn duration_component(name: &str, args: &[Value], document: &Document) -> Result
     let sign = if duration.is_negative() { -1.0 } else { 1.0 };
     let value = match kind {
         DurationKind::YearMonth => {
-            let months = duration.to_months().abs();
-            match component {
-                "years" => as_f64_signed(months / 12),
-                _ => as_f64_signed(months % 12),
-            }
+            // `unsigned_abs` cannot overflow at `i64::MIN`, unlike `abs`.
+            let months = duration.to_months().unsigned_abs();
+            let figure = if component == "years" { months / 12 } else { months % 12 };
+            numeric::u64_to_f64(figure).ok_or_else(|| {
+                EvalError::new("a year-month duration is too large to be an exact xs:double")
+            })?
         }
         DurationKind::DayTime => {
             let total = duration.to_seconds().abs();
@@ -1366,7 +1392,8 @@ fn component_of(name: &str, args: &[Value], document: &Document) -> Result<Value
     };
 
     let value = match component {
-        "year" => as_f64_signed(temporal.year()),
+        "year" => numeric::i64_to_f64(temporal.year())
+            .ok_or_else(|| EvalError::new("a year is too large to be an exact xs:double"))?,
         "month" => f64::from(temporal.month()),
         "day" => f64::from(temporal.day()),
         "hours" => f64::from(temporal.hour()),
@@ -1380,12 +1407,6 @@ fn component_of(name: &str, args: &[Value], document: &Document) -> Result<Value
         }
     };
     Ok(double(value))
-}
-
-/// Converts a year to `f64`; years are far below the precision limit.
-#[allow(clippy::cast_precision_loss)]
-fn as_f64_signed(value: i64) -> f64 {
-    value as f64
 }
 
 /// The numeric values of a node-set argument, for `min`, `max`, and `avg`.
@@ -1641,32 +1662,31 @@ fn id_function(args: &[Value], context: &EvalContext<'_>) -> Vec<NodeId> {
 /// The specification defines it in terms of `round()` and inequalities rather
 /// than integer slicing, which is why `substring('12345', 1.5, 2.6)` is `'234'`
 /// and why a NaN start yields the empty string instead of an error.
-fn substring(args: &[Value], document: &Document) -> String {
+fn substring(args: &[Value], document: &Document) -> Result<String, EvalError> {
     let text: Vec<char> = args[0].to_xpath_string(document).chars().collect();
     let start = round_half_up(args[1].to_number(document));
     let end = match args.get(2) {
         Some(length) => {
             let length = round_half_up(length.to_number(document));
             if length.is_nan() {
-                return String::new();
+                return Ok(String::new());
             }
             start + length
         }
         None => f64::INFINITY,
     };
     if start.is_nan() {
-        return String::new();
+        return Ok(String::new());
     }
 
     let mut out = String::new();
     for (index, c) in text.iter().enumerate() {
-        // XPath positions are one-based.
-        let position = as_f64(index + 1);
+        let position = one_based(index)?;
         if position >= start && position < end {
             out.push(*c);
         }
     }
-    out
+    Ok(out)
 }
 
 /// XPath's `round()`: halfway cases go towards positive infinity, so
@@ -2113,7 +2133,8 @@ mod tests {
                     Value::Number(1.0, NumericType::Double),
                 ],
                 &document,
-            ),
+            )
+            .unwrap(),
             "abc"
         );
         assert_eq!(
@@ -2123,7 +2144,8 @@ mod tests {
                     Value::Number(f64::NAN, NumericType::Double),
                 ],
                 &document,
-            ),
+            )
+            .unwrap(),
             ""
         );
         assert_eq!(
@@ -2134,7 +2156,8 @@ mod tests {
                     Value::Number(f64::NAN, NumericType::Double),
                 ],
                 &document,
-            ),
+            )
+            .unwrap(),
             ""
         );
         assert!(!lang("en", &document, context.node));

@@ -11,6 +11,7 @@ use super::ast::{
 };
 use super::context::EvalContext;
 use super::functions;
+use super::numeric;
 use super::temporal::{add_months, add_seconds, Duration, DurationKind, Temporal, TemporalKind};
 use super::value::{flatten_into_sequence, FunctionItem, Item, NumericType, Value};
 use crate::xml::{Document, NodeId, NodeKind};
@@ -310,8 +311,8 @@ pub(crate) fn for_each(
     action: &FunctionItem,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
-    let _scope = SequenceScope::enter();
-    spend(items.len() as u64)?;
+    let _scope = SequenceScope::enter()?;
+    spend_len(items.len())?;
     let mut out = Vec::with_capacity(items.len());
     for item in items {
         let result = call_function_item(action, vec![item_to_value(item)], context)?;
@@ -331,8 +332,8 @@ pub(crate) fn filter(
     predicate: &FunctionItem,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
-    let _scope = SequenceScope::enter();
-    spend(items.len() as u64)?;
+    let _scope = SequenceScope::enter()?;
+    spend_len(items.len())?;
     let mut kept = Vec::new();
     for item in items {
         let holds = call_function_item(predicate, vec![item_to_value(item.clone())], context)?
@@ -356,8 +357,8 @@ pub(crate) fn fold_left(
     f: &FunctionItem,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
-    let _scope = SequenceScope::enter();
-    spend(items.len() as u64)?;
+    let _scope = SequenceScope::enter()?;
+    spend_len(items.len())?;
     let mut accumulator = zero;
     for item in items {
         accumulator = call_function_item(f, vec![accumulator, item_to_value(item)], context)?;
@@ -376,8 +377,8 @@ pub(crate) fn fold_right(
     f: &FunctionItem,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
-    let _scope = SequenceScope::enter();
-    spend(items.len() as u64)?;
+    let _scope = SequenceScope::enter()?;
+    spend_len(items.len())?;
     let mut accumulator = zero;
     for item in items.into_iter().rev() {
         accumulator = call_function_item(f, vec![item_to_value(item), accumulator], context)?;
@@ -399,9 +400,9 @@ pub(crate) fn for_each_pair(
     f: &FunctionItem,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
-    let _scope = SequenceScope::enter();
+    let _scope = SequenceScope::enter()?;
     let pairs = a.len().min(b.len());
-    spend(pairs as u64)?;
+    spend_len(pairs)?;
     let mut out = Vec::with_capacity(pairs);
     for (x, y) in a.into_iter().zip(b) {
         let result = call_function_item(f, vec![item_to_value(x), item_to_value(y)], context)?;
@@ -435,9 +436,9 @@ fn evaluate_simple_map(
     right: &Expr,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
-    let _scope = SequenceScope::enter();
+    let _scope = SequenceScope::enter()?;
     let items = evaluate(left, context)?.into_items();
-    spend(items.len() as u64)?;
+    spend_len(items.len())?;
     let mut out = Vec::with_capacity(items.len());
     for item in items {
         let inner = match item {
@@ -755,9 +756,9 @@ fn evaluate_for(
     body: &Expr,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
-    let _scope = SequenceScope::enter();
+    let _scope = SequenceScope::enter()?;
     let items = evaluate(input, context)?.into_items();
-    spend(items.len() as u64)?;
+    spend_len(items.len())?;
     let mut out = Vec::with_capacity(items.len());
 
     // One clone of the enclosing scope for the whole loop; the binding is
@@ -788,9 +789,9 @@ fn evaluate_quantified(
 ) -> Result<Value, EvalError> {
     // `some`/`every` do not accumulate a sequence, but they iterate one, and
     // nesting them multiplies the iterations exactly as `for` does.
-    let _scope = SequenceScope::enter();
+    let _scope = SequenceScope::enter()?;
     let items = evaluate(input, context)?.into_items();
-    spend(items.len() as u64)?;
+    spend_len(items.len())?;
     let mut scope = context.variables.clone();
     let mark = scope.mark();
     let name = variable.to_string();
@@ -907,7 +908,7 @@ fn scale_duration(
         }
         return Ok(Value::Number(
             match a.kind() {
-                DurationKind::YearMonth => as_f64_i64(a.to_months()) / as_f64_i64(b.to_months()),
+                DurationKind::YearMonth => as_f64_i64(a.to_months())? / as_f64_i64(b.to_months())?,
                 DurationKind::DayTime => a.to_seconds() / b.to_seconds(),
             },
             NumericType::Double,
@@ -935,20 +936,30 @@ fn scale_duration(
 
     item(Item::Duration(match duration.kind() {
         DurationKind::YearMonth => {
-            let months = as_f64_i64(duration.to_months()) * factor;
-            #[allow(clippy::cast_possible_truncation)]
-            let rounded = months.abs().round().copysign(months) as i64;
+            let months = as_f64_i64(duration.to_months())? * factor;
+            // `NaN` was refused above; an infinite or out of range result has no
+            // month count, and no fallback is declared for it (RCA-DECL-5).
+            let rounded = numeric::f64_to_i64(months.abs().round().copysign(months))
+                .ok_or_else(month_overflow)?;
             Duration::from_months(rounded)
         }
         DurationKind::DayTime => Duration::from_seconds(duration.to_seconds() * factor),
     }))
 }
 
-/// Converts a month count to `f64`; month counts are far below the precision
-/// limit.
-#[allow(clippy::cast_precision_loss)]
-fn as_f64_i64(value: i64) -> f64 {
-    value as f64
+/// Converts a month count to `f64`, refusing one above 2^53 where it would round.
+fn as_f64_i64(value: i64) -> Result<f64, EvalError> {
+    numeric::i64_to_f64(value).ok_or_else(month_overflow)
+}
+
+/// The refusal for date or time arithmetic whose result cannot be represented.
+fn temporal_range() -> EvalError {
+    EvalError::new("the result is outside the range of dates and times this engine represents")
+}
+
+/// The refusal for a month count that does not fit the arithmetic done on it.
+fn month_overflow() -> EvalError {
+    EvalError::new("a year-month duration is too large for this arithmetic")
 }
 
 /// `instance of`, `castable as`, `cast as`, `treat as`.
@@ -1321,9 +1332,12 @@ fn temporal_arithmetic(op: BinaryOp, left: &Value, right: &Value) -> Result<Valu
                     a.kind().as_str()
                 )));
             }
-            item(Item::Duration(Duration::from_seconds(
-                a.to_seconds() - b.to_seconds(),
-            )))
+            // An instant too far from the epoch to be an exact `f64` has no
+            // difference to report, and no fallback is declared for it.
+            let (Some(a), Some(b)) = (a.to_seconds(), b.to_seconds()) else {
+                return Err(temporal_range());
+            };
+            item(Item::Duration(Duration::from_seconds(a - b)))
         }
 
         // date +/- duration, moving the date.
@@ -1331,10 +1345,15 @@ fn temporal_arithmetic(op: BinaryOp, left: &Value, right: &Value) -> Result<Valu
             let signed = if subtract { -1 } else { 1 };
             item(Item::Temporal(match duration.kind() {
                 DurationKind::YearMonth => {
-                    add_months(&temporal, duration.to_months() * i64::from(signed))
+                    let months = duration
+                        .to_months()
+                        .checked_mul(i64::from(signed))
+                        .ok_or_else(month_overflow)?;
+                    add_months(&temporal, months).ok_or_else(temporal_range)?
                 }
                 DurationKind::DayTime => {
                     add_seconds(&temporal, duration.to_seconds() * f64::from(signed))
+                        .ok_or_else(temporal_range)?
                 }
             }))
         }
@@ -1351,9 +1370,15 @@ fn temporal_arithmetic(op: BinaryOp, left: &Value, right: &Value) -> Result<Valu
             }
             let sign = if subtract { -1.0 } else { 1.0 };
             item(Item::Duration(match a.kind() {
-                DurationKind::YearMonth => Duration::from_months(
-                    a.to_months() + b.to_months() * if subtract { -1 } else { 1 },
-                ),
+                DurationKind::YearMonth => {
+                    let signed = b
+                        .to_months()
+                        .checked_mul(if subtract { -1 } else { 1 })
+                        .ok_or_else(month_overflow)?;
+                    Duration::from_months(
+                        a.to_months().checked_add(signed).ok_or_else(month_overflow)?,
+                    )
+                }
                 DurationKind::DayTime => {
                     Duration::from_seconds(a.to_seconds() + b.to_seconds() * sign)
                 }
@@ -1363,8 +1388,12 @@ fn temporal_arithmetic(op: BinaryOp, left: &Value, right: &Value) -> Result<Valu
         // duration + date is legal in XPath 2.0; the operands commute.
         (None, Some(temporal), Some(duration), None) if !subtract => {
             item(Item::Temporal(match duration.kind() {
-                DurationKind::YearMonth => add_months(&temporal, duration.to_months()),
-                DurationKind::DayTime => add_seconds(&temporal, duration.to_seconds()),
+                DurationKind::YearMonth => {
+                    add_months(&temporal, duration.to_months()).ok_or_else(temporal_range)?
+                }
+                DurationKind::DayTime => {
+                    add_seconds(&temporal, duration.to_seconds()).ok_or_else(temporal_range)?
+                }
             }))
         }
 
@@ -1580,37 +1609,56 @@ thread_local! {
 struct SequenceScope;
 
 impl SequenceScope {
-    fn enter() -> Self {
+    fn enter() -> Result<Self, EvalError> {
         SEQUENCE_DEPTH.with(|depth| {
+            // No declared fallback (RCA-DECL-5): a depth counter that cannot
+            // count further is a refusal, not a depth that stays put.
+            let deeper = depth.get().checked_add(1).ok_or_else(|| {
+                EvalError::new("multiplying constructs are nested too deeply to be counted")
+            })?;
             if depth.get() == 0 {
                 SEQUENCE_WORK.with(|work| work.set(MAX_SEQUENCE_WORK));
             }
-            depth.set(depth.get() + 1);
-        });
-        Self
+            depth.set(deeper);
+            Ok(Self)
+        })
     }
 }
 
 impl Drop for SequenceScope {
     fn drop(&mut self) {
-        SEQUENCE_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        // Fallback: `OUTERMOST_DEPTH` (0) — a scope that closes with no scope
+        // open leaves the outermost depth; the depth counter never goes below 0.
+        SEQUENCE_DEPTH.with(|depth| {
+            depth.set(depth.get().checked_sub(1).unwrap_or(OUTERMOST_DEPTH));
+        });
     }
+}
+
+/// The depth of no open multiplying construct.
+const OUTERMOST_DEPTH: u32 = 0;
+
+/// The refusal for spending more than the shared budget holds.
+fn over_budget() -> EvalError {
+    EvalError::new(format!(
+        "this expression asks for more than {MAX_SEQUENCE_WORK} items across \
+         its nested ranges and `for` expressions; each one may be within the \
+         limit while the product is not"
+    ))
 }
 
 /// Charges `items` against the shared budget.
 fn spend(items: u64) -> Result<(), EvalError> {
     SEQUENCE_WORK.with(|work| {
-        let left = work.get();
-        if items > left {
-            return Err(EvalError::new(format!(
-                "this expression asks for more than {MAX_SEQUENCE_WORK} items across \
-                 its nested ranges and `for` expressions; each one may be within the \
-                 limit while the product is not"
-            )));
-        }
-        work.set(left - items);
+        let left = work.get().checked_sub(items).ok_or_else(over_budget)?;
+        work.set(left);
         Ok(())
     })
+}
+
+/// Charges a collection's length against the shared budget.
+fn spend_len(len: usize) -> Result<(), EvalError> {
+    spend(u64::try_from(len).map_err(|_| over_budget())?)
 }
 
 const MAX_RANGE: f64 = 1_000_000.0;
@@ -1642,9 +1690,10 @@ fn range_items(from: f64, to: f64) -> Result<Vec<Item>, EvalError> {
     // A range opens a scope of its own, so a bare `1 to 999999` starts a
     // fresh budget rather than drawing on one that was never opened, and a
     // range inside a `for` shares that loop's budget.
-    let _scope = SequenceScope::enter();
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    spend((to - from + 1.0) as u64)?;
+    let _scope = SequenceScope::enter()?;
+    // `to - from` is below `MAX_RANGE` here, so the count is a small whole number.
+    let count = numeric::f64_to_u64(to - from + 1.0).ok_or_else(over_budget)?;
+    spend(count)?;
 
     let mut items = Vec::new();
     let mut current = from;
@@ -1796,14 +1845,18 @@ fn filter_by_predicate(
     let size = nodes.len();
     let mut kept = Vec::with_capacity(size);
     for (index, node) in nodes.into_iter().enumerate() {
-        let position = index + 1;
+        // `index < size`, and `size` is a length, so `index + 1` always fits.
+        let position = index.checked_add(1).ok_or_else(|| {
+            EvalError::new("a node list is too long to number its positions")
+        })?;
         let inner = context.focus(node, position, size);
         let value = evaluate(predicate, &inner)?;
         // A numeric predicate is shorthand for `position() = n`.
         let keep = match value {
             Value::Number(n, _) => {
-                #[allow(clippy::cast_precision_loss)]
-                let position = position as f64;
+                let position = numeric::usize_to_f64(position).ok_or_else(|| {
+                    EvalError::new("a context position is too large to compare with a number")
+                })?;
                 (n - position).abs() < f64::EPSILON
             }
             other => other.to_boolean(),
@@ -1884,11 +1937,15 @@ fn siblings(document: &Document, node: NodeId, following: bool) -> Vec<NodeId> {
     let Some(index) = children.iter().position(|&n| n == node) else {
         return Vec::new();
     };
+    let Some((preceding, from_node)) = children.split_at_checked(index) else {
+        return Vec::new();
+    };
     if following {
-        children[index + 1..].to_vec()
+        // `from_node` starts at the node itself; the siblings follow it.
+        from_node.get(1..).unwrap_or_default().to_vec()
     } else {
         // Reverse axis: nearest first.
-        let mut before = children[..index].to_vec();
+        let mut before = preceding.to_vec();
         before.reverse();
         before
     }

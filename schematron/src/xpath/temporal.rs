@@ -13,6 +13,7 @@
 //! run reproducible on any machine, which this crate values more. See
 //! `spec/xpath2/`.
 
+use super::numeric;
 use std::fmt;
 
 /// Which of the two duration subtypes a [`Duration`] holds.
@@ -146,7 +147,9 @@ impl Duration {
             Some(time) => parse_duration_fields(time, "HMS").ok_or_else(reject)?,
             None => Vec::new(),
         };
-        let (months, seconds) = validated_duration_totals(&date_fields, &time_fields);
+        // Out-of-range field values are invalid data (RCA-DECL-5): rejected, not clamped.
+        let (months, seconds) =
+            duration_totals(&date_fields, &time_fields).ok_or_else(reject)?;
 
         // Each subtype accepts only its own fields.
         match kind {
@@ -158,7 +161,11 @@ impl Duration {
         let sign = if negative { -1.0 } else { 1.0 };
         Ok(match kind {
             DurationKind::YearMonth => {
-                Duration::from_months(if negative { -months } else { months })
+                Duration::from_months(if negative {
+                    months.checked_neg().ok_or_else(reject)?
+                } else {
+                    months
+                })
             }
             DurationKind::DayTime => Duration::from_seconds(seconds * sign),
         })
@@ -166,7 +173,6 @@ impl Duration {
 
     /// The lexical form, as XPath's `string()` would render it.
     #[must_use]
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn to_lexical(&self) -> String {
         let mut out = String::new();
         if self.is_negative() {
@@ -176,7 +182,8 @@ impl Duration {
 
         match self.kind {
             DurationKind::YearMonth => {
-                let months = self.months.abs();
+                // `unsigned_abs` cannot overflow at `i64::MIN`, unlike `abs`.
+                let months = self.months.unsigned_abs();
                 let (years, months) = (months / 12, months % 12);
                 if years != 0 {
                     out.push_str(&format!("{years}Y"));
@@ -194,22 +201,20 @@ impl Duration {
                 let seconds = rest % 60.0;
 
                 if days != 0.0 {
-                    out.push_str(&format!("{}D", days as i64));
+                    // Whole by construction (`floor`); `Display` prints it without a fraction.
+                    out.push_str(&format!("{days}D"));
                 }
                 if hours != 0.0 || minutes != 0.0 || seconds != 0.0 {
                     out.push('T');
                     if hours != 0.0 {
-                        out.push_str(&format!("{}H", hours as i64));
+                        out.push_str(&format!("{hours}H"));
                     }
                     if minutes != 0.0 {
-                        out.push_str(&format!("{}M", minutes as i64));
+                        out.push_str(&format!("{minutes}M"));
                     }
                     if seconds != 0.0 {
-                        if seconds.fract() == 0.0 {
-                            out.push_str(&format!("{}S", seconds as i64));
-                        } else {
-                            out.push_str(&format!("{seconds}S"));
-                        }
+                        // `Display` prints a whole `f64` without a fraction.
+                        out.push_str(&format!("{seconds}S"));
                     }
                 } else if days == 0.0 {
                     out.push_str("T0S");
@@ -269,7 +274,7 @@ fn parse_duration_fields(text: &str, units: &str) -> Option<Vec<(f64, char)>> {
         if position < next_unit || digits.is_empty() {
             return None;
         }
-        next_unit = position + 1;
+        next_unit = position.checked_add(1)?;
         fields.push((digits.parse().ok()?, c));
         digits.clear();
     }
@@ -281,14 +286,20 @@ fn parse_duration_fields(text: &str, units: &str) -> Option<Vec<(f64, char)>> {
 }
 
 /// Converts the already ordered lexical fields into the two stored totals.
-#[allow(clippy::cast_possible_truncation)] // Year and month counts are small.
+///
+/// `None` for an unknown unit, and for a year or month count that is not a whole
+/// number or whose total does not fit an `i64`: no fallback is declared for
+/// invalid data (RCA-DECL-5).
 fn duration_totals(date_fields: &[(f64, char)], time_fields: &[(f64, char)]) -> Option<(i64, f64)> {
     let mut months = 0_i64;
     let mut seconds = 0.0_f64;
     for (value, unit) in date_fields {
         match unit {
-            'Y' => months += *value as i64 * 12,
-            'M' => months += *value as i64,
+            'Y' => {
+                let years = numeric::f64_to_i64(*value)?;
+                months = months.checked_add(years.checked_mul(12)?)?;
+            }
+            'M' => months = months.checked_add(numeric::f64_to_i64(*value)?)?,
             'D' => seconds += value * 86_400.0,
             _ => return None,
         }
@@ -304,28 +315,28 @@ fn duration_totals(date_fields: &[(f64, char)], time_fields: &[(f64, char)]) -> 
     Some((months, seconds))
 }
 
-/// Total fields emitted by `parse_duration_fields`, whose unit alphabet has
-/// already been checked at the lexical boundary.
-fn validated_duration_totals(
-    date_fields: &[(f64, char)],
-    time_fields: &[(f64, char)],
-) -> (i64, f64) {
-    duration_totals(date_fields, time_fields)
-        .expect("the duration field parser emits only units accepted by the totalizer")
-}
-
 /// Adds a number of months to a date, clamping the day.
 ///
 /// XML Schema requires the clamp: 31 January plus one month is 28 February,
 /// or 29 February in a leap year, rather than overflowing into March.
+///
+/// `None` when the month count does not fit an `i64`; no fallback is declared
+/// for it (RCA-DECL-5).
 #[must_use]
-pub fn add_months(temporal: &Temporal, months: i64) -> Temporal {
-    let total = temporal.year() * 12 + i64::from(temporal.month()) - 1 + months;
-    let year = total.div_euclid(12);
-    let month = u32::try_from(total.rem_euclid(12) + 1).unwrap_or(1);
+pub fn add_months(temporal: &Temporal, months: i64) -> Option<Temporal> {
+    let total = temporal
+        .year()
+        .checked_mul(12)?
+        .checked_add(i64::from(temporal.month()))?
+        .checked_sub(1)?
+        .checked_add(months)?;
+    let year = total.checked_div_euclid(12)?;
+    let month = u32::try_from(total.checked_rem_euclid(12)?.checked_add(1)?).ok()?;
+    // XML Schema Part 2, E.1.2 declares the bound: the day is clamped to the
+    // length of the resulting month.
     let day = temporal.day().min(days_in_month(year, month));
 
-    Temporal {
+    Some(Temporal {
         kind: temporal.kind(),
         year,
         month,
@@ -334,19 +345,25 @@ pub fn add_months(temporal: &Temporal, months: i64) -> Temporal {
         minute: temporal.minute(),
         second: temporal.second(),
         offset_minutes: temporal.offset_minutes(),
-    }
+    })
 }
 
 /// Adds a number of seconds to a date or time.
+///
+/// `None` when the instant, or the result, cannot be represented exactly.
 #[must_use]
-pub fn add_seconds(temporal: &Temporal, seconds: f64) -> Temporal {
-    let offset = f64::from(temporal.offset_minutes().unwrap_or(0)) * 60.0;
-    let shifted = from_unix_seconds(temporal.kind(), temporal.to_seconds() + seconds + offset);
-    Temporal {
+pub fn add_seconds(temporal: &Temporal, seconds: f64) -> Option<Temporal> {
+    // `unwrap_or(UTC_OFFSET_MINUTES)`: a value with no timezone is read as UTC (XPath 2.0, F&O 9.3).
+    let offset = f64::from(temporal.offset_minutes().unwrap_or(UTC_OFFSET_MINUTES)) * 60.0;
+    let shifted = from_unix_seconds(temporal.kind(), temporal.to_seconds()? + seconds + offset)?;
+    Some(Temporal {
         offset_minutes: temporal.offset_minutes(),
         ..shifted
-    }
+    })
 }
+
+/// The offset of UTC, in minutes: how a value with no timezone is read.
+const UTC_OFFSET_MINUTES: i32 = 0;
 
 /// Adjusts a temporal value to a new timezone, per XPath 2.0's
 /// `adjust-date-to-timezone()`, `adjust-dateTime-to-timezone()`, and
@@ -365,9 +382,11 @@ pub fn add_seconds(temporal: &Temporal, seconds: f64) -> Temporal {
 /// at the new offset, which is how a date can roll to an adjacent day);
 /// simply attaching the new offset with no conversion, when it had none,
 /// since there is no instant yet to preserve.
+///
+/// `None` when the instant cannot be represented exactly.
 #[must_use]
-pub fn adjust_to_timezone(temporal: &Temporal, new_offset: Option<i32>) -> Temporal {
-    match (temporal.offset_minutes, new_offset) {
+pub fn adjust_to_timezone(temporal: &Temporal, new_offset: Option<i32>) -> Option<Temporal> {
+    Some(match (temporal.offset_minutes, new_offset) {
         (None, target) => Temporal {
             offset_minutes: target,
             ..*temporal
@@ -377,13 +396,13 @@ pub fn adjust_to_timezone(temporal: &Temporal, new_offset: Option<i32>) -> Tempo
             ..*temporal
         },
         (Some(_), Some(new)) => {
-            let instant = temporal.to_seconds();
+            let instant = temporal.to_seconds()?;
             Temporal {
                 offset_minutes: Some(new),
-                ..from_unix_seconds(temporal.kind, instant + f64::from(new) * 60.0)
+                ..from_unix_seconds(temporal.kind, instant + f64::from(new) * 60.0)?
             }
         }
-    }
+    })
 }
 
 /// The date an `xs:time` is placed on, so that two times compare by their
@@ -592,9 +611,11 @@ impl Temporal {
     /// reading a value with no timezone as UTC.
     ///
     /// Use [`Temporal::to_seconds_in`] where the implicit timezone matters.
+    ///
+    /// `None` when the instant is too far from the epoch to be an exact `f64`.
     #[must_use]
-    pub fn to_seconds(&self) -> f64 {
-        self.to_seconds_in(0)
+    pub fn to_seconds(&self) -> Option<f64> {
+        self.to_seconds_in(UTC_OFFSET_MINUTES)
     }
 
     /// The instant this value denotes, reading a value with no timezone as
@@ -602,24 +623,28 @@ impl Temporal {
     ///
     /// XPath 2.0 takes the implicit timezone from the evaluation context. See
     /// `spec/xpath2/` for why this crate defaults it to UTC.
+    ///
+    /// `None` when the date is too far from the epoch for its day count to be an
+    /// exact `f64`: an instant that cannot be ordered is unknown, not zero.
     #[must_use]
-    #[allow(clippy::cast_precision_loss)] // Day counts are far below 2^53.
-    pub fn to_seconds_in(&self, implicit_minutes: i32) -> f64 {
-        let days = days_from_civil(self.year, self.month, self.day);
+    pub fn to_seconds_in(&self, implicit_minutes: i32) -> Option<f64> {
+        let days = numeric::i64_to_f64(days_from_civil(self.year, self.month, self.day)?)?;
         let offset = f64::from(self.offset_minutes.unwrap_or(implicit_minutes)) * 60.0;
-        (days as f64) * 86_400.0
-            + f64::from(self.hour) * 3_600.0
-            + f64::from(self.minute) * 60.0
-            + self.second
-            - offset
+        Some(
+            days * 86_400.0
+                + f64::from(self.hour) * 3_600.0
+                + f64::from(self.minute) * 60.0
+                + self.second
+                - offset,
+        )
     }
 
     /// Orders two values, reading a value with no timezone as being in
     /// `implicit_minutes`.
     #[must_use]
     pub fn compare_in(&self, other: &Temporal, implicit_minutes: i32) -> Option<std::cmp::Ordering> {
-        self.to_seconds_in(implicit_minutes)
-            .partial_cmp(&other.to_seconds_in(implicit_minutes))
+        self.to_seconds_in(implicit_minutes)?
+            .partial_cmp(&other.to_seconds_in(implicit_minutes)?)
     }
 
     /// The lexical form, as XPath's `string()` would render it.
@@ -638,11 +663,9 @@ impl Temporal {
         if matches!(self.kind, TemporalKind::Time | TemporalKind::DateTime) {
             out.push_str(&format!("{:02}:{:02}:", self.hour, self.minute));
             if self.second.fract() == 0.0 {
-                // Whole seconds, and always below 60, so this cannot lose
-                // anything.
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                let whole = self.second as u32;
-                out.push_str(&format!("{whole:02}"));
+                // Whole seconds, and always below 60; `Display` prints a whole
+                // `f64` without a fraction, so this is the integer padded.
+                out.push_str(&format!("{:02}", self.second));
             } else {
                 out.push_str(&format!("{:09.6}", self.second));
             }
@@ -652,7 +675,7 @@ impl Temporal {
             Some(0) => out.push('Z'),
             Some(minutes) => {
                 let sign = if minutes < 0 { '-' } else { '+' };
-                let minutes = minutes.abs();
+                let minutes = minutes.unsigned_abs();
                 out.push_str(&format!("{sign}{:02}:{:02}", minutes / 60, minutes % 60));
             }
         }
@@ -674,9 +697,12 @@ impl PartialEq for Temporal {
 
 impl PartialOrd for Temporal {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.to_seconds().partial_cmp(&other.to_seconds())
+        self.to_seconds()?.partial_cmp(&other.to_seconds()?)
     }
 }
+
+/// The length of a `+hh:mm` or `-hh:mm` designator.
+const TIMEZONE_TAIL_LEN: usize = 6;
 
 /// Splits a trailing timezone designator from a lexical form.
 ///
@@ -688,31 +714,27 @@ fn split_timezone(text: &str) -> Option<(&str, Option<i32>)> {
     }
     // An offset is the last `+hh:mm` or `-hh:mm`. A leading `-` on a negative
     // year is not one, so only look at the tail.
-    if text.len() >= 6 {
-        let (body, tail) = text.split_at(text.len() - 6);
+    if let Some((body, tail)) = text
+        .len()
+        .checked_sub(TIMEZONE_TAIL_LEN)
+        .and_then(|split| text.split_at_checked(split))
+    {
         let sign = match tail.as_bytes().first() {
             Some(b'+') => 1,
             Some(b'-') => -1,
             _ => return Some((text, None)),
         };
         if !body.is_empty() {
-            let hours: i32 = tail
-                .get(1..3)
-                .expect("a six-byte timezone tail contains two hour bytes")
-                .parse()
-                .ok()?;
+            let hours: i32 = tail.get(1..3)?.parse().ok()?;
             if tail.as_bytes().get(3) != Some(&b':') {
                 return Some((text, None));
             }
-            let minutes: i32 = tail
-                .get(4..6)
-                .expect("a six-byte timezone tail contains two minute bytes")
-                .parse()
-                .ok()?;
+            let minutes: i32 = tail.get(4..6)?.parse().ok()?;
             if hours > 14 || minutes > 59 {
                 return None;
             }
-            return Some((body, Some(sign * (hours * 60 + minutes))));
+            let total = hours.checked_mul(60)?.checked_add(minutes)?.checked_mul(sign)?;
+            return Some((body, Some(total)));
         }
     }
     Some((text, None))
@@ -793,37 +815,57 @@ fn is_leap_year(year: i64) -> bool {
 /// Days from 1970-01-01 to the given civil date.
 ///
 /// Howard Hinnant's `days_from_civil`, which is exact for the proleptic
-/// Gregorian calendar over the whole range of `i64` years.
-fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = if year >= 0 { year } else { year - 399 } / 400;
-    let year_of_era = year - era * 400;
+/// Gregorian calendar. `None` when an intermediate does not fit an `i64`,
+/// which only a year within a few hundred of `i64::MAX` days can cause.
+fn days_from_civil(year: i64, month: u32, day: u32) -> Option<i64> {
+    let year = if month <= 2 { year.checked_sub(1)? } else { year };
+    let era = if year >= 0 { year } else { year.checked_sub(399)? }.checked_div(400)?;
+    let year_of_era = year.checked_sub(era.checked_mul(400)?)?;
     let month = i64::from(month);
     let day = i64::from(day);
-    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
-    let day_of_era =
-        year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    era * 146_097 + day_of_era - 719_468
+    let shifted_month = month.checked_add(if month > 2 { -3 } else { 9 })?;
+    let day_of_year = shifted_month
+        .checked_mul(153)?
+        .checked_add(2)?
+        .checked_div(5)?
+        .checked_add(day)?
+        .checked_sub(1)?;
+    let day_of_era = year_of_era
+        .checked_mul(365)?
+        .checked_add(year_of_era.checked_div(4)?)?
+        .checked_sub(year_of_era.checked_div(100)?)?
+        .checked_add(day_of_year)?;
+    era.checked_mul(146_097)?
+        .checked_add(day_of_era)?
+        .checked_sub(719_468)
 }
 
 /// The civil date a day count denotes, inverting [`days_from_civil`].
-fn civil_from_days(days: i64) -> (i64, u32, u32) {
-    let days = days + 719_468;
-    let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
-    let day_of_era = days - era * 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let year = year_of_era + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_prime = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
-    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
-    let year = if month <= 2 { year + 1 } else { year };
-    (
-        year,
-        u32::try_from(month).unwrap_or(1),
-        u32::try_from(day).unwrap_or(1),
-    )
+///
+/// `None` when an intermediate does not fit an `i64`.
+fn civil_from_days(days: i64) -> Option<(i64, u32, u32)> {
+    let days = days.checked_add(719_468)?;
+    let era = if days >= 0 { days } else { days.checked_sub(146_096)? }.checked_div(146_097)?;
+    let day_of_era = days.checked_sub(era.checked_mul(146_097)?)?;
+    let year_of_era = day_of_era
+        .checked_sub(day_of_era.checked_div(1460)?)?
+        .checked_add(day_of_era.checked_div(36_524)?)?
+        .checked_sub(day_of_era.checked_div(146_096)?)?
+        .checked_div(365)?;
+    let year = year_of_era.checked_add(era.checked_mul(400)?)?;
+    let day_of_year = day_of_era.checked_sub(
+        year_of_era
+            .checked_mul(365)?
+            .checked_add(year_of_era.checked_div(4)?)?
+            .checked_sub(year_of_era.checked_div(100)?)?,
+    )?;
+    let month_prime = day_of_year.checked_mul(5)?.checked_add(2)?.checked_div(153)?;
+    let day = day_of_year
+        .checked_sub(month_prime.checked_mul(153)?.checked_add(2)?.checked_div(5)?)?
+        .checked_add(1)?;
+    let month = month_prime.checked_add(if month_prime < 10 { 3 } else { -9 })?;
+    let year = if month <= 2 { year.checked_add(1)? } else { year };
+    Some((year, u32::try_from(month).ok()?, u32::try_from(day).ok()?))
 }
 
 /// Builds a value from seconds since the Unix epoch, in UTC.
@@ -831,19 +873,19 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 /// Each kind keeps only the components it has, and zeroes the rest. A date
 /// with the time of day still attached would not equal the same date written
 /// out — the very comparison the type exists for.
+///
+/// `None` when `seconds` is not finite, or its day count does not convert
+/// exactly: an instant that cannot be placed on the calendar is unknown.
 #[must_use]
-pub fn from_unix_seconds(kind: TemporalKind, seconds: f64) -> Temporal {
+pub fn from_unix_seconds(kind: TemporalKind, seconds: f64) -> Option<Temporal> {
     let days = (seconds / 86_400.0).floor();
     let rest = seconds - days * 86_400.0;
-    #[allow(clippy::cast_possible_truncation)] // Bounded by the day count.
-    let (year, month, day) = civil_from_days(days as i64);
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let hour = (rest / 3_600.0).floor() as u32;
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let minute = ((rest % 3_600.0) / 60.0).floor() as u32;
+    let (year, month, day) = civil_from_days(numeric::f64_to_i64(days)?)?;
+    let hour = u32::try_from(numeric::f64_to_i64((rest / 3_600.0).floor())?).ok()?;
+    let minute = u32::try_from(numeric::f64_to_i64(((rest % 3_600.0) / 60.0).floor())?).ok()?;
     let second = rest % 60.0;
 
-    match kind {
+    Some(match kind {
         // A date has no time of day.
         TemporalKind::Date => Temporal::from_utc(kind, year, month, day, 0, 0, 0.0),
         TemporalKind::DateTime => {
@@ -854,7 +896,7 @@ pub fn from_unix_seconds(kind: TemporalKind, seconds: f64) -> Temporal {
         TemporalKind::Time => {
             Temporal::from_utc(kind, TIME_REFERENCE.0, TIME_REFERENCE.1, TIME_REFERENCE.2, hour, minute, second)
         }
-    }
+    })
 }
 
 #[cfg(test)]
@@ -897,7 +939,7 @@ mod tests {
         let utc = Temporal::parse("2026-08-21T00:00:00Z", TemporalKind::DateTime).unwrap();
         let ahead = Temporal::parse("2026-08-21T00:00:00+01:00", TemporalKind::DateTime).unwrap();
         assert!(ahead < utc);
-        assert!((utc.to_seconds() - ahead.to_seconds() - 3600.0).abs() < f64::EPSILON);
+        assert!((utc.to_seconds().unwrap() - ahead.to_seconds().unwrap() - 3600.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -905,7 +947,7 @@ mod tests {
         // The worked example from the F&O spec's own reference material:
         // 2002-03-07-07:00, adjusted to -PT10H, rolls back to 2002-03-06.
         let date = Temporal::parse("2002-03-07-07:00", TemporalKind::Date).unwrap();
-        let adjusted = adjust_to_timezone(&date, Some(-600));
+        let adjusted = adjust_to_timezone(&date, Some(-600)).unwrap();
         assert_eq!((adjusted.year(), adjusted.month(), adjusted.day()), (2002, 3, 6));
         assert_eq!(adjusted.offset_minutes(), Some(-600));
     }
@@ -914,7 +956,7 @@ mod tests {
     fn adjusting_a_time_wraps_within_its_reference_day() {
         // 10:00:00-07:00, adjusted to -PT10H, becomes 07:00:00-10:00.
         let time = Temporal::parse("10:00:00-07:00", TemporalKind::Time).unwrap();
-        let adjusted = adjust_to_timezone(&time, Some(-600));
+        let adjusted = adjust_to_timezone(&time, Some(-600)).unwrap();
         assert_eq!((adjusted.hour(), adjusted.minute()), (7, 0));
         assert_eq!(adjusted.offset_minutes(), Some(-600));
     }
@@ -922,15 +964,15 @@ mod tests {
     #[test]
     fn adjusting_preserves_the_instant() {
         let dt = Temporal::parse("2026-08-21T09:00:00+02:00", TemporalKind::DateTime).unwrap();
-        let adjusted = adjust_to_timezone(&dt, Some(-300));
-        assert!((dt.to_seconds() - adjusted.to_seconds()).abs() < f64::EPSILON);
+        let adjusted = adjust_to_timezone(&dt, Some(-300)).unwrap();
+        assert!((dt.to_seconds().unwrap() - adjusted.to_seconds().unwrap()).abs() < f64::EPSILON);
         assert_eq!(adjusted.offset_minutes(), Some(-300));
     }
 
     #[test]
     fn adjusting_a_timezone_less_value_attaches_without_converting() {
         let dt = Temporal::parse("2026-08-21T09:00:00", TemporalKind::DateTime).unwrap();
-        let adjusted = adjust_to_timezone(&dt, Some(-300));
+        let adjusted = adjust_to_timezone(&dt, Some(-300)).unwrap();
         assert_eq!((adjusted.hour(), adjusted.minute()), (9, 0));
         assert_eq!(adjusted.offset_minutes(), Some(-300));
     }
@@ -938,7 +980,7 @@ mod tests {
     #[test]
     fn adjusting_to_no_timezone_strips_it_without_converting() {
         let dt = Temporal::parse("2026-08-21T09:00:00+02:00", TemporalKind::DateTime).unwrap();
-        let adjusted = adjust_to_timezone(&dt, None);
+        let adjusted = adjust_to_timezone(&dt, None).unwrap();
         assert_eq!((adjusted.hour(), adjusted.minute()), (9, 0));
         assert_eq!(adjusted.offset_minutes(), None);
     }
@@ -1014,26 +1056,26 @@ mod tests {
             (1, 1, 1),
             (-44, 3, 15),
         ] {
-            let days = days_from_civil(year, month, day);
-            assert_eq!(civil_from_days(days), (year, month, day), "{year}-{month}-{day}");
+            let days = days_from_civil(year, month, day).unwrap();
+            assert_eq!(civil_from_days(days).unwrap(), (year, month, day), "{year}-{month}-{day}");
         }
     }
 
     #[test]
     fn the_epoch_is_day_zero() {
-        assert_eq!(days_from_civil(1970, 1, 1), 0);
-        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        assert_eq!(days_from_civil(1970, 1, 1), Some(0));
+        assert_eq!(civil_from_days(0), Some((1970, 1, 1)));
     }
 
     #[test]
     fn builds_from_unix_seconds() {
-        let d = from_unix_seconds(TemporalKind::DateTime, 0.0);
+        let d = from_unix_seconds(TemporalKind::DateTime, 0.0).unwrap();
         assert_eq!((d.year(), d.month(), d.day()), (1970, 1, 1));
         assert_eq!((d.hour(), d.minute()), (0, 0));
 
         // 2026-08-21T12:00:00Z
-        let seconds = days_from_civil(2026, 8, 21) as f64 * 86_400.0 + 43_200.0;
-        let d = from_unix_seconds(TemporalKind::DateTime, seconds);
+        let seconds = days_from_civil(2026, 8, 21).unwrap() as f64 * 86_400.0 + 43_200.0;
+        let d = from_unix_seconds(TemporalKind::DateTime, seconds).unwrap();
         assert_eq!((d.year(), d.month(), d.day()), (2026, 8, 21));
         assert_eq!(d.hour(), 12);
     }
@@ -1042,8 +1084,8 @@ mod tests {
     fn a_generated_date_has_no_time_of_day() {
         // Otherwise `current-date()` would not equal the same date written
         // out, which is the comparison the type exists for.
-        let noon = days_from_civil(2026, 8, 21) as f64 * 86_400.0 + 43_200.0;
-        let generated = from_unix_seconds(TemporalKind::Date, noon);
+        let noon = days_from_civil(2026, 8, 21).unwrap() as f64 * 86_400.0 + 43_200.0;
+        let generated = from_unix_seconds(TemporalKind::Date, noon).unwrap();
         let written = Temporal::parse("2026-08-21Z", TemporalKind::Date).unwrap();
         assert_eq!(generated, written);
         assert_eq!(generated.hour(), 0);
@@ -1051,8 +1093,8 @@ mod tests {
 
     #[test]
     fn a_generated_time_sits_on_the_reference_day() {
-        let noon = days_from_civil(2026, 8, 21) as f64 * 86_400.0 + 43_200.0;
-        let generated = from_unix_seconds(TemporalKind::Time, noon);
+        let noon = days_from_civil(2026, 8, 21).unwrap() as f64 * 86_400.0 + 43_200.0;
+        let generated = from_unix_seconds(TemporalKind::Time, noon).unwrap();
         let written = Temporal::parse("12:00:00Z", TemporalKind::Time).unwrap();
         assert_eq!(generated, written);
     }
@@ -1234,25 +1276,103 @@ mod duration_tests {
     fn adding_months_clamps_the_day() {
         // XML Schema requires the clamp rather than an overflow into March.
         let january = Temporal::parse("2026-01-31", TemporalKind::Date).unwrap();
-        assert_eq!(add_months(&january, 1).to_lexical(), "2026-02-28");
+        assert_eq!(add_months(&january, 1).unwrap().to_lexical(), "2026-02-28");
 
         let leap = Temporal::parse("2024-01-31", TemporalKind::Date).unwrap();
-        assert_eq!(add_months(&leap, 1).to_lexical(), "2024-02-29");
+        assert_eq!(add_months(&leap, 1).unwrap().to_lexical(), "2024-02-29");
     }
 
     #[test]
     fn adding_months_crosses_years_in_both_directions() {
         let date = Temporal::parse("2026-08-21", TemporalKind::Date).unwrap();
-        assert_eq!(add_months(&date, 12).to_lexical(), "2027-08-21");
-        assert_eq!(add_months(&date, -12).to_lexical(), "2025-08-21");
-        assert_eq!(add_months(&date, 5).to_lexical(), "2027-01-21");
-        assert_eq!(add_months(&date, -8).to_lexical(), "2025-12-21");
+        assert_eq!(add_months(&date, 12).unwrap().to_lexical(), "2027-08-21");
+        assert_eq!(add_months(&date, -12).unwrap().to_lexical(), "2025-08-21");
+        assert_eq!(add_months(&date, 5).unwrap().to_lexical(), "2027-01-21");
+        assert_eq!(add_months(&date, -8).unwrap().to_lexical(), "2025-12-21");
     }
 
     #[test]
     fn adding_seconds_moves_a_date() {
         let date = Temporal::parse("2026-08-21", TemporalKind::Date).unwrap();
-        assert_eq!(add_seconds(&date, 86_400.0).to_lexical(), "2026-08-22");
-        assert_eq!(add_seconds(&date, -86_400.0).to_lexical(), "2026-08-20");
+        assert_eq!(add_seconds(&date, 86_400.0).unwrap().to_lexical(), "2026-08-22");
+        assert_eq!(add_seconds(&date, -86_400.0).unwrap().to_lexical(), "2026-08-20");
+    }
+
+    // RCA-TEST-2: each refusal and fallback at the first failing input.
+
+    #[test]
+    fn calendar_arithmetic_refuses_a_year_whose_day_count_does_not_fit() {
+        assert!(days_from_civil(2026, 8, 21).is_some());
+        // 2^63 / 146_097 eras of 400 years: far above any real year.
+        assert_eq!(days_from_civil(i64::MAX, 3, 1), None);
+        assert_eq!(days_from_civil(i64::MIN, 3, 1), None);
+        // `days + 719_468` is the first sum that does not fit.
+        assert!(civil_from_days(i64::MAX - 719_468).is_some());
+        assert_eq!(civil_from_days(i64::MAX - 719_467), None);
+        // The negative end has headroom: `i64::MIN + 719_468` fits, and dividing into eras shrinks it.
+        assert!(civil_from_days(i64::MIN).is_some());
+    }
+
+    #[test]
+    fn adding_months_refuses_a_month_count_that_does_not_fit() {
+        let date = Temporal::parse("2026-08-21", TemporalKind::Date).unwrap();
+        // 2026 * 12 + 8 - 1 = 24_319 months since year 0, so this is the last total that fits.
+        assert!(add_months(&date, i64::MAX - 24_319).is_some());
+        assert!(add_months(&date, i64::MAX - 24_318).is_none());
+        let far = Temporal::from_utc(TemporalKind::Date, i64::MAX, 1, 1, 0, 0, 0.0);
+        assert!(add_months(&far, 0).is_none());
+    }
+
+    #[test]
+    fn a_duration_field_that_does_not_fit_is_invalid_not_clamped() {
+        assert!(duration_totals(&[(1e17, 'Y')], &[]).is_some());
+        // 1e18 years is 1.2e19 months, the first power of ten past i64::MAX.
+        assert!(duration_totals(&[(1e18, 'Y')], &[]).is_none());
+        assert!(duration_totals(&[(1e19, 'M')], &[]).is_none());
+        // A year or month count is a whole number; only seconds may carry a fraction.
+        assert!(duration_totals(&[(1.5, 'Y')], &[]).is_none());
+        assert!(duration_totals(&[(f64::NAN, 'M')], &[]).is_none());
+        assert!(Duration::parse("P1.5Y", DurationKind::YearMonth).is_err());
+        assert!(Duration::parse("P9999999999999999999Y", DurationKind::YearMonth).is_err());
+        assert_eq!(
+            Duration::parse("P1Y2M", DurationKind::YearMonth).unwrap().to_months(),
+            14
+        );
+    }
+
+    #[test]
+    fn an_instant_too_far_from_the_epoch_is_unknown_not_zero() {
+        let far = Temporal::from_utc(TemporalKind::Date, i64::MAX, 1, 1, 0, 0, 0.0);
+        assert_eq!(far.to_seconds(), None);
+        let near = Temporal::parse("2026-08-21", TemporalKind::Date).unwrap();
+        assert_eq!(near.compare_in(&far, 0), None);
+        assert_eq!(near.partial_cmp(&far), None);
+        assert_eq!(adjust_to_timezone(&far, Some(60)), None);
+        // A day count just below 2^53 is still exact.
+        let limit = Temporal::from_utc(TemporalKind::Date, 24_660_000_000_000, 1, 1, 0, 0, 0.0);
+        assert!(limit.to_seconds().is_some());
+    }
+
+    #[test]
+    fn from_unix_seconds_refuses_what_has_no_calendar_date() {
+        assert!(from_unix_seconds(TemporalKind::DateTime, 0.0).is_some());
+        assert!(from_unix_seconds(TemporalKind::DateTime, f64::NAN).is_none());
+        assert!(from_unix_seconds(TemporalKind::DateTime, f64::INFINITY).is_none());
+        assert!(from_unix_seconds(TemporalKind::DateTime, f64::NEG_INFINITY).is_none());
+        // 2^63 days is the first day count that does not fit an `i64`.
+        assert!(from_unix_seconds(TemporalKind::Date, 9.3e23).is_none());
+        assert!(add_seconds(&Temporal::parse("2026-08-21", TemporalKind::Date).unwrap(), f64::NAN)
+            .is_none());
+    }
+
+    #[test]
+    fn a_timezone_tail_that_splits_a_multibyte_character_is_malformed_not_a_panic() {
+        // The six-byte tail is `+aé00`: bytes 1..3 end inside `é`.
+        assert_eq!(split_timezone("2026+aé00"), None);
+        // The tail would start inside a character: no designator at all.
+        assert_eq!(split_timezone("é12345"), Some(("é12345", None)));
+        assert!(Temporal::parse("2026-01-01+aé00", TemporalKind::Date).is_err());
+        assert_eq!(split_timezone("2026-01-01+14:00"), Some(("2026-01-01", Some(840))));
+        assert_eq!(split_timezone("2026-01-01-14:59"), Some(("2026-01-01", Some(-899))));
     }
 }

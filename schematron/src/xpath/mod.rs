@@ -59,6 +59,7 @@ mod context;
 mod eval;
 mod functions;
 mod lexer;
+mod numeric;
 mod parser;
 mod temporal;
 mod uri;

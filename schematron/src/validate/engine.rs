@@ -137,7 +137,8 @@ pub(crate) fn validate_streaming<R: std::io::Read>(
     let keys = Keys::new(); // guaranteed empty: streaming_eligible refuses any <key>
     let documents = Documents::new();
     let current_time = options.resolve_current_time();
-    let implicit_timezone = options.implicit_timezone.unwrap_or(0);
+    // Fallback: 0 minutes, UTC — `RunOptions::implicit_timezone` declares that `None` means UTC.
+    let implicit_timezone = options.implicit_timezone.unwrap_or(UTC_OFFSET_MINUTES);
     let mut variables = Variables::new();
     let mut failures = 0usize;
 
@@ -290,7 +291,8 @@ fn validate_once(
         keys: &keys,
         documents,
         current_time: options.resolve_current_time(),
-        implicit_timezone: options.implicit_timezone.unwrap_or(0),
+        // Fallback: UTC — `RunOptions::implicit_timezone` declares that `None` means UTC.
+        implicit_timezone: options.implicit_timezone.unwrap_or(UTC_OFFSET_MINUTES),
         options,
     };
     let model = schema.model();
@@ -401,6 +403,8 @@ fn run_patterns_in_parallel(
     // them, so the patterns are dealt out into at most this many chunks.
     let threads = std::thread::available_parallelism()
         .map_or(1, std::num::NonZeroUsize::get)
+        // Bounds: at most one chunk per pattern, and never zero (the divisor
+        // below). They come from the comment above, not from the input.
         .min(active.len())
         .max(1);
     let chunk_size = active.len().div_ceil(threads);
@@ -665,10 +669,9 @@ fn run_pattern(
     // nothing and costs a great deal: profiling a 10,000-element document put
     // SipHash and its `RandomState` among the heaviest frames in the run,
     // above the XPath evaluation the pattern actually exists to do.
-    let mut claims: Vec<u32> = vec![UNCLAIMED; document.nodes.len()];
+    let mut claims: Vec<usize> = vec![UNCLAIMED; document.nodes.len()];
     let mut claimed = false;
     for (index, rule) in pattern.rules.iter().enumerate() {
-        let index = u32::try_from(index).unwrap_or(UNCLAIMED - 1);
         for node in matched_nodes(run, rule, variables)? {
             if claims[node.0] == UNCLAIMED {
                 claims[node.0] = index;
@@ -687,7 +690,7 @@ fn run_pattern(
         if index == UNCLAIMED {
             continue;
         }
-        let rule = &pattern.rules[index as usize];
+        let rule = &pattern.rules[index];
         let fired = fire_rule(run, rule, node, variables, failures)?;
         if options.record_fired_rules || !fired.assertions.is_empty() {
             active.rules.push(fired);
@@ -737,10 +740,9 @@ fn run_pattern_scoped_to_record(
         rules: Vec::new(),
     };
 
-    let mut claims: Vec<u32> = vec![UNCLAIMED; document.nodes.len()];
+    let mut claims: Vec<usize> = vec![UNCLAIMED; document.nodes.len()];
     let mut claimed = false;
     for (index, rule) in pattern.rules.iter().enumerate() {
-        let index = u32::try_from(index).unwrap_or(UNCLAIMED - 1);
         for node in matched_nodes(run, rule, variables)? {
             if node != record && !document.is_descendant_of(node, record) {
                 // A skeleton-level match — `validate_streaming`'s one-time
@@ -764,7 +766,7 @@ fn run_pattern_scoped_to_record(
         if index == UNCLAIMED {
             continue;
         }
-        let rule = &pattern.rules[index as usize];
+        let rule = &pattern.rules[index];
         let fired = fire_rule(run, rule, node, variables, failures)?;
         if options.record_fired_rules || !fired.assertions.is_empty() {
             active.rules.push(fired);
@@ -778,8 +780,11 @@ fn run_pattern_scoped_to_record(
     Ok(active)
 }
 
+/// The offset of UTC in minutes, the declared reading of a date or time with no timezone.
+const UTC_OFFSET_MINUTES: i32 = 0;
+
 /// A node no rule in the pattern has claimed.
-const UNCLAIMED: u32 = u32::MAX;
+const UNCLAIMED: usize = usize::MAX;
 
 /// The nodes a rule's context matches, evaluated once for the whole document.
 ///

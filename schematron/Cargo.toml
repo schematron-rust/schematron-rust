@@ -90,9 +90,12 @@ module_name_repetitions = "allow"
 # a `let _ =` on every line for no gain in either speed or clarity.
 format_push_string = "allow"
 
+# RCA-ENF-4: a backstop. Any operator the lints miss panics, which is detectable,
+# instead of wrapping, which is not. RCA-P-1 still forbids the panic.
 [profile.release]
 lto = true
 codegen-units = 1
+overflow-checks = true
 
 [profile.dev]
 debug = "line-tables-only"

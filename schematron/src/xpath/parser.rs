@@ -10,6 +10,7 @@ use super::ast::{
     Quantifier, SequenceType, Step, TypeOp,
 };
 use super::lexer::{tokenize, Token, TokenKind};
+use super::numeric;
 
 /// The maximum nesting depth accepted while parsing.
 ///
@@ -40,6 +41,12 @@ use super::lexer::{tokenize, Token, TokenKind};
 /// inflated `MAX_RECURSION_DEPTH`, watching for where it starts to abort
 /// rather than return cleanly, if this ever needs revisiting.
 pub const MAX_RECURSION_DEPTH: usize = 32;
+
+/// The depth of no open construct: where `leave` stays when there is nothing to leave.
+const OUTERMOST_DEPTH: usize = 0;
+
+/// The token index before anything is consumed: where `rewind` stays at the start.
+const START_OF_INPUT: usize = 0;
 
 /// A parse failure, with the offset it occurred at.
 ///
@@ -125,6 +132,14 @@ impl Parser {
         })
     }
 
+    /// Steps back one token so an error offset points at the offending one.
+    ///
+    /// Fallback: `START_OF_INPUT` (0) — with nothing consumed there is no token
+    /// to step back over, and the offset points at the first token.
+    fn rewind(&mut self) {
+        self.index = self.index.checked_sub(1).unwrap_or(START_OF_INPUT);
+    }
+
     fn advance(&mut self) -> Option<TokenKind> {
         let token = self.tokens.get(self.index).map(|t| t.kind.clone());
         if token.is_some() {
@@ -180,7 +195,11 @@ impl Parser {
     }
 
     fn enter(&mut self) -> Result<(), ParseError> {
-        self.depth += 1;
+        // No fallback is declared for a depth that cannot be counted (RCA-DECL-5).
+        let Some(depth) = self.depth.checked_add(1) else {
+            return self.error("expression nested too deeply to be counted");
+        };
+        self.depth = depth;
         if self.depth > MAX_RECURSION_DEPTH {
             return self.error(format!(
                 "expression nested deeper than the limit of {MAX_RECURSION_DEPTH}"
@@ -190,7 +209,8 @@ impl Parser {
     }
 
     fn leave(&mut self) {
-        self.depth -= 1;
+        // Fallback: `OUTERMOST_DEPTH` (0) — leaving with nothing entered stays at the top level.
+        self.depth = self.depth.checked_sub(1).unwrap_or(OUTERMOST_DEPTH);
     }
 
     /// `Expr := ExprSingle ("," ExprSingle)*`
@@ -313,7 +333,7 @@ impl Parser {
         if let Some(TokenKind::Variable(name)) = self.advance() {
             return Ok(NameTest::parse(&name));
         }
-        self.index = self.index.saturating_sub(1);
+        self.rewind();
         self.error("expected a variable, written `$name`")
     }
 
@@ -577,7 +597,7 @@ impl Parser {
             Some(TokenKind::Name(name)) => Ok(ItemType::Atomic(name)),
 
             other => {
-                self.index = self.index.saturating_sub(1);
+                self.rewind();
                 let found =
                     other.map_or_else(|| "end of expression".to_string(), |kind| kind.to_string());
                 self.error(format!("expected a type but found {found}"))
@@ -655,7 +675,7 @@ impl Parser {
                 })
             }
             other => {
-                self.index = self.index.saturating_sub(1);
+                self.rewind();
                 let found =
                     other.map_or_else(|| "end of expression".to_string(), |kind| kind.to_string());
                 self.error(format!(
@@ -951,7 +971,7 @@ impl Parser {
             }
             other => {
                 // Rewind so the offset points at the offending token.
-                self.index = self.index.saturating_sub(1);
+                self.rewind();
                 let found =
                     other.map_or_else(|| "end of expression".to_string(), |kind| kind.to_string());
                 self.error(format!(
@@ -1034,14 +1054,17 @@ impl Parser {
                     Some(TokenKind::Number(value, super::value::NumericType::Integer))
                         if value >= 0.0 =>
                     {
-                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                        Ok(Expr::NamedFunctionRef {
-                            name,
-                            arity: value as usize,
-                        })
+                        if let Some(arity) = numeric::f64_to_usize(value) {
+                            Ok(Expr::NamedFunctionRef { name, arity })
+                        } else {
+                            self.rewind();
+                            self.error(format!(
+                                "the arity after `{name}#` is not a whole number that fits"
+                            ))
+                        }
                     }
                     other => {
-                        self.index = self.index.saturating_sub(1);
+                        self.rewind();
                         let found = other.map_or_else(
                             || "end of expression".to_string(),
                             |kind| kind.to_string(),
@@ -1054,7 +1077,7 @@ impl Parser {
                 }
             }
             other => {
-                self.index = self.index.saturating_sub(1);
+                self.rewind();
                 let found =
                     other.map_or_else(|| "end of expression".to_string(), |kind| kind.to_string());
                 self.error(format!("expected an expression but found {found}"))

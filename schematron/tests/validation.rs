@@ -405,7 +405,7 @@ fn one_schema_validates_many_documents_concurrently() {
         .collect();
 
     let counts: Vec<usize> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-    assert_eq!(counts.iter().sum::<usize>(), 4);
+    assert_eq!(counts.iter().try_fold(0_usize, |total, n| total.checked_add(*n)).unwrap(), 4);
 }
 
 #[test]

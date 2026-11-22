@@ -36,6 +36,9 @@ pub struct Document {
     pub(crate) extra_roots: Vec<NodeId>,
 }
 
+/// The capacity hint of "no pre-sizing": a vector that grows on demand.
+const NO_CAPACITY_HINT: usize = 0;
+
 impl Document {
     /// Creates an empty document containing only a root node.
     #[must_use]
@@ -348,9 +351,13 @@ impl Document {
     /// over-counts for the axes that exclude them — which is what an upper
     /// bound is for.
     fn subtree_capacity(&self, id: NodeId) -> usize {
+        // Fallback: `NO_CAPACITY_HINT` (0) — the number is only a capacity hint,
+        // so when it cannot be computed the vector is simply not pre-sized and
+        // grows on demand, which gives the same result.
         self.subtree_end(id)
-            .saturating_sub(self.order(id))
-            .saturating_add(1)
+            .checked_sub(self.order(id))
+            .and_then(|nodes_after| nodes_after.checked_add(1))
+            .unwrap_or(NO_CAPACITY_HINT)
     }
 
     fn push_descendants_or_self(&self, id: NodeId, out: &mut Vec<NodeId>) {
@@ -590,21 +597,12 @@ impl Document {
     }
 }
 
-/// A positive integer as a string, avoiding `format!`'s machinery on a path
-/// that runs once per step of every location.
+/// A positive integer as a string.
+///
+/// `usize::to_string` writes the digits without a hand-sized buffer, so there is
+/// no index to underflow however wide `usize` is.
 fn itoa(value: usize) -> String {
-    let mut buffer = [0u8; 20];
-    let mut index = buffer.len();
-    let mut value = value;
-    loop {
-        index -= 1;
-        buffer[index] = b'0' + u8::try_from(value % 10).expect("a digit");
-        value /= 10;
-        if value == 0 {
-            break;
-        }
-    }
-    String::from_utf8_lossy(&buffer[index..]).into_owned()
+    value.to_string()
 }
 
 /// The predicate that identifies a namespaced name in XPath 1.0.
