@@ -165,10 +165,35 @@ impl ValidateOptions {
         self
     }
 
+    /// Refuses a supplied option that is out of range (RCA-IN-4).
+    ///
+    /// `implicit_timezone` must be within -14:00 to +14:00 (XML Schema
+    /// Part 2); `current_time` must be finite. Absent options are fine.
+    pub(crate) fn validate(&self) -> crate::Result<()> {
+        if let Some(minutes) = self.implicit_timezone {
+            if !(-14 * 60..=14 * 60).contains(&minutes) {
+                return Err(crate::Error::InvalidOption {
+                    option: "implicit_timezone",
+                    message: format!("{minutes} minutes is outside -840 to 840 (-14:00 to +14:00)"),
+                });
+            }
+        }
+        if let Some(seconds) = self.current_time {
+            if !seconds.is_finite() {
+                return Err(crate::Error::InvalidOption {
+                    option: "current_time",
+                    message: format!("{seconds} is not a finite number of seconds"),
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// The instant for this run, reading the system clock if none was given.
     ///
     /// Called once per run, never per expression.
     pub(crate) fn resolve_current_time(&self) -> f64 {
+        // RCA-IN-3: absent only — `current_time` documents that `None` reads the system clock.
         self.current_time.unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

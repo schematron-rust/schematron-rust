@@ -424,3 +424,43 @@ fn report_order_is_pattern_then_document_then_assertion() {
         vec!["p1-b-1", "p1-b-2", "p2-a"]
     );
 }
+
+/// RCA-TEST-8: a supplied out-of-range option is rejected, never clamped or defaulted.
+#[test]
+fn out_of_range_run_options_are_rejected() {
+    use schematron::Error;
+    let schema = Schema::from_str(&schema_with(
+        r#"<pattern><rule context="a"><assert test="true()">x</assert></rule></pattern>"#,
+    ))
+    .expect("schema should compile");
+    let document = Document::from_str("<a/>").expect("document should parse");
+    for (options, name) in [
+        (
+            ValidateOptions::default().with_implicit_timezone(841),
+            "implicit_timezone",
+        ),
+        (
+            ValidateOptions::default().with_implicit_timezone(-841),
+            "implicit_timezone",
+        ),
+        (
+            ValidateOptions::default().with_current_time(f64::NAN),
+            "current_time",
+        ),
+        (
+            ValidateOptions::default().with_current_time(f64::INFINITY),
+            "current_time",
+        ),
+    ] {
+        match schema.validate_with(&document, &options) {
+            Err(Error::InvalidOption { option, .. }) => assert_eq!(option, name),
+            other => panic!("expected InvalidOption for {name}, got {other:?}"),
+        }
+    }
+    let edge = ValidateOptions::default()
+        .with_implicit_timezone(840)
+        .with_current_time(0.0);
+    schema
+        .validate_with(&document, &edge)
+        .expect("the edge values are valid");
+}

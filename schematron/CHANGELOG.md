@@ -5,6 +5,10 @@ git history; this file starts where the first output-affecting change did.
 
 ## Unreleased
 
+- **Invalid options are refused** (RCA-IN-4). A supplied `implicit_timezone` outside
+  -840..=840 minutes or a non-finite `current_time` now makes `validate_with` and
+  `validate_streaming` return the new `Error::InvalidOption` before any work; only
+  an absent option takes its documented default (UTC, the system clock).
 - **Checked arithmetic** (`spec/rust-checked-arithmetic`). No `saturating_*`, no
   unchecked numeric `as`, and no panicking operator on the date and duration
   figures. Breaking for 0.x: `add_months`, `add_seconds`, `adjust_to_timezone`

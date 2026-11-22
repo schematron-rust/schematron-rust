@@ -115,6 +115,7 @@ pub(crate) fn validate_streaming<R: std::io::Read>(
     source: R,
     options: &ValidateOptions,
 ) -> Result<Report> {
+    options.validate()?;
     if let Err(reason) = schema.streaming_eligible() {
         return Err(Error::streaming(reason.to_string()));
     }
@@ -137,7 +138,7 @@ pub(crate) fn validate_streaming<R: std::io::Read>(
     let keys = Keys::new(); // guaranteed empty: streaming_eligible refuses any <key>
     let documents = Documents::new();
     let current_time = options.resolve_current_time();
-    // Fallback: 0 minutes, UTC — `RunOptions::implicit_timezone` declares that `None` means UTC.
+    // RCA-IN-3: absent only — 0 minutes, UTC; `RunOptions::implicit_timezone` declares that `None` means UTC.
     let implicit_timezone = options.implicit_timezone.unwrap_or(UTC_OFFSET_MINUTES);
     let mut variables = Variables::new();
     let mut failures = 0usize;
@@ -283,6 +284,7 @@ fn validate_once(
     documents: &Documents,
     options: &ValidateOptions,
 ) -> Result<Report> {
+    options.validate()?;
     let keys = build_keys(schema, document)?;
     let run = Run {
         schema,
@@ -291,7 +293,7 @@ fn validate_once(
         keys: &keys,
         documents,
         current_time: options.resolve_current_time(),
-        // Fallback: UTC — `RunOptions::implicit_timezone` declares that `None` means UTC.
+        // RCA-IN-3: absent only — UTC; `RunOptions::implicit_timezone` declares that `None` means UTC.
         implicit_timezone: options.implicit_timezone.unwrap_or(UTC_OFFSET_MINUTES),
         options,
     };

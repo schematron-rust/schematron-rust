@@ -138,6 +138,17 @@ pub enum Error {
         /// What specifically disqualified it.
         message: String,
     },
+    /// A run option was supplied but is out of range or not a valid value.
+    ///
+    /// Raised before any validation starts; the option is never replaced by a
+    /// default or clamped (RCA-IN-4).
+    #[error("invalid option {option}: {message}")]
+    InvalidOption {
+        /// The option's name.
+        option: &'static str,
+        /// Why the value is refused.
+        message: String,
+    },
 }
 
 impl Error {
