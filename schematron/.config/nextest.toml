@@ -1,0 +1,16 @@
+# cargo-nextest configuration (opt-in, local): `cargo nextest run`.
+# nextest does not run doctests; also run `cargo test --doc`.
+
+[profile.default]
+# Report every failure, not just the first.
+fail-fast = false
+# Flag tests still running after 60s; this does not kill them.
+slow-timeout = { period = "60s" }
+status-level = "pass"
+final-status-level = "slow"
+
+[profile.ci]
+# No retries: a retry would hide a flaky test.
+retries = 0
+fail-fast = false
+slow-timeout = { period = "60s" }

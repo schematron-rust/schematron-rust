@@ -46,6 +46,18 @@ cargo doc --no-deps --all-features            # must be warning-free
 cargo +1.98 test --all-features               # the MSRV boundary
 ```
 
+Faster local runs with cargo-nextest (optional; `.config/nextest.toml`):
+
+```sh
+cargo nextest run --all-features    # one process per test
+cargo test --doc --all-features     # nextest skips doctests
+cargo nextest run --all-features --test differential --run-ignored only   # the ignored differential tests
+```
+
+The `cargo test` gate above is unchanged, and `bin/test-coverage` still uses
+`cargo llvm-cov`. `fuzz/` is outside the workspace and is not run by nextest.
+Retries are off so a flaky test is never hidden.
+
 Slower, run when relevant:
 
 ```sh
