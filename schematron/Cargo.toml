@@ -99,6 +99,7 @@ overflow-checks = true
 
 [profile.dev]
 debug = "line-tables-only"
+split-debuginfo = "unpacked"
 
 [profile.dev.package."*"]
 debug = false
