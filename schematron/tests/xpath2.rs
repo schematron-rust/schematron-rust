@@ -1637,3 +1637,22 @@ fn the_budget_does_not_leak_between_expressions() {
     let report = schema.validate(&document).expect("both must run");
     assert!(report.is_valid(), "{}", report.to_text());
 }
+
+#[test]
+fn insert_before_refuses_a_nan_position() {
+    let error = eval_error(
+        "count(insert-before(('a'), xs:double('NaN'), 'x')) = 2",
+        "<a/>",
+    );
+    assert!(error.contains("must be a number, not NaN"), "{error}");
+}
+
+#[test]
+fn a_timezone_that_overflows_minutes_is_refused() {
+    let error = eval_error(
+        "exists(adjust-dateTime-to-timezone(xs:dateTime('2026-08-21T09:00:00+02:00'), \
+         xs:dayTimeDuration('P100000000000000000000D')))",
+        "<a/>",
+    );
+    assert!(error.contains("outside the valid range"), "{error}");
+}

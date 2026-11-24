@@ -554,3 +554,11 @@ fn eqname_is_refused_under_xpath_two() {
     assert_contains!(message, "XPath 3.0");
     assert_contains!(message, "EQName");
 }
+
+#[test]
+fn function_lookup_with_an_arity_too_large_for_any_function_finds_none() {
+    assert!(check(
+        "empty(function-lookup('concat', 1000000000000000000000000000000))",
+        "<a/>"
+    ));
+}
