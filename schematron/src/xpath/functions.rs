@@ -341,11 +341,10 @@ fn call_known(
 ) -> Result<Value, EvalError> {
     let document = context.document;
     match name {
-        "last" => Ok(double(as_f64(context.size)?)),
-        "position" => Ok(double(as_f64(context.position)?)),
-        "count" => Ok(double(as_f64(
-            aggregate_items(name, &args[0], context.version)?.len(),
-        )?)),
+        "last" => count_double(context.size),
+        "position" => count_double(context.position),
+        "count" => aggregate_items(name, &args[0], context.version)
+            .and_then(|items| count_double(items.len())),
         "id" => Ok(Value::NodeSet(id_function(args, context))),
 
         "local-name" => Ok(Value::String(
@@ -390,10 +389,8 @@ fn call_known(
                     .map_or_default(|(_, after)| after.to_string()),
             ))
         }
-        "substring" => Ok(Value::String(substring(args, document)?)),
-        "string-length" => Ok(double(as_f64(
-            string_argument(args, context).chars().count(),
-        )?)),
+        "substring" => substring(args, document).map(Value::String),
+        "string-length" => count_double(string_argument(args, context).chars().count()),
         "normalize-space" => Ok(Value::String(normalize_space(&string_argument(
             args, context,
         )))),
@@ -492,8 +489,7 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
             }
             // Folded from `0.0` for the same reason as `sum()` above.
             let total: f64 = numbers.iter().fold(0.0, |a, b| a + b);
-            let count = as_f64(numbers.len())?;
-            Ok(double(total / count))
+            as_f64(numbers.len()).map(|count| double(total / count))
         }
         "exists" => Ok(Value::Boolean(!sequence_items(&args[0]).is_empty())),
         "empty" => Ok(Value::Boolean(sequence_items(&args[0]).is_empty())),
@@ -685,17 +681,7 @@ fn adjust_to_timezone_call(
 fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
     let document = context.document;
     match name {
-        "index-of" => {
-            let items = sequence_items(&args[0]);
-            let wanted = args[1].to_xpath_string(document);
-            let positions = items
-                .iter()
-                .enumerate()
-                .filter(|(_, item)| item.to_xpath_string(document) == wanted)
-                .map(|(index, _)| Ok(Item::Number(one_based(index)?, NumericType::Double)))
-                .collect::<Result<Vec<_>, EvalError>>()?;
-            Ok(Value::Sequence(positions))
-        }
+        "index-of" => index_of(args, document),
 
         "reverse" => {
             let mut items = sequence_items(&args[0]);
@@ -709,7 +695,7 @@ fn call_v2_rest(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result
         // one is easier to write a test against than any other.
         "unordered" => Ok(Value::Sequence(sequence_items(&args[0]))),
 
-        "subsequence" => Ok(Value::Sequence(subsequence(args, context)?)),
+        "subsequence" => subsequence(args, context).map(Value::Sequence),
 
         "insert-before" => {
             let mut items = sequence_items(&args[0]);
@@ -859,7 +845,7 @@ fn call_v3(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
         "function-lookup" => function_lookup_call(args, context),
         "function-arity" => {
             let f = single_function_argument(name, args, 0)?;
-            Ok(double(as_f64(f.arity())?))
+            count_double(f.arity())
         }
         "function-name" => {
             let f = single_function_argument(name, args, 0)?;
@@ -1081,14 +1067,41 @@ fn subsequence(args: &[Value], context: &EvalContext<'_>) -> Result<Vec<Item>, E
         Some(length) => start + round_half_up(length.to_number(document)),
         None => f64::INFINITY,
     };
-    let mut kept = Vec::new();
-    for (index, item) in items.into_iter().enumerate() {
-        let position = one_based(index)?;
-        if position >= start && position < end {
-            kept.push(item);
-        }
-    }
-    Ok(kept)
+    keep_positions(items, 1, start, end)
+}
+
+/// The items whose one-based position, counted from `first`, is at least
+/// `start` and below `end`.
+///
+/// The comparison is on `f64`, as the specification states it, so a position
+/// above 2^53, which has no exact `f64`, is an error and not a rounded number.
+fn keep_positions<T>(
+    items: impl IntoIterator<Item = T>,
+    first: usize,
+    start: f64,
+    end: f64,
+) -> Result<Vec<T>, EvalError> {
+    numbered(items, first)
+        .filter(|numbered_item| {
+            numbered_item
+                .as_ref()
+                .map_or(true, |(position, _)| *position >= start && *position < end)
+        })
+        .map(|numbered_item| numbered_item.map(|(_, item)| item))
+        .collect()
+}
+
+/// Pairs each item with its position as an `xs:double`, counting from `first`.
+///
+/// A position that is not an exact `f64` is an error in the pair's place, so
+/// no caller can mistake a rounded position for the real one.
+fn numbered<T>(
+    items: impl IntoIterator<Item = T>,
+    first: usize,
+) -> impl Iterator<Item = Result<(f64, T), EvalError>> {
+    (first..)
+        .zip(items)
+        .map(|(position, item)| as_f64(position).map(|position| (position, item)))
 }
 
 /// Converts a count to `f64` for XPath, which has only one numeric type.
@@ -1100,12 +1113,27 @@ fn as_f64(value: usize) -> Result<f64, EvalError> {
         .ok_or_else(|| EvalError::new("a count is too large to be an exact xs:double"))
 }
 
-/// The one-based XPath position of a zero-based `index`, as an `xs:double`.
-fn one_based(index: usize) -> Result<f64, EvalError> {
-    let position = index
-        .checked_add(1)
-        .ok_or_else(|| EvalError::new("a position is too large to be counted"))?;
-    as_f64(position)
+/// `index-of($sequence, $wanted)`: the one-based positions of the items whose
+/// string value equals `$wanted`.
+fn index_of(args: &[Value], document: &Document) -> Result<Value, EvalError> {
+    let items = sequence_items(&args[0]);
+    let wanted = args[1].to_xpath_string(document);
+    numbered(items.iter(), 1)
+        .filter(|numbered_item| {
+            numbered_item
+                .as_ref()
+                .map_or(true, |(_, item)| item.to_xpath_string(document) == wanted)
+        })
+        .map(|numbered_item| {
+            numbered_item.map(|(position, _)| Item::Number(position, NumericType::Double))
+        })
+        .collect::<Result<Vec<_>, EvalError>>()
+        .map(Value::Sequence)
+}
+
+/// A count as an `xs:double` value, for the functions that report one.
+fn count_double(value: usize) -> Result<Value, EvalError> {
+    as_f64(value).map(double)
 }
 
 /// Wraps a computed number as `xs:double` — every function result is one,
@@ -1679,14 +1707,7 @@ fn substring(args: &[Value], document: &Document) -> Result<String, EvalError> {
         return Ok(String::new());
     }
 
-    let mut out = String::new();
-    for (index, c) in text.iter().enumerate() {
-        let position = one_based(index)?;
-        if position >= start && position < end {
-            out.push(*c);
-        }
-    }
-    Ok(out)
+    keep_positions(text, 1, start, end).map(String::from_iter)
 }
 
 /// XPath's `round()`: halfway cases go towards positive infinity, so
@@ -2411,5 +2432,28 @@ mod tests {
         )
         .is_ok());
         assert!(!lang("fr", &document, document.document_element().unwrap()));
+    }
+
+    #[test]
+    fn positions_count_from_the_first_and_refuse_an_inexact_one() {
+        assert_eq!(keep_positions(vec!['a', 'b', 'c'], 1, 2.0, 3.0).unwrap(), vec!['b']);
+        assert_eq!(keep_positions(vec!['a', 'b', 'c'], 1, f64::NAN, 3.0).unwrap(), Vec::<char>::new());
+        let counted = count_double(3).unwrap();
+        assert_eq!(counted, double(3.0));
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn a_count_or_position_above_2_pow_53_is_an_error_not_a_rounded_number() {
+        let past = (1_usize << 53) + 1;
+        assert!(count_double(past).is_err());
+        assert!(count_double(1_usize << 53).is_ok());
+        // The first position is exact, the second is not.
+        assert!(keep_positions(vec!['a', 'b'], 1_usize << 53, 0.0, f64::INFINITY).is_err());
+        assert_eq!(
+            keep_positions(vec!['a'], 1_usize << 53, 0.0, f64::INFINITY).unwrap(),
+            vec!['a']
+        );
+        assert!(numbered(vec!['a', 'b'], 1_usize << 53).any(|numbered_item| numbered_item.is_err()));
     }
 }

@@ -149,7 +149,7 @@ impl Duration {
         };
         // Out-of-range field values are invalid data (RCA-DECL-5): rejected, not clamped.
         let (months, seconds) =
-            duration_totals(&date_fields, &time_fields).ok_or_else(reject)?;
+            duration_totals(&date_fields, &time_fields, negative).ok_or_else(reject)?;
 
         // Each subtype accepts only its own fields.
         match kind {
@@ -160,13 +160,7 @@ impl Duration {
 
         let sign = if negative { -1.0 } else { 1.0 };
         Ok(match kind {
-            DurationKind::YearMonth => {
-                Duration::from_months(if negative {
-                    months.checked_neg().ok_or_else(reject)?
-                } else {
-                    months
-                })
-            }
+            DurationKind::YearMonth => Duration::from_months(months),
             DurationKind::DayTime => Duration::from_seconds(seconds * sign),
         })
     }
@@ -263,7 +257,7 @@ fn parse_duration_fields(text: &str, units: &str) -> Option<Vec<(f64, char)>> {
     }
     let mut fields = Vec::new();
     let mut digits = String::new();
-    let mut next_unit = 0;
+    let mut previous_unit: Option<usize> = None;
 
     for c in text.chars() {
         if c.is_ascii_digit() || c == '.' {
@@ -271,10 +265,10 @@ fn parse_duration_fields(text: &str, units: &str) -> Option<Vec<(f64, char)>> {
             continue;
         }
         let position = units.find(c)?;
-        if position < next_unit || digits.is_empty() {
+        if previous_unit.is_some_and(|previous| position <= previous) || digits.is_empty() {
             return None;
         }
-        next_unit = position.checked_add(1)?;
+        previous_unit = Some(position);
         fields.push((digits.parse().ok()?, c));
         digits.clear();
     }
@@ -287,19 +281,25 @@ fn parse_duration_fields(text: &str, units: &str) -> Option<Vec<(f64, char)>> {
 
 /// Converts the already ordered lexical fields into the two stored totals.
 ///
+/// The months are signed by `negative`; the seconds are not, because the
+/// caller scales them by the sign.
+///
 /// `None` for an unknown unit, and for a year or month count that is not a whole
 /// number or whose total does not fit an `i64`: no fallback is declared for
 /// invalid data (RCA-DECL-5).
-fn duration_totals(date_fields: &[(f64, char)], time_fields: &[(f64, char)]) -> Option<(i64, f64)> {
-    let mut months = 0_i64;
+fn duration_totals(
+    date_fields: &[(f64, char)],
+    time_fields: &[(f64, char)],
+    negative: bool,
+) -> Option<(i64, f64)> {
+    // The field order is already checked, so each of `Y` and `M` occurs at most once.
+    let mut year_months = 0_i64;
+    let mut month_part = 0_i64;
     let mut seconds = 0.0_f64;
     for (value, unit) in date_fields {
         match unit {
-            'Y' => {
-                let years = numeric::f64_to_i64(*value)?;
-                months = months.checked_add(years.checked_mul(12)?)?;
-            }
-            'M' => months = months.checked_add(numeric::f64_to_i64(*value)?)?,
+            'Y' => year_months = numeric::f64_to_i64(*value)?.checked_mul(12)?,
+            'M' => month_part = numeric::f64_to_i64(*value)?,
             'D' => seconds += value * 86_400.0,
             _ => return None,
         }
@@ -312,7 +312,10 @@ fn duration_totals(date_fields: &[(f64, char)], time_fields: &[(f64, char)]) -> 
             _ => return None,
         }
     }
-    Some((months, seconds))
+    year_months
+        .checked_add(month_part)
+        .and_then(|months| if negative { months.checked_neg() } else { Some(months) })
+        .map(|months| (months, seconds))
 }
 
 /// Adds a number of months to a date, clamping the day.
@@ -324,14 +327,8 @@ fn duration_totals(date_fields: &[(f64, char)], time_fields: &[(f64, char)]) -> 
 /// for it (RCA-DECL-5).
 #[must_use]
 pub fn add_months(temporal: &Temporal, months: i64) -> Option<Temporal> {
-    let total = temporal
-        .year()
-        .checked_mul(12)?
-        .checked_add(i64::from(temporal.month()))?
-        .checked_sub(1)?
-        .checked_add(months)?;
-    let year = total.checked_div_euclid(12)?;
-    let month = u32::try_from(total.checked_rem_euclid(12)?.checked_add(1)?).ok()?;
+    let (year, month) = split_month_index(temporal.year(), temporal.month(), months);
+    let (year, month) = i64::try_from(year).ok().zip(u32::try_from(month).ok())?;
     // XML Schema Part 2, E.1.2 declares the bound: the day is clamped to the
     // length of the resulting month.
     let day = temporal.day().min(days_in_month(year, month));
@@ -346,6 +343,20 @@ pub fn add_months(temporal: &Temporal, months: i64) -> Option<Temporal> {
         second: temporal.second(),
         offset_minutes: temporal.offset_minutes(),
     })
+}
+
+/// The year and month that lie `months` after `year`-`month`, computed in `i128`.
+///
+/// The result is not narrowed here, because the caller owns the refusal for a
+/// year that does not fit an `i64`.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-EXC-2: |year| and |months| are at most 2^63 and month is below 2^32, so the \
+              total is below 2^68 in magnitude and cannot overflow an i128; the divisor is 12"
+)]
+fn split_month_index(year: i64, month: u32, months: i64) -> (i128, i128) {
+    let total = i128::from(year) * 12 + i128::from(month) - 1 + i128::from(months);
+    (total.div_euclid(12), total.rem_euclid(12) + 1)
 }
 
 /// Adds a number of seconds to a date or time.
@@ -386,23 +397,25 @@ const UTC_OFFSET_MINUTES: i32 = 0;
 /// `None` when the instant cannot be represented exactly.
 #[must_use]
 pub fn adjust_to_timezone(temporal: &Temporal, new_offset: Option<i32>) -> Option<Temporal> {
-    Some(match (temporal.offset_minutes, new_offset) {
-        (None, target) => Temporal {
+    match (temporal.offset_minutes, new_offset) {
+        (None, target) => Some(Temporal {
             offset_minutes: target,
             ..*temporal
-        },
-        (Some(_), None) => Temporal {
+        }),
+        (Some(_), None) => Some(Temporal {
             offset_minutes: None,
             ..*temporal
-        },
-        (Some(_), Some(new)) => {
-            let instant = temporal.to_seconds()?;
-            Temporal {
+        }),
+        (Some(_), Some(new)) => temporal
+            .to_seconds()
+            .and_then(|instant| {
+                from_unix_seconds(temporal.kind, instant + f64::from(new) * 60.0)
+            })
+            .map(|shifted| Temporal {
                 offset_minutes: Some(new),
-                ..from_unix_seconds(temporal.kind, instant + f64::from(new) * 60.0)?
-            }
-        }
-    })
+                ..shifted
+            }),
+    }
 }
 
 /// The date an `xs:time` is placed on, so that two times compare by their
@@ -719,25 +732,35 @@ fn split_timezone(text: &str) -> Option<(&str, Option<i32>)> {
         .checked_sub(TIMEZONE_TAIL_LEN)
         .and_then(|split| text.split_at_checked(split))
     {
-        let sign = match tail.as_bytes().first() {
-            Some(b'+') => 1,
-            Some(b'-') => -1,
-            _ => return Some((text, None)),
+        let (sign, rest) = match (tail.strip_prefix('+'), tail.strip_prefix('-')) {
+            (Some(rest), _) => (1, rest),
+            (None, Some(rest)) => (-1, rest),
+            (None, None) => return Some((text, None)),
         };
         if !body.is_empty() {
-            let hours: i32 = tail.get(1..3)?.parse().ok()?;
-            if tail.as_bytes().get(3) != Some(&b':') {
+            let (hours_text, after_hours) = rest.split_at_checked(2)?;
+            let hours: i32 = hours_text.parse().ok()?;
+            let Some(minutes_text) = after_hours.strip_prefix(':') else {
                 return Some((text, None));
-            }
-            let minutes: i32 = tail.get(4..6)?.parse().ok()?;
+            };
+            let minutes: i32 = minutes_text.parse().ok()?;
             if hours > 14 || minutes > 59 {
                 return None;
             }
-            let total = hours.checked_mul(60)?.checked_add(minutes)?.checked_mul(sign)?;
-            return Some((body, Some(total)));
+            return Some((body, Some(offset_minutes(hours, minutes, sign))));
         }
     }
     Some((text, None))
+}
+
+/// The signed offset in minutes of `hours:minutes` once their ranges are checked.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-EXC-2: hours is a two-character number, so at most 99 in magnitude, and \
+              minutes is at most 59, so the total is below 6,100 in magnitude"
+)]
+fn offset_minutes(hours: i32, minutes: i32, sign: i32) -> i32 {
+    (hours * 60 + minutes) * sign
 }
 
 /// Parses `YYYY-MM-DD`, allowing a negative year and more than four digits.
@@ -815,57 +838,54 @@ fn is_leap_year(year: i64) -> bool {
 /// Days from 1970-01-01 to the given civil date.
 ///
 /// Howard Hinnant's `days_from_civil`, which is exact for the proleptic
-/// Gregorian calendar. `None` when an intermediate does not fit an `i64`,
+/// Gregorian calendar. `None` when the day count does not fit an `i64`,
 /// which only a year within a few hundred of `i64::MAX` days can cause.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-EXC-2: the arithmetic is done in i128. |year| is at most 2^63 and month and day \
+              are below 2^32, so every intermediate is below 2^75 in magnitude and cannot \
+              overflow; the divisors are non-zero constants. The result is narrowed with \
+              try_from"
+)]
 fn days_from_civil(year: i64, month: u32, day: u32) -> Option<i64> {
-    let year = if month <= 2 { year.checked_sub(1)? } else { year };
-    let era = if year >= 0 { year } else { year.checked_sub(399)? }.checked_div(400)?;
-    let year_of_era = year.checked_sub(era.checked_mul(400)?)?;
-    let month = i64::from(month);
-    let day = i64::from(day);
-    let shifted_month = month.checked_add(if month > 2 { -3 } else { 9 })?;
-    let day_of_year = shifted_month
-        .checked_mul(153)?
-        .checked_add(2)?
-        .checked_div(5)?
-        .checked_add(day)?
-        .checked_sub(1)?;
-    let day_of_era = year_of_era
-        .checked_mul(365)?
-        .checked_add(year_of_era.checked_div(4)?)?
-        .checked_sub(year_of_era.checked_div(100)?)?
-        .checked_add(day_of_year)?;
-    era.checked_mul(146_097)?
-        .checked_add(day_of_era)?
-        .checked_sub(719_468)
+    let year = i128::from(year) - i128::from(month <= 2);
+    let era = year.div_euclid(400);
+    let year_of_era = year.rem_euclid(400);
+    let month = i128::from(month);
+    let day = i128::from(day);
+    let shifted_month = if month > 2 { month - 3 } else { month + 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    i64::try_from(era * 146_097 + day_of_era - 719_468).ok()
 }
 
 /// The civil date a day count denotes, inverting [`days_from_civil`].
 ///
-/// `None` when an intermediate does not fit an `i64`.
+/// `None` when the date does not fit the `(i64, u32, u32)` it is returned as,
+/// which no `i64` day count can cause: the year is about a 365th of the days.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-EXC-2: the arithmetic is done in i128. |days| is at most 2^63, so every \
+              intermediate is below 2^64 in magnitude and cannot overflow; the divisors are \
+              non-zero constants. The results are narrowed with try_from"
+)]
 fn civil_from_days(days: i64) -> Option<(i64, u32, u32)> {
-    let days = days.checked_add(719_468)?;
-    let era = if days >= 0 { days } else { days.checked_sub(146_096)? }.checked_div(146_097)?;
-    let day_of_era = days.checked_sub(era.checked_mul(146_097)?)?;
-    let year_of_era = day_of_era
-        .checked_sub(day_of_era.checked_div(1460)?)?
-        .checked_add(day_of_era.checked_div(36_524)?)?
-        .checked_sub(day_of_era.checked_div(146_096)?)?
-        .checked_div(365)?;
-    let year = year_of_era.checked_add(era.checked_mul(400)?)?;
-    let day_of_year = day_of_era.checked_sub(
-        year_of_era
-            .checked_mul(365)?
-            .checked_add(year_of_era.checked_div(4)?)?
-            .checked_sub(year_of_era.checked_div(100)?)?,
-    )?;
-    let month_prime = day_of_year.checked_mul(5)?.checked_add(2)?.checked_div(153)?;
-    let day = day_of_year
-        .checked_sub(month_prime.checked_mul(153)?.checked_add(2)?.checked_div(5)?)?
-        .checked_add(1)?;
-    let month = month_prime.checked_add(if month_prime < 10 { 3 } else { -9 })?;
-    let year = if month <= 2 { year.checked_add(1)? } else { year };
-    Some((year, u32::try_from(month).ok()?, u32::try_from(day).ok()?))
+    let days = i128::from(days) + 719_468;
+    let era = days.div_euclid(146_097);
+    let day_of_era = days.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = if month_prime < 10 { month_prime + 3 } else { month_prime - 9 };
+    let year = if month <= 2 { year + 1 } else { year };
+    i64::try_from(year)
+        .ok()
+        .zip(u32::try_from(month).ok())
+        .zip(u32::try_from(day).ok())
+        .map(|((year, month), day)| (year, month, day))
 }
 
 /// Builds a value from seconds since the Unix epoch, in UTC.
@@ -880,9 +900,11 @@ fn civil_from_days(days: i64) -> Option<(i64, u32, u32)> {
 pub fn from_unix_seconds(kind: TemporalKind, seconds: f64) -> Option<Temporal> {
     let days = (seconds / 86_400.0).floor();
     let rest = seconds - days * 86_400.0;
-    let (year, month, day) = civil_from_days(numeric::f64_to_i64(days)?)?;
-    let hour = u32::try_from(numeric::f64_to_i64((rest / 3_600.0).floor())?).ok()?;
-    let minute = u32::try_from(numeric::f64_to_i64(((rest % 3_600.0) / 60.0).floor())?).ok()?;
+    let date = numeric::f64_to_i64(days).and_then(civil_from_days);
+    let hour = numeric::f64_to_i64((rest / 3_600.0).floor()).and_then(|hour| u32::try_from(hour).ok());
+    let minute = numeric::f64_to_i64(((rest % 3_600.0) / 60.0).floor())
+        .and_then(|minute| u32::try_from(minute).ok());
+    let ((year, month, day), (hour, minute)) = date.zip(hour.zip(minute))?;
     let second = rest % 60.0;
 
     Some(match kind {
@@ -1268,8 +1290,8 @@ mod duration_tests {
         assert_eq!(Duration::from_seconds(0.5).to_lexical(), "PT0.5S");
         assert_eq!(Duration::from_seconds(3_600.0).to_lexical(), "PT1H");
         assert_eq!(Duration::from_months(12).to_string(), "P1Y");
-        assert!(duration_totals(&[(1.0, 'X')], &[]).is_none());
-        assert!(duration_totals(&[], &[(1.0, 'X')]).is_none());
+        assert!(duration_totals(&[(1.0, 'X')], &[], false).is_none());
+        assert!(duration_totals(&[], &[(1.0, 'X')], false).is_none());
     }
 
     #[test]
@@ -1306,32 +1328,45 @@ mod duration_tests {
         // 2^63 / 146_097 eras of 400 years: far above any real year.
         assert_eq!(days_from_civil(i64::MAX, 3, 1), None);
         assert_eq!(days_from_civil(i64::MIN, 3, 1), None);
-        // `days + 719_468` is the first sum that does not fit.
-        assert!(civil_from_days(i64::MAX - 719_468).is_some());
-        assert_eq!(civil_from_days(i64::MAX - 719_467), None);
-        // The negative end has headroom: `i64::MIN + 719_468` fits, and dividing into eras shrinks it.
+        // Every `i64` day count has a date: the year is about a 365th of the days, so it
+        // fits an `i64`, and the arithmetic is in `i128`, so `days + 719_468` cannot overflow.
+        assert!(civil_from_days(i64::MAX).is_some());
+        assert!(civil_from_days(i64::MAX - 719_467).is_some());
         assert!(civil_from_days(i64::MIN).is_some());
+        // The two directions agree where both are defined.
+        let (year, month, day) = civil_from_days(i64::MAX).unwrap();
+        assert_eq!(days_from_civil(year, month, day), Some(i64::MAX));
     }
 
     #[test]
-    fn adding_months_refuses_a_month_count_that_does_not_fit() {
+    fn adding_months_refuses_a_year_that_does_not_fit() {
         let date = Temporal::parse("2026-08-21", TemporalKind::Date).unwrap();
-        // 2026 * 12 + 8 - 1 = 24_319 months since year 0, so this is the last total that fits.
-        assert!(add_months(&date, i64::MAX - 24_319).is_some());
-        assert!(add_months(&date, i64::MAX - 24_318).is_none());
-        let far = Temporal::from_utc(TemporalKind::Date, i64::MAX, 1, 1, 0, 0, 0.0);
-        assert!(add_months(&far, 0).is_none());
+        // The sum is taken in `i128`, so the largest month count still lands on a year that fits.
+        assert!(add_months(&date, i64::MAX).is_some());
+        assert!(add_months(&date, i64::MIN).is_some());
+        // The first failing input: the last month of the last year, and one more month.
+        let last = Temporal::from_utc(TemporalKind::Date, i64::MAX, 12, 1, 0, 0, 0.0);
+        assert!(add_months(&last, 0).is_some());
+        assert!(add_months(&last, 1).is_none());
+        let first = Temporal::from_utc(TemporalKind::Date, i64::MIN, 1, 1, 0, 0, 0.0);
+        assert!(add_months(&first, 0).is_some());
+        assert!(add_months(&first, -1).is_none());
     }
 
     #[test]
     fn a_duration_field_that_does_not_fit_is_invalid_not_clamped() {
-        assert!(duration_totals(&[(1e17, 'Y')], &[]).is_some());
+        assert!(duration_totals(&[(1e17, 'Y')], &[], false).is_some());
         // 1e18 years is 1.2e19 months, the first power of ten past i64::MAX.
-        assert!(duration_totals(&[(1e18, 'Y')], &[]).is_none());
-        assert!(duration_totals(&[(1e19, 'M')], &[]).is_none());
+        assert!(duration_totals(&[(1e18, 'Y')], &[], false).is_none());
+        assert!(duration_totals(&[(1e19, 'M')], &[], false).is_none());
         // A year or month count is a whole number; only seconds may carry a fraction.
-        assert!(duration_totals(&[(1.5, 'Y')], &[]).is_none());
-        assert!(duration_totals(&[(f64::NAN, 'M')], &[]).is_none());
+        assert!(duration_totals(&[(1.5, 'Y')], &[], false).is_none());
+        assert!(duration_totals(&[(f64::NAN, 'M')], &[], false).is_none());
+        assert!(duration_totals(&[(f64::NAN, 'Y')], &[], false).is_none());
+        // The year and month counts each fit, and their sum does not.
+        assert!(duration_totals(&[(7e17, 'Y'), (9e18, 'M')], &[], false).is_none());
+        assert!(duration_totals(&[(7e17, 'Y'), (1e17, 'M')], &[], true).is_some());
+        assert_eq!(duration_totals(&[(1.0, 'Y'), (2.0, 'M')], &[], true), Some((-14, 0.0)));
         assert!(Duration::parse("P1.5Y", DurationKind::YearMonth).is_err());
         assert!(Duration::parse("P9999999999999999999Y", DurationKind::YearMonth).is_err());
         assert_eq!(
@@ -1351,6 +1386,39 @@ mod duration_tests {
         // A day count just below 2^53 is still exact.
         let limit = Temporal::from_utc(TemporalKind::Date, 24_660_000_000_000, 1, 1, 0, 0, 0.0);
         assert!(limit.to_seconds().is_some());
+    }
+
+    #[test]
+    fn an_instant_with_no_exact_seconds_is_refused_by_every_operation_on_it() {
+        // Within `i64` years but past 2^53 days: the day count has no exact `f64`.
+        let distant = Temporal::from_utc(TemporalKind::DateTime, 1_000_000_000_000_000, 1, 1, 0, 0, 0.0);
+        let near = Temporal::parse("2026-08-21T00:00:00Z", TemporalKind::DateTime).unwrap();
+        assert_eq!(distant.to_seconds(), None);
+        assert_eq!(distant.to_seconds_in(60), None);
+        assert_eq!(distant.compare_in(&near, 0), None);
+        assert_eq!(near.compare_in(&distant, 0), None);
+        assert_eq!(distant.partial_cmp(&near), None);
+        assert_eq!(near.partial_cmp(&distant), None);
+        assert_eq!(add_seconds(&distant, 1.0), None);
+        assert_eq!(adjust_to_timezone(&distant, Some(60)), None);
+        // Removing a timezone reads no instant, so it needs no exact seconds.
+        let local = Temporal::from_utc(TemporalKind::Date, i64::MAX, 1, 1, 0, 0, 0.0);
+        assert!(adjust_to_timezone(&local, None).is_some());
+        // A year that cannot be advanced is refused, not wrapped.
+        assert_eq!(add_months(&local, 12), None);
+    }
+
+    #[test]
+    fn duration_fields_must_be_in_order_and_each_appear_once() {
+        assert!(Duration::parse("P1Y1Y", DurationKind::YearMonth).is_err());
+        assert!(Duration::parse("P1M1Y", DurationKind::YearMonth).is_err());
+        assert!(Duration::parse("-P1Y2M", DurationKind::YearMonth).unwrap().is_negative());
+        // Both fields fit; their sum does not.
+        assert!(
+            Duration::parse("P700000000000000000Y9000000000000000000M", DurationKind::YearMonth)
+                .is_err()
+        );
+        assert!(Duration::parse("P1.5M", DurationKind::YearMonth).is_err());
     }
 
     #[test]

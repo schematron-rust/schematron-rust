@@ -1658,7 +1658,9 @@ fn spend(items: u64) -> Result<(), EvalError> {
 
 /// Charges a collection's length against the shared budget.
 fn spend_len(len: usize) -> Result<(), EvalError> {
-    spend(u64::try_from(len).map_err(|_| over_budget())?)
+    // `usize` is never wider than `u64` on a supported target; where it were, the
+    // count would be more than the budget holds, so it is refused the same way.
+    u64::try_from(len).ok().ok_or_else(over_budget).and_then(spend)
 }
 
 const MAX_RANGE: f64 = 1_000_000.0;
@@ -1836,6 +1838,18 @@ fn evaluate_step(
     Ok(sort_and_deduplicate(output, document))
 }
 
+/// Whether the number `n` of a numeric predicate names the one-based `position`.
+///
+/// A position above 2^53 has no exact `f64` to compare with, so it is refused
+/// rather than compared as a rounded number.
+fn position_matches(n: f64, position: usize) -> Result<bool, EvalError> {
+    numeric::usize_to_f64(position)
+        .map(|position| (n - position).abs() < f64::EPSILON)
+        .ok_or_else(|| {
+            EvalError::new("a context position is too large to compare with a number")
+        })
+}
+
 /// Applies one predicate, giving each node the position it holds in the list.
 fn filter_by_predicate(
     nodes: Vec<NodeId>,
@@ -1844,23 +1858,14 @@ fn filter_by_predicate(
 ) -> Result<Vec<NodeId>, EvalError> {
     let size = nodes.len();
     let mut kept = Vec::with_capacity(size);
-    for (index, node) in nodes.into_iter().enumerate() {
-        // `index < size`, and `size` is a length, so `index + 1` always fits.
-        let position = index.checked_add(1).ok_or_else(|| {
-            EvalError::new("a node list is too long to number its positions")
-        })?;
+    // Positions count from 1 and never pass `size`, so none can overflow.
+    for (position, node) in (1..=size).zip(nodes) {
         let inner = context.focus(node, position, size);
-        let value = evaluate(predicate, &inner)?;
         // A numeric predicate is shorthand for `position() = n`.
-        let keep = match value {
-            Value::Number(n, _) => {
-                let position = numeric::usize_to_f64(position).ok_or_else(|| {
-                    EvalError::new("a context position is too large to compare with a number")
-                })?;
-                (n - position).abs() < f64::EPSILON
-            }
-            other => other.to_boolean(),
-        };
+        let keep = evaluate(predicate, &inner).and_then(|value| match value {
+            Value::Number(n, _) => position_matches(n, position),
+            other => Ok(other.to_boolean()),
+        })?;
         if keep {
             kept.push(node);
         }
@@ -1934,18 +1939,12 @@ fn siblings(document: &Document, node: NodeId, following: bool) -> Vec<NodeId> {
         return Vec::new();
     };
     let children = document.children(parent);
-    let Some(index) = children.iter().position(|&n| n == node) else {
-        return Vec::new();
-    };
-    let Some((preceding, from_node)) = children.split_at_checked(index) else {
-        return Vec::new();
-    };
     if following {
-        // `from_node` starts at the node itself; the siblings follow it.
-        from_node.get(1..).unwrap_or_default().to_vec()
+        // Skip up to the node itself; the siblings follow it.
+        children.iter().copied().skip_while(|&n| n != node).skip(1).collect()
     } else {
         // Reverse axis: nearest first.
-        let mut before = preceding.to_vec();
+        let mut before: Vec<NodeId> = children.iter().copied().take_while(|&n| n != node).collect();
         before.reverse();
         before
     }
@@ -2806,5 +2805,50 @@ mod tests {
             let expression = parse(source).unwrap();
             assert!(evaluate(&expression, &context).is_err(), "{source}");
         }
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn a_numeric_predicate_beyond_2_pow_53_has_no_exact_position() {
+        assert!(position_matches(3.0, 3).unwrap());
+        assert!(!position_matches(3.0, 4).unwrap());
+        assert!(position_matches(3.0, (1_usize << 53) + 1).is_err());
+    }
+
+    #[test]
+    fn a_depth_counter_that_cannot_count_further_is_refused_by_every_multiplying_construct() {
+        let document = Document::from_str("<a/>").unwrap();
+        let variables = Variables::new();
+        let namespaces = Namespaces::new();
+        let context = EvalContext::new(
+            &document,
+            document.document_element().unwrap(),
+            &variables,
+            &namespaces,
+        )
+        .with_version(XPathVersion::V3);
+        for source in [
+            "for-each((1, 2), function($x) { $x })",
+            "filter((1, 2), function($x) { true() })",
+            "fold-left((1, 2), 0, function($a, $b) { $a + $b })",
+            "fold-right((1, 2), 0, function($a, $b) { $a + $b })",
+            "for-each-pair((1, 2), (3, 4), function($a, $b) { $a + $b })",
+            "(1, 2) ! .",
+            "for $i in (1, 2) return $i",
+            "some $i in (1, 2) satisfies true()",
+            "1 to 2",
+        ] {
+            let expression = parse(source).unwrap();
+            SEQUENCE_DEPTH.with(|depth| depth.set(u32::MAX));
+            let result = evaluate(&expression, &context);
+            SEQUENCE_DEPTH.with(|depth| depth.set(0));
+            let error = result.expect_err(source);
+            assert!(error.to_string().contains("nested too deeply"), "{source}: {error}");
+        }
+    }
+
+    #[test]
+    fn a_range_with_equal_infinite_bounds_has_no_countable_length() {
+        assert!(range_items(f64::INFINITY, f64::INFINITY).is_err());
     }
 }

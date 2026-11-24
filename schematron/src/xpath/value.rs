@@ -536,7 +536,9 @@ fn expand_exponential_checked(input: &str) -> Option<String> {
     let (int_part, frac_part) = mantissa.split_once('.').unwrap_or((mantissa, ""));
     let digits: String = format!("{int_part}{frac_part}");
     // Where the decimal point sits after shifting by the exponent.
-    let point = i64::try_from(int_part.len()).ok()?.checked_add(exponent)?;
+    let point = i64::try_from(int_part.len())
+        .ok()
+        .and_then(|integer_digits| integer_digits.checked_add(exponent))?;
 
     let mut out = String::new();
     if negative {
@@ -553,24 +555,36 @@ fn expand_exponential_checked(input: &str) -> Option<String> {
         }
         out.push_str(digits.trim_end_matches('0'));
     } else {
-        let point = usize::try_from(point).ok()?;
-        if point >= digits.len() {
-            out.push_str(&digits);
-            let zeros = point.checked_sub(digits.len())?;
-            if u64::try_from(zeros).ok()? > MAX_EXPANDED_ZEROS {
-                return None;
-            }
-            for _ in 0..zeros {
-                out.push('0');
-            }
-        } else {
-            let (whole, tail) = digits.split_at_checked(point)?;
-            out.push_str(whole);
-            let tail = tail.trim_end_matches('0');
-            if !tail.is_empty() {
-                out.push('.');
-                out.push_str(tail);
-            }
+        // A positive `i64` always fits a `usize` where that is 64 bits wide; a
+        // narrower one cannot hold the number, so the rendering is left as it is.
+        let expanded = usize::try_from(point)
+            .ok()
+            .and_then(|point| expand_after_point(&digits, point))?;
+        out.push_str(&expanded);
+    }
+    Some(out)
+}
+
+/// Places the decimal point `point` digits in, for a point after the start.
+///
+/// `None` when the zeros it would need exceed [`MAX_EXPANDED_ZEROS`], and
+/// when `point` falls inside a multi-byte character of `digits`.
+fn expand_after_point(digits: &str, point: usize) -> Option<String> {
+    let mut out = String::new();
+    if let Some(zeros) = point.checked_sub(digits.len()) {
+        // The point is at or beyond the last digit: the number is whole.
+        if u64::try_from(zeros).ok().is_none_or(|zeros| zeros > MAX_EXPANDED_ZEROS) {
+            return None;
+        }
+        out.push_str(digits);
+        out.push_str(&"0".repeat(zeros));
+    } else {
+        let (whole, tail) = digits.split_at_checked(point)?;
+        out.push_str(whole);
+        let tail = tail.trim_end_matches('0');
+        if !tail.is_empty() {
+            out.push('.');
+            out.push_str(tail);
         }
     }
     Some(out)
@@ -812,5 +826,16 @@ mod tests {
         assert_eq!(expand_exponential("1e401"), "1e401");
         assert_eq!(expand_exponential("1e-401").len(), 403);
         assert_eq!(expand_exponential("1e-402"), "1e-402");
+    }
+
+    #[test]
+    fn exponential_expansion_refuses_a_rendering_it_cannot_place() {
+        // No exponent marker at all.
+        assert_eq!(expand_exponential_checked("12"), None);
+        // A point that lands inside a multi-byte character is not a decimal rendering.
+        assert_eq!(expand_exponential_checked("\u{e9}1e-2"), None);
+        // More than 400 zeros after the last digit.
+        assert_eq!(expand_exponential_checked("1e500"), None);
+        assert_eq!(expand_exponential_checked("1e400").map(|text| text.len()), Some(401));
     }
 }

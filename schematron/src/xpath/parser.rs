@@ -195,16 +195,19 @@ impl Parser {
     }
 
     fn enter(&mut self) -> Result<(), ParseError> {
-        // No fallback is declared for a depth that cannot be counted (RCA-DECL-5).
-        let Some(depth) = self.depth.checked_add(1) else {
-            return self.error("expression nested too deeply to be counted");
-        };
-        self.depth = depth;
-        if self.depth > MAX_RECURSION_DEPTH {
+        // The depth is refused at the limit, so it is never counted past it and
+        // the increment below cannot overflow (RCA-EXC-2).
+        if self.depth >= MAX_RECURSION_DEPTH {
             return self.error(format!(
                 "expression nested deeper than the limit of {MAX_RECURSION_DEPTH}"
             ));
         }
+        #[expect(
+            clippy::arithmetic_side_effects,
+            reason = "RCA-EXC-2: depth is below MAX_RECURSION_DEPTH, checked above"
+        )]
+        let deeper = self.depth + 1;
+        self.depth = deeper;
         Ok(())
     }
 

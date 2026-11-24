@@ -8,9 +8,6 @@
 /// 2^53: every integer of at most this magnitude is exactly an `f64`.
 const MAX_EXACT_F64: u64 = 1 << 53;
 
-/// 2^32, as an `f64`, to join the two halves of a 53-bit integer.
-const TWO_POW_32: f64 = 4_294_967_296.0;
-
 /// 2^63 is exactly representable as an `f64`; `i64::MAX` is not.
 const TWO_POW_63: f64 = 9_223_372_036_854_775_808.0;
 
@@ -19,15 +16,19 @@ pub(crate) fn u64_to_f64(value: u64) -> Option<f64> {
     if value > MAX_EXACT_F64 {
         return None;
     }
-    // Both halves fit `u32`, so `f64::from` is lossless and the sum is exact below 2^53.
-    let high = u32::try_from(value >> 32).ok()?;
-    let low = u32::try_from(value & u64::from(u32::MAX)).ok()?;
-    Some(f64::from(high) * TWO_POW_32 + f64::from(low))
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "RCA-CONV-3: at most 2^53, checked above, so every such integer is exactly an f64"
+    )]
+    let converted = value as f64;
+    Some(converted)
 }
 
 /// A length or count as an `f64`, or `None` above 2^53.
 pub(crate) fn usize_to_f64(value: usize) -> Option<f64> {
-    u64_to_f64(u64::try_from(value).ok()?)
+    // `usize` is never wider than `u64` on a supported target, so the conversion
+    // fails only where there is no `u64` to hold it; no fallback is declared.
+    u64::try_from(value).ok().and_then(u64_to_f64)
 }
 
 /// A signed integer as an `f64`, or `None` when its magnitude exceeds 2^53.
@@ -53,12 +54,12 @@ pub(crate) fn f64_to_i64(value: f64) -> Option<i64> {
 
 /// An integral `f64` as a `u64`; see [`f64_to_i64`].
 pub(crate) fn f64_to_u64(value: f64) -> Option<u64> {
-    u64::try_from(f64_to_i64(value)?).ok()
+    f64_to_i64(value).and_then(|integer| u64::try_from(integer).ok())
 }
 
 /// An integral `f64` as a `usize`; see [`f64_to_i64`].
 pub(crate) fn f64_to_usize(value: f64) -> Option<usize> {
-    usize::try_from(f64_to_i64(value)?).ok()
+    f64_to_i64(value).and_then(|integer| usize::try_from(integer).ok())
 }
 
 #[cfg(test)]
@@ -98,5 +99,9 @@ mod tests {
         assert_eq!(f64_to_u64(3.0), Some(3));
         assert_eq!(f64_to_usize(-1.0), None);
         assert_eq!(f64_to_usize(4.0), Some(4));
+        // Values that are not integral have no unsigned conversion either.
+        assert_eq!(f64_to_u64(f64::NAN), None);
+        assert_eq!(f64_to_usize(f64::NAN), None);
+        assert_eq!(f64_to_u64(0.5), None);
     }
 }
