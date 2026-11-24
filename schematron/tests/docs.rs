@@ -214,7 +214,7 @@ fn repository_governance_and_license_files_are_present() {
         "gpl-2.0-only",
         "gpl-3.0-only",
         "ogl-uk-3.0",
-        "cc-by-nc-sa-4.0",
+        "cc-by-sa-4.0",
     ] {
         assert!(
             crate_root.join("LICENSES").join(name).join("index.md").is_file(),

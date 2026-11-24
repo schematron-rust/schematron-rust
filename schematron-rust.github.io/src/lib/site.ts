@@ -11,7 +11,7 @@ export const SITE = 'https://schematron-rust.github.io';
 export const REPO = 'https://github.com/schematron-rust/schematron-rust';
 export const CRATES_IO = 'https://crates.io/crates/schematron';
 export const DOCS_RS = 'https://docs.rs/schematron';
-export const LICENSE = 'MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only OR OGL-UK-3.0 OR CC-BY-NC-SA-4.0';
+export const LICENSE = 'MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only OR OGL-UK-3.0 OR CC-BY-SA-4.0';
 
 /** A file under `spec/` in the crate repo. `spec/` is normative. */
 export type SpecDoc = { file: string; title: string; covers: string };

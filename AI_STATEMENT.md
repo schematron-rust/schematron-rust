@@ -196,7 +196,7 @@ What these controls do **not** prove is §12.
 ## 8. Licensing and provenance of AI output
 
 `Cargo.toml` declares `license = "MIT OR Apache-2.0 OR BSD-3-Clause OR
-GPL-2.0-only OR GPL-3.0-only OR OGL-UK-3.0 OR CC-BY-NC-SA-4.0"`, matching [`CONTRIBUTING.md`](CONTRIBUTING.md)'s License
+GPL-2.0-only OR GPL-3.0-only OR OGL-UK-3.0 OR CC-BY-SA-4.0"`, matching [`CONTRIBUTING.md`](CONTRIBUTING.md)'s License
 section. [`LICENSE.md`](LICENSE.md) records the choice and links all seven
 complete texts under `schematron/LICENSES/`; the packaged-feature gate checks
 that every text is present in the published crate archive.

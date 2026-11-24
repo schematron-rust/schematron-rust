@@ -131,7 +131,7 @@
   <div class="site-footer-inner">
     <p>
       schematron — ISO/IEC 19757-3 in pure Rust. MIT, Apache-2.0, BSD-3-Clause,
-      GPL-2.0-only, GPL-3.0-only, OGL-UK-3.0, or CC-BY-NC-SA-4.0, at your option.
+      GPL-2.0-only, GPL-3.0-only, OGL-UK-3.0, or CC-BY-SA-4.0, at your option.
     </p>
     <div class="site-footer-links">
       <a href={REPO}>GitHub</a>

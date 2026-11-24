@@ -5,6 +5,8 @@ git history; this file starts where the first output-affecting change did.
 
 ## Unreleased
 
+- **License change.** CC-BY-NC-SA-4.0 replaced by CC-BY-SA-4.0 in the license
+  options; the other six licenses are unchanged.
 - **Invalid options are refused** (RCA-IN-4). A supplied `implicit_timezone` outside
   -840..=840 minutes or a non-finite `current_time` now makes `validate_with` and
   `validate_streaming` return the new `Error::InvalidOption` before any work; only

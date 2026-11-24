@@ -53,7 +53,7 @@ fn main() {
     shipped = root / archive_name
     for license_name in [
         "mit", "apache-2.0", "bsd-3-clause", "gpl-2.0-only",
-        "gpl-3.0-only", "ogl-uk-3.0", "cc-by-nc-sa-4.0",
+        "gpl-3.0-only", "ogl-uk-3.0", "cc-by-sa-4.0",
     ]:
         if not (shipped / "LICENSES" / license_name / "index.md").is_file():
             raise SystemExit(f"Published crate is missing LICENSES/{license_name}/index.md")

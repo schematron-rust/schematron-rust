@@ -15,7 +15,7 @@ implementation. See [index.md](index.md) for the human-oriented overview.
 - **Package**: schematron-rust.github.io
 - **Upstream crate**: <https://github.com/schematron-rust/schematron-rust>
 - **Deploys to**: <https://schematron-rust.github.io/>
-- **License**: MIT or Apache-2.0 or BSD-3-Clause or GPL-2.0-only or GPL-3.0-only or OGL-UK-3.0 or CC-BY-NC-SA-4.0
+- **License**: MIT or Apache-2.0 or BSD-3-Clause or GPL-2.0-only or GPL-3.0-only or OGL-UK-3.0 or CC-BY-SA-4.0
 - **Contact**: Joel Parker Henderson (joel@joelparkerhenderson.com)
 - **Node**: 26+ (`package.json`'s `engines`, `.tool-versions`, and
   `.github/workflows/deploy.yml`'s `node-version` all say so — keep the

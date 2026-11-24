@@ -414,6 +414,6 @@ Licensed under any of:
 - [GNU General Public License version 2 only](LICENSES/gpl-2.0-only/index.md)
 - [GNU General Public License version 3 only](LICENSES/gpl-3.0-only/index.md)
 - [UK Open Government Licence v3.0](LICENSES/ogl-uk-3.0/index.md)
-- [Creative Commons Attribution Non Commercial Share Alike 4.0 International](LICENSES/cc-by-nc-sa-4.0/index.md)
+- [Creative Commons Attribution Share Alike 4.0 International](LICENSES/cc-by-sa-4.0/index.md)
 
 at your option.
