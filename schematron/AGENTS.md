@@ -58,6 +58,13 @@ The `cargo test` gate above is unchanged, and `bin/test-coverage` still uses
 `cargo llvm-cov`. `fuzz/` is outside the workspace and is not run by nextest.
 Retries are off so a flaky test is never hidden.
 
+CI also enforces two quick checks, so run them before pushing:
+
+```sh
+cargo fmt --check                             # formatting
+cargo deny check                              # advisories, licenses, sources; see deny.toml
+```
+
 Slower, run when relevant:
 
 ```sh

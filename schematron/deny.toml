@@ -1,0 +1,39 @@
+# cargo-deny policy: https://embarkstudios.github.io/cargo-deny/
+#
+# Run with `cargo deny check` from this directory. CI runs it on every push
+# and pull request. Dependabot (.github/dependabot.yml) proposes updates. This
+# file decides what may be merged: no crate with a known advisory, no yanked
+# version, no license outside the list below, and no source other than
+# crates.io.
+
+[graph]
+# Check what every feature can pull in, not just the defaults, so the CLI
+# and serde dependencies are gated too.
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+# Every license currently in the dependency graph, development dependencies
+# included, and no others. A new license is a policy decision: add it
+# here in the same change as the dependency that brings it, and say why.
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+]
+confidence-threshold = 0.93
+
+[bans]
+# Two versions of one crate is worth knowing about but not worth blocking a
+# merge over. A wildcard version requirement is always an error.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

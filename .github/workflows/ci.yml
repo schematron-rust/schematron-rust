@@ -40,7 +40,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
+
+      # First, because it is the fastest to fail and needs no build.
+      - name: Format
+        run: cargo fmt --check
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
@@ -65,6 +69,18 @@ jobs:
         run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
+
+  # Advisories, yanked versions, licenses and sources, per schematron/deny.toml.
+  # Dependabot proposes updates; this decides whether a dependency may land.
+  dependencies:
+    name: Dependency policy (cargo deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: schematron/Cargo.toml
+          command: check
 
   native:
     name: Native crate tests (${{ matrix.os }})
