@@ -99,6 +99,7 @@ byte order. Relative references retain their including file as the base.
 |---|---|---|
 | `phase` | `PhaseSelection::Default` | `Default`, `All`, or `Named(String)` |
 | `max_failures` | none | Stop after N failed assertions |
+| `failure_flags` | empty | When not empty, only failed assertions whose effective flag (the assertion's own, or else its rule's) is in the list count toward `max_failures`. Other findings are still reported. |
 | `record_fired_rules` | `true` | Set false to skip bookkeeping for rules that found nothing |
 | `parallel_patterns` | `false` | Evaluate patterns on separate threads; the report is unchanged. See [validation/](../validation/index.md) |
 | `current_time` | system clock, read once | The instant `current-date()` reports. Set it to make a run with date rules reproducible |

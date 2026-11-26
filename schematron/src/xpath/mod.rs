@@ -71,11 +71,11 @@ pub use ast::{
     Quantifier, SequenceType, Step, TypeOp,
 };
 pub use context::{Documents, EvalContext, Keys, Namespaces, Variables};
+pub use eval::{evaluate, EvalError};
 pub use temporal::{
     add_months, add_seconds, from_unix_seconds, Duration, DurationKind, Temporal, TemporalKind,
 };
 pub use version::XPathVersion;
-pub use eval::{evaluate, EvalError};
 // Not public API: the validator's fast path for simple rule contexts needs
 // the same node test the evaluator applies, so that the two cannot drift.
 pub(crate) use eval::matches_node_test;

@@ -8,9 +8,9 @@
 #![allow(missing_docs)]
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use std::hint::black_box;
 use schematron::xml::Document;
 use schematron::xpath::{evaluate, parse, EvalContext, Namespaces, Variables};
+use std::hint::black_box;
 
 /// Expressions from trivial to the kind of thing real schemas contain.
 const EXPRESSIONS: &[(&str, &str)] = &[

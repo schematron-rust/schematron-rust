@@ -776,14 +776,8 @@ mod tests {
                 "<pattern abstract='true'/>",
                 "abstract pattern needs an @id",
             ),
-            (
-                "<pattern is-a='base'><param value='x'/></pattern>",
-                "@name",
-            ),
-            (
-                "<pattern is-a='base'><param name='x'/></pattern>",
-                "@value",
-            ),
+            ("<pattern is-a='base'><param value='x'/></pattern>", "@name"),
+            ("<pattern is-a='base'><param name='x'/></pattern>", "@value"),
             (
                 "<pattern is-a='base'><rule context='a'/></pattern>",
                 "may contain only <param>",

@@ -13,10 +13,10 @@ schematron [OPTIONS] --schema <SCHEMA> [DOCUMENT]...
 | `-s, --schema <PATH>` | Schematron schema file in UTF-8 or BOM-marked UTF-16. Required. |
 | `[DOCUMENT]...` | XML documents to validate. `-` reads stdin. |
 | `-p, --phase <NAME>` | Phase to run. `#ALL`, `#DEFAULT`, or a phase id. |
-| `-f, --format <FMT>` | `text` (default), `svrl`, or `json` with the `serde` feature |
+| `-f, --format <FMT>` | `text` (default), `svrl`, or `json` with the `serde` feature. `svrl` and `json` accept one document unless `--quiet` is given. |
 | `-o, --output <PATH>` | Write the report here instead of stdout |
 | `--flag <FLAG>` | Report only assertions with this flag. Repeatable. |
-| `--max-failures <N>` | Stop after N findings |
+| `--max-failures <N>` | Stop after N failed assertions. With `--flag`, only failed assertions carrying one of those flags count. |
 | `--parallel` | Evaluate patterns on separate threads; see [validation/](../validation/index.md) |
 | `--stream` | Validate one repeating record at a time. Requires record-local rules and sequential evaluation. See [streaming limits](../streaming/index.md#limits). |
 | `--svrl-findings-only` | Omit `fired-rule` events from SVRL and retain only rules with findings during validation |
@@ -45,6 +45,18 @@ own `Resolver`.
 Successful reports never affect the exit code by themselves. `--flag` filters
 what is *reported*, and therefore also what is counted for the exit code, so
 `--flag error` gives "fail only on errors, show warnings elsewhere".
+The `--max-failures` cap counts the same filtered findings. A discarded
+warning can never use it up before an error is reached, so a capped,
+filtered run never exits 0 when its uncapped counterpart exits 1.
+
+## Several documents
+
+Text output labels each document's findings with its path, so one run can
+check many documents. An SVRL or JSON report describes one document, and two
+of them written back to back are not one XML or JSON document. So `--format
+svrl` or `--format json` with more than one document is a usage error (exit
+2) unless `--quiet` suppresses the report. Run once per document to get one
+machine-readable report each.
 
 ## Text output
 

@@ -119,9 +119,7 @@ pub(crate) enum TokenKind {
 impl fmt::Display for TokenKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TokenKind::Name(n) | TokenKind::AxisName(n) | TokenKind::NodeType(n) => {
-                f.write_str(n)
-            }
+            TokenKind::Name(n) | TokenKind::AxisName(n) | TokenKind::NodeType(n) => f.write_str(n),
             TokenKind::FunctionName(n) => write!(f, "{n}()"),
             TokenKind::Literal(s) => write!(f, "'{s}'"),
             TokenKind::Number(n, _) => write!(f, "{n}"),
@@ -537,7 +535,10 @@ impl<'a> Lexer<'a> {
         let name_start = self.position;
         self.consume_qname();
         if self.position == name_start {
-            return Err(Lexer::error(start, "'$' must be followed by a variable name"));
+            return Err(Lexer::error(
+                start,
+                "'$' must be followed by a variable name",
+            ));
         }
         let name = self.input[name_start..self.position].to_string();
         self.push(TokenKind::Variable(name), start);
@@ -686,7 +687,11 @@ mod tests {
     use super::*;
 
     fn kinds(input: &str) -> Vec<TokenKind> {
-        tokenize(input).unwrap().into_iter().map(|t| t.kind).collect()
+        tokenize(input)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.kind)
+            .collect()
     }
 
     #[test]
@@ -785,11 +790,14 @@ mod tests {
 
     #[test]
     fn star_is_a_wildcard_after_a_slash() {
-        assert_eq!(kinds("a/*"), vec![
-            TokenKind::Name("a".into()),
-            TokenKind::Slash,
-            TokenKind::Star
-        ]);
+        assert_eq!(
+            kinds("a/*"),
+            vec![
+                TokenKind::Name("a".into()),
+                TokenKind::Slash,
+                TokenKind::Star
+            ]
+        );
     }
 
     #[test]
@@ -865,12 +873,18 @@ mod tests {
 
     #[test]
     fn node_types_beat_function_names() {
-        assert_eq!(kinds("text()"), vec![
-            TokenKind::NodeType("text".into()),
-            TokenKind::LeftParen,
-            TokenKind::RightParen
-        ]);
-        assert_eq!(kinds("count(a)")[0], TokenKind::FunctionName("count".into()));
+        assert_eq!(
+            kinds("text()"),
+            vec![
+                TokenKind::NodeType("text".into()),
+                TokenKind::LeftParen,
+                TokenKind::RightParen
+            ]
+        );
+        assert_eq!(
+            kinds("count(a)")[0],
+            TokenKind::FunctionName("count".into())
+        );
     }
 
     #[test]

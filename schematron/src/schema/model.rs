@@ -441,9 +441,7 @@ impl SchemaModel {
     /// Finds a pattern by identifier.
     #[must_use]
     pub fn pattern(&self, id: &str) -> Option<&Pattern> {
-        self.patterns
-            .iter()
-            .find(|p| p.id.as_deref() == Some(id))
+        self.patterns.iter().find(|p| p.id.as_deref() == Some(id))
     }
 
     /// Finds a key by name.
@@ -543,7 +541,10 @@ mod tests {
             }],
             ..SchemaModel::default()
         };
-        assert_eq!(model.key("by-id").map(|key| key.name.as_str()), Some("by-id"));
+        assert_eq!(
+            model.key("by-id").map(|key| key.name.as_str()),
+            Some("by-id")
+        );
         assert!(model.key("missing").is_none());
     }
 

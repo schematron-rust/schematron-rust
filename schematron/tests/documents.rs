@@ -67,10 +67,7 @@ fn document_accepts_a_uri_computed_from_the_instance() {
                </rule>
              </pattern>
            </schema>"#,
-        &[
-            ("a.xml", "<doc><item/></doc>"),
-            ("b.xml", "<doc/>"),
-        ],
+        &[("a.xml", "<doc><item/></doc>"), ("b.xml", "<doc/>")],
     );
 
     let document =
@@ -225,11 +222,21 @@ fn the_two_argument_document_resolves_against_the_node_it_is_given() {
     let directory = std::env::temp_dir().join("schematron-document-two-arg-test");
     let sub = directory.join("sub");
     std::fs::create_dir_all(&sub).unwrap();
-    std::fs::write(sub.join("catalogue.xml"), r#"<catalogue><ref href="parts.xml"/></catalogue>"#)
-        .unwrap();
-    std::fs::write(sub.join("parts.xml"), r#"<parts><part id="A"/><part id="B"/></parts>"#).unwrap();
-    std::fs::write(directory.join("parts.xml"), r#"<parts><part id="BESIDE-INSTANCE"/></parts>"#)
-        .unwrap();
+    std::fs::write(
+        sub.join("catalogue.xml"),
+        r#"<catalogue><ref href="parts.xml"/></catalogue>"#,
+    )
+    .unwrap();
+    std::fs::write(
+        sub.join("parts.xml"),
+        r#"<parts><part id="A"/><part id="B"/></parts>"#,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("parts.xml"),
+        r#"<parts><part id="BESIDE-INSTANCE"/></parts>"#,
+    )
+    .unwrap();
     let instance = directory.join("order.xml");
     std::fs::write(&instance, "<order><load>sub/catalogue.xml</load></order>").unwrap();
 
@@ -348,4 +355,33 @@ fn calling_document_without_a_registry_is_an_error() {
 
     let error = evaluate(&expr, &context).unwrap_err();
     assert_contains!(error.message, "registry");
+}
+
+#[test]
+fn a_loaded_document_keeps_namespace_and_attribute_order() {
+    // Document order inside a merged document puts namespace nodes before
+    // attributes and attributes in source order, so the first node of a
+    // union is the earlier one whatever order the operands are written in.
+    let schema = schema_with(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern>
+               <rule context="/r">
+                 <assert test="name((document('e.xml')/x/@b | document('e.xml')/x/@a)[1]) = 'a'">attributes</assert>
+                 <assert test="name((document('e.xml')/x/@a | document('e.xml')/x/namespace::p)[1]) = 'p'">namespaces</assert>
+                 <assert test="count(document('e.xml')/x | document('e.xml')/x/@* | document('e.xml')/x/namespace::*) = 5">count</assert>
+                 <assert test="name((document('e.xml')/x/namespace::p | document('e.xml')/x/namespace::xml)[1]) = 'xml'">namespace order</assert>
+                 <assert test="name((document('e.xml')/x/namespace::xml | document('e.xml')/x)[1]) = 'x'">element first</assert>
+               </rule>
+             </pattern>
+           </schema>"#,
+        &[("e.xml", r#"<x xmlns:p="urn:p" a="1" b="2"/>"#)],
+    );
+    let report = schema
+        .validate(&Document::from_str("<r/>").unwrap())
+        .unwrap();
+    let failures: Vec<_> = report
+        .failures()
+        .map(|f| f.text.trim().to_string())
+        .collect();
+    assert_is_empty!(failures);
 }

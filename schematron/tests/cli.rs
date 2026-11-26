@@ -352,6 +352,75 @@ fn max_failures_stops_early() {
 }
 
 #[test]
+fn max_failures_counts_only_the_flags_being_reported() {
+    // An earlier warning must not use up the cap: the error after it is
+    // the finding --flag error keeps, and the exit code depends on it.
+    let path = temp_schema(
+        "flag-cap",
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern><rule context="/doc">
+               <assert test="false()" flag="warning">a warning</assert>
+               <assert test="false()" flag="error">an error</assert>
+               <assert test="false()" flag="error">a second error</assert>
+             </rule></pattern>
+           </schema>"#,
+    );
+    let schema = path.to_string_lossy().into_owned();
+    let output = run_with_stdin(
+        &[
+            "--schema",
+            &schema,
+            "--flag",
+            "error",
+            "--max-failures",
+            "1",
+            "-",
+        ],
+        b"<doc/>",
+    );
+    let text = stdout(&output);
+    assert_contains!(text, "an error");
+    assert_not_contains!(text, "a warning");
+    assert_not_contains!(text, "a second error");
+    assert_contains!(text, "1 finding");
+    assert_eq!(code(&output), 1);
+}
+
+#[test]
+fn machine_readable_reports_refuse_several_documents() {
+    // Two SVRL documents back to back are not one XML document, so a
+    // consumer cannot parse the result. Refuse instead of writing it.
+    let good = examples().join("invoice-good.xml").display().to_string();
+    for format in ["svrl", "json"] {
+        let output = run(&["--schema", &schema_path(), "-f", format, &good, &bad()]);
+        assert_eq!(code(&output), 2, "{format}");
+        assert_is_empty!(stdout(&output));
+        assert_contains!(
+            String::from_utf8_lossy(&output.stderr),
+            "run once per document"
+        );
+    }
+
+    // One document, text output, or --quiet are all still fine.
+    let single = run(&["--schema", &schema_path(), "-f", "svrl", &bad()]);
+    assert_eq!(code(&single), 1);
+    assert_eq!(stdout(&single).matches("<?xml").count(), 1);
+    let text = run(&["--schema", &schema_path(), &good, &bad()]);
+    assert_eq!(code(&text), 1);
+    let quiet = run(&[
+        "--schema",
+        &schema_path(),
+        "-f",
+        "svrl",
+        "--quiet",
+        &good,
+        &bad(),
+    ]);
+    assert_eq!(code(&quiet), 1);
+    assert_is_empty!(stdout(&quiet));
+}
+
+#[test]
 fn list_phases_prints_the_phases_and_the_default() {
     let output = run(&["--schema", &schema_path(), "--list-phases"]);
     let text = stdout(&output);
@@ -441,23 +510,11 @@ fn output_can_be_written_to_a_file() {
 #[test]
 fn report_and_lint_output_write_failures_are_usage_errors() {
     let directory = std::env::temp_dir().display().to_string();
-    let report = run(&[
-        "--schema",
-        &schema_path(),
-        "--output",
-        &directory,
-        &good(),
-    ]);
+    let report = run(&["--schema", &schema_path(), "--output", &directory, &good()]);
     assert_eq!(code(&report), 2);
     assert_contains!(String::from_utf8_lossy(&report.stderr), "cannot write");
 
-    let lint = run(&[
-        "--schema",
-        &schema_path(),
-        "--lint",
-        "--output",
-        &directory,
-    ]);
+    let lint = run(&["--schema", &schema_path(), "--lint", "--output", &directory]);
     assert_eq!(code(&lint), 2);
     assert_contains!(String::from_utf8_lossy(&lint.stderr), "cannot write");
 }

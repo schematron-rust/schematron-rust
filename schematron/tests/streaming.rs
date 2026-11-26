@@ -52,8 +52,7 @@ fn assert_streaming_matches_full(schema_source: &str, document: &str) {
         .expect("streaming validation should run");
 
     assert_eq!(
-        streamed,
-        full,
+        streamed, full,
         "streaming and full validation disagreed for:\n{document}"
     );
 }
@@ -61,7 +60,9 @@ fn assert_streaming_matches_full(schema_source: &str, document: &str) {
 #[test]
 fn a_single_record_agrees_with_full_validation() {
     assert_streaming_matches_full(
-        &schema_with(r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#,
+        ),
         "<orders><order id='1'/></orders>",
     );
 }
@@ -69,7 +70,9 @@ fn a_single_record_agrees_with_full_validation() {
 #[test]
 fn many_records_mixed_pass_and_fail_agree_with_full_validation() {
     assert_streaming_matches_full(
-        &schema_with(r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#,
+        ),
         "<orders><order id='1'/><order/><order id='3'/><order/><order id='5'/></orders>",
     );
 }
@@ -130,7 +133,9 @@ fn whole_and_streamed_documents_reject_content_outside_the_wrapper() {
 #[test]
 fn a_self_closing_record_is_the_same_as_an_explicit_open_and_close() {
     assert_streaming_matches_full(
-        &schema_with(r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#,
+        ),
         "<orders><order/></orders>",
     );
 }
@@ -155,7 +160,12 @@ fn a_rule_on_the_document_element_itself_fires_exactly_once() {
         .into_iter()
         .filter(|f| f.contains("orders needs"))
         .collect();
-    assert_eq!(orders_failures.len(), 1, "the document-element rule fired {} times, not once", orders_failures.len());
+    assert_eq!(
+        orders_failures.len(),
+        1,
+        "the document-element rule fired {} times, not once",
+        orders_failures.len()
+    );
 
     assert_streaming_matches_full(
         &schema_with(
@@ -182,17 +192,19 @@ fn sibling_positions_in_locations_are_the_true_cumulative_count() {
     let report = schema
         .validate_streaming(document.as_bytes(), &ValidateOptions::new())
         .unwrap();
-    let locations: Vec<String> = report
-        .failures()
-        .map(|f| f.location.clone())
-        .collect();
-    assert_eq!(locations, vec!["/orders[1]/order[2]", "/orders[1]/order[4]"]);
+    let locations: Vec<String> = report.failures().map(|f| f.location.clone()).collect();
+    assert_eq!(
+        locations,
+        vec!["/orders[1]/order[2]", "/orders[1]/order[4]"]
+    );
 }
 
 #[test]
 fn a_deep_descendant_rule_agrees_with_full_validation() {
     assert_streaming_matches_full(
-        &schema_with(r#"<pattern><rule context="order/line"><assert test="@amount">needs amount</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="order/line"><assert test="@amount">needs amount</assert></rule></pattern>"#,
+        ),
         "<orders><order><line amount='1'/><line/></order><order><line/></order></orders>",
     );
 }
@@ -321,7 +333,9 @@ fn a_thousand_records_completes_and_agrees_with_full_validation() {
     }
     document.push_str("</orders>");
     assert_streaming_matches_full(
-        &schema_with(r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="order"><assert test="@id">needs id</assert></rule></pattern>"#,
+        ),
         &document,
     );
 }
@@ -348,7 +362,9 @@ fn assert_ineligible(schema_source: &str, expected_substring: &str) {
 #[test]
 fn a_declared_key_is_ineligible() {
     assert_ineligible(
-        &schema_with(r#"<key name="k" match="a" use="@id"/><pattern><rule context="a"><assert test="1">x</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<key name="k" match="a" use="@id"/><pattern><rule context="a"><assert test="1">x</assert></rule></pattern>"#,
+        ),
         "<key>",
     );
 }
@@ -356,7 +372,9 @@ fn a_declared_key_is_ineligible() {
 #[test]
 fn key_function_is_ineligible() {
     assert_ineligible(
-        &schema_with(r#"<pattern><rule context="a"><assert test="key('k', @id)">x</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="a"><assert test="key('k', @id)">x</assert></rule></pattern>"#,
+        ),
         "key()",
     );
 }
@@ -364,7 +382,9 @@ fn key_function_is_ineligible() {
 #[test]
 fn id_function_is_ineligible() {
     assert_ineligible(
-        &schema_with(r#"<pattern><rule context="a"><assert test="id('x')">x</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="a"><assert test="id('x')">x</assert></rule></pattern>"#,
+        ),
         "id()",
     );
 }
@@ -372,7 +392,9 @@ fn id_function_is_ineligible() {
 #[test]
 fn document_function_is_ineligible() {
     assert_ineligible(
-        &schema_with(r#"<pattern><rule context="a"><assert test="document('x.xml')">x</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="a"><assert test="document('x.xml')">x</assert></rule></pattern>"#,
+        ),
         "document()",
     );
 }
@@ -380,7 +402,9 @@ fn document_function_is_ineligible() {
 #[test]
 fn following_axis_is_ineligible() {
     assert_ineligible(
-        &schema_with(r#"<pattern><rule context="a"><assert test="following::b">x</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="a"><assert test="following::b">x</assert></rule></pattern>"#,
+        ),
         "following:: axis",
     );
 }
@@ -388,7 +412,9 @@ fn following_axis_is_ineligible() {
 #[test]
 fn preceding_axis_is_ineligible() {
     assert_ineligible(
-        &schema_with(r#"<pattern><rule context="a"><assert test="preceding::b">x</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="a"><assert test="preceding::b">x</assert></rule></pattern>"#,
+        ),
         "preceding:: axis",
     );
 }
@@ -396,7 +422,9 @@ fn preceding_axis_is_ineligible() {
 #[test]
 fn following_sibling_axis_is_ineligible() {
     assert_ineligible(
-        &schema_with(r#"<pattern><rule context="a"><assert test="following-sibling::b">x</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="a"><assert test="following-sibling::b">x</assert></rule></pattern>"#,
+        ),
         "following-sibling:: axis",
     );
 }
@@ -404,7 +432,9 @@ fn following_sibling_axis_is_ineligible() {
 #[test]
 fn a_rule_cannot_read_a_discarded_record_through_the_preceding_sibling_axis() {
     assert_ineligible(
-        &schema_with(r#"<pattern><rule context="order"><assert test="preceding-sibling::order">needs an earlier order</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="order"><assert test="preceding-sibling::order">needs an earlier order</assert></rule></pattern>"#,
+        ),
         "preceding-sibling:: axis",
     );
 }
@@ -416,7 +446,9 @@ fn a_following_axis_hidden_in_a_predicate_is_still_caught() {
     // still be caught by walking into predicates, the way
     // `calls_document_function` already does for `document()`.
     assert_ineligible(
-        &schema_with(r#"<pattern><rule context="a[preceding::b]"><assert test="1">x</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<pattern><rule context="a[preceding::b]"><assert test="1">x</assert></rule></pattern>"#,
+        ),
         "preceding:: axis",
     );
 }
@@ -424,7 +456,9 @@ fn a_following_axis_hidden_in_a_predicate_is_still_caught() {
 #[test]
 fn a_schema_scoped_let_is_ineligible() {
     assert_ineligible(
-        &schema_with(r#"<let name="x" value="1"/><pattern><rule context="a"><assert test="1">x</assert></rule></pattern>"#),
+        &schema_with(
+            r#"<let name="x" value="1"/><pattern><rule context="a"><assert test="1">x</assert></rule></pattern>"#,
+        ),
         "schema-scoped <let>",
     );
 }
@@ -492,4 +526,82 @@ fn a_document_with_no_element_children_to_stream_is_a_clean_error() {
         .validate_streaming("not xml".as_bytes(), &ValidateOptions::new())
         .expect_err("malformed input should still be a clean error, never a panic");
     assert_contains!(err.to_string(), "XML parse error");
+}
+
+#[test]
+fn xml_conformance_is_the_same_in_both_readers() {
+    // XML 1.0: a repeated attribute is not well-formed (WFC Unique Att
+    // Spec, Namespaces 6.3); literal tab, CR and LF in an attribute become
+    // spaces while a character reference keeps its character (3.3.3); CR LF
+    // and a lone CR become LF everywhere else (2.11).
+    let schema = Schema::from_str(&schema_with(
+        r#"<pattern>
+             <rule context="record">
+               <report test="true()">[<value-of select="@a"/>|<value-of select="string-length(@b)"/>|<value-of select="string-length(text)"/>|<value-of select="string-length(comment())"/>|<value-of select="string-length(processing-instruction())"/>|<value-of select="contains(@b, '&#13;')"/>]</report>
+             </rule>
+           </pattern>"#,
+    ))
+    .unwrap();
+    let document = "<batch><record a=\"x\ty\r\nz\rw\" b=\"&#9;&#13;\">\
+                    <text>a\r\nb<![CDATA[\r]]>c</text><!--1\r\n2--><?p 1\r2?></record></batch>";
+    let full = schema
+        .validate(&Document::from_str(document).unwrap())
+        .unwrap();
+    let streamed = schema
+        .validate_streaming(document.as_bytes(), &ValidateOptions::new())
+        .unwrap();
+    assert_eq!(streamed, full);
+    // a: "x y z w"; b: tab and CR from references, 2; text: "a\nb\nc", 5;
+    // comment: "1\n2", 3; PI data: "1\n2", 3.
+    assert_eq!(
+        findings(&full),
+        vec!["SuccessfulReport /batch[1]/record[1] [x y z w|2|5|3|3|true]"]
+    );
+
+    for malformed in [
+        r#"<batch><record a="1" a="2"/></batch>"#,
+        r#"<batch><record xmlns:p="u" xmlns:q="u" p:a="1" q:a="2"/></batch>"#,
+        r#"<batch xmlns:p="u" xmlns:p="v"><record/></batch>"#,
+    ] {
+        let whole = Document::from_str(malformed).unwrap_err().to_string();
+        assert_contains!(whole, "duplicate attribute");
+        let streamed = schema
+            .validate_streaming(malformed.as_bytes(), &ValidateOptions::new())
+            .unwrap_err()
+            .to_string();
+        assert_contains!(streamed, "duplicate attribute");
+    }
+}
+
+#[test]
+fn options_that_trim_the_report_agree_with_full_validation() {
+    // Two failing nodes inside one record. Without fired-rule bookkeeping
+    // the rules with findings must still be kept, and a cap that is not
+    // reached must not stop the record after its first node.
+    let schema = Schema::from_str(&schema_with(
+        r#"<pattern><rule context="line"><assert test="@qty">needs qty</assert></rule></pattern>"#,
+    ))
+    .unwrap();
+    let source =
+        "<orders><order><line/><line qty='1'/><line/></order><order><line/></order></orders>";
+    let document = Document::from_str(source).unwrap();
+    for options in [
+        ValidateOptions::new().with_record_fired_rules(false),
+        ValidateOptions::new().with_max_failures(100),
+        ValidateOptions::new().with_max_failures(2),
+    ] {
+        let full = schema.validate_with(&document, &options).unwrap();
+        let streamed = schema
+            .validate_streaming(source.as_bytes(), &options)
+            .unwrap();
+        assert_eq!(streamed, full, "{options:?}");
+    }
+    let untrimmed = schema
+        .validate_streaming(
+            source.as_bytes(),
+            &ValidateOptions::new().with_record_fired_rules(false),
+        )
+        .unwrap();
+    assert_eq!(untrimmed.count_failures(), 3);
+    assert_eq!(untrimmed.count_fired_rules(), 3);
 }

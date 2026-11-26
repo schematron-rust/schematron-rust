@@ -56,17 +56,22 @@ pub enum Error {
     ///
     /// Raised while compiling the schema, not while validating, so a typo in
     /// a `test` fails immediately rather than on somebody else's document.
-    #[error("XPath syntax error in {context}: {message}\n  expression: {expression}\n{caret}")]
+    #[error(
+        "XPath syntax error in {context}: {message}\n  expression: {}\n{caret}",
+        excerpt(expression, *position).0
+    )]
     XPathSyntax {
         /// A path to the schema construct holding the expression.
         context: String,
-        /// The expression source.
+        /// The whole expression source. The message shows at most 60
+        /// characters either side of `position`.
         expression: String,
         /// Byte offset of the offending character.
         position: usize,
         /// What went wrong.
         message: String,
-        /// A pre-rendered caret line pointing at `position`.
+        /// A pre-rendered caret line pointing at `position` within the
+        /// excerpt the message shows.
         caret: String,
     },
 
@@ -173,13 +178,7 @@ impl Error {
         position: usize,
         message: impl Into<String>,
     ) -> Self {
-        // Count characters, not bytes, so the caret lands under the right
-        // glyph for non-ASCII expressions.
-        let prefix_width = expression
-            .get(..position.min(expression.len()))
-            .unwrap_or("")
-            .chars()
-            .count();
+        let (_, prefix_width) = excerpt(expression, position);
         let caret = format!("{:width$}^", "  ", width = prefix_width + 14);
         Error::XPathSyntax {
             context: context.into(),
@@ -203,6 +202,43 @@ impl Error {
             message: message.into(),
         }
     }
+}
+
+/// How many characters of an expression a syntax error shows on each side
+/// of the offending position.
+///
+/// A hostile or generated schema can hold an expression hundreds of
+/// kilobytes long, and echoing all of it buries the one character that
+/// matters. The whole source stays in the error's `expression` field.
+const EXCERPT_CONTEXT: usize = 60;
+
+/// The part of `expression` a syntax error message shows, and the caret's
+/// column within it, counted in characters, not bytes, so the caret lands
+/// under the right glyph for non-ASCII expressions. Each side is cut to
+/// [`EXCERPT_CONTEXT`] characters, and `…` marks the cut.
+fn excerpt(expression: &str, position: usize) -> (String, usize) {
+    let prefix = expression
+        .get(..position.min(expression.len()))
+        .unwrap_or("");
+    let before: Vec<char> = prefix.chars().collect();
+    let after = expression.get(prefix.len()..).unwrap_or("");
+
+    let mut out = String::new();
+    let mut column = before.len();
+    if before.len() > EXCERPT_CONTEXT {
+        out.push('…');
+        let skipped = before.len() - EXCERPT_CONTEXT;
+        out.extend(&before[skipped..]);
+        column = EXCERPT_CONTEXT + 1;
+    } else {
+        out.extend(&before);
+    }
+    let mut tail = after.chars();
+    out.extend(tail.by_ref().take(EXCERPT_CONTEXT + 1));
+    if tail.next().is_some() {
+        out.push('…');
+    }
+    (out, column)
 }
 
 /// Renders `Some(location)` as ` at location`, and `None` as nothing.
@@ -241,5 +277,44 @@ mod tests {
         let text = e.to_string();
         assert!(text.contains("expected ')'"), "{text}");
         assert!(text.contains('^'), "{text}");
+    }
+
+    /// The caret's column under the expression: the message's last line,
+    /// less the caret itself and the 14-character `  expression: ` label.
+    fn caret_column(error: &Error) -> usize {
+        error.to_string().lines().last().unwrap().len() - 1 - 14
+    }
+
+    #[test]
+    fn a_short_expression_is_shown_whole() {
+        let e = Error::xpath_syntax("test", "é(a", 2, "unexpected");
+        assert!(e.to_string().contains("  expression: é(a\n"), "{e}");
+        // `é` is two bytes but one character, so the caret is at column 1.
+        assert_eq!(caret_column(&e), 1);
+    }
+
+    #[test]
+    fn a_long_expression_is_cut_around_the_error() {
+        let source = format!("{}X{}", "a".repeat(500), "b".repeat(500));
+        let e = Error::xpath_syntax("test", &source, 500, "unexpected X");
+        let text = e.to_string();
+        let shown = format!("…{}X{}…", "a".repeat(60), "b".repeat(60));
+        assert!(text.contains(&format!("  expression: {shown}\n")), "{text}");
+        assert_eq!(caret_column(&e), 61);
+        // The full source is still there for a caller that wants it.
+        assert!(matches!(&e, Error::XPathSyntax { expression, .. } if *expression == source));
+
+        // Cut on one side only: near the start, and exactly at the limit.
+        let near_start = Error::xpath_syntax("test", &source, 3, "unexpected");
+        assert!(
+            near_start.to_string().contains("  expression: aaa"),
+            "{near_start}"
+        );
+        assert_eq!(caret_column(&near_start), 3);
+        let exact = "c".repeat(121);
+        let at_limit = Error::xpath_syntax("test", &exact, 60, "unexpected");
+        assert!(at_limit
+            .to_string()
+            .contains(&format!("  expression: {exact}\n")));
     }
 }

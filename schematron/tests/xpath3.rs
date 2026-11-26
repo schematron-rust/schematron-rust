@@ -31,12 +31,17 @@ fn schema_with(binding: &str, body: &str) -> String {
 fn check(test: &str, document: &str) -> bool {
     let source = schema_with(
         "xslt3",
-        &format!(r#"<pattern><rule context="a"><assert test="{test}">failed</assert></rule></pattern>"#),
+        &format!(
+            r#"<pattern><rule context="a"><assert test="{test}">failed</assert></rule></pattern>"#
+        ),
     );
     let schema = Schema::from_str(&source)
         .unwrap_or_else(|e| panic!("schema with test {test:?} should compile: {e}"));
     let document = Document::from_str(document).expect("document should parse");
-    schema.validate(&document).expect("validation should run").is_valid()
+    schema
+        .validate(&document)
+        .expect("validation should run")
+        .is_valid()
 }
 
 /// The compile error for a test under a binding, if it does not compile.
@@ -174,7 +179,11 @@ fn a_function_item_cannot_be_compared() {
 
 #[test]
 fn a_function_item_cannot_be_atomized() {
-    for test in ["string(string-length#1)", "number(string-length#1)", "concat(string-length#1, 'x')"] {
+    for test in [
+        "string(string-length#1)",
+        "number(string-length#1)",
+        "concat(string-length#1, 'x')",
+    ] {
         let message = eval_error(test, "<a/>");
         assert_contains!(message, "function item");
     }
@@ -210,12 +219,18 @@ fn the_arrow_operator_pipes_the_left_operand_in_as_the_first_argument() {
 #[test]
 fn arrow_calls_chain() {
     // Each `=>` pipes in the result of the one before it.
-    assert!(check("'ABC' => lower-case() => string-length() = 3", "<a/>"));
+    assert!(check(
+        "'ABC' => lower-case() => string-length() = 3",
+        "<a/>"
+    ));
 }
 
 #[test]
 fn the_arrow_operator_can_call_a_dynamic_target() {
-    assert!(check("for $f in string-length#1 return 'abcd' => $f() = 4", "<a/>"));
+    assert!(check(
+        "for $f in string-length#1 return 'abcd' => $f() = 4",
+        "<a/>"
+    ));
     assert!(check("'abcd' => (string-length#1)() = 4", "<a/>"));
 }
 
@@ -274,7 +289,10 @@ fn filter_keeps_items_the_predicate_holds_for() {
         "sum(filter((1, 2, 3, 4, 5), function($x) { $x mod 2 = 0 })) = 6",
         "<a/>"
     ));
-    assert!(check("count(filter((), function($x) { true() })) = 0", "<a/>"));
+    assert!(check(
+        "count(filter((), function($x) { true() })) = 0",
+        "<a/>"
+    ));
 }
 
 #[test]
@@ -330,24 +348,24 @@ fn for_each_pair_stops_at_the_shorter_sequence() {
 fn function_arity_reports_a_function_items_arity() {
     assert!(check("function-arity(string-length#1) = 1", "<a/>"));
     assert!(check("function-arity(concat#3) = 3", "<a/>"));
-    assert!(check(
-        "function-arity(function($a, $b) { $a }) = 2",
-        "<a/>"
-    ));
+    assert!(check("function-arity(function($a, $b) { $a }) = 2", "<a/>"));
 }
 
 #[test]
 fn function_name_reports_a_named_references_name_and_nothing_for_a_closure() {
-    assert!(check("function-name(string-length#1) = 'string-length'", "<a/>"));
     assert!(check(
-        "empty(function-name(function($x) { $x }))",
+        "function-name(string-length#1) = 'string-length'",
         "<a/>"
     ));
+    assert!(check("empty(function-name(function($x) { $x }))", "<a/>"));
 }
 
 #[test]
 fn function_lookup_finds_a_real_function_at_the_right_arity() {
-    assert!(check("function-lookup('string-length', 1)('abcd') = 4", "<a/>"));
+    assert!(check(
+        "function-lookup('string-length', 1)('abcd') = 4",
+        "<a/>"
+    ));
 }
 
 #[test]
@@ -404,7 +422,10 @@ fn higher_order_functions_share_the_nested_construct_budget() {
 #[test]
 fn simple_map_over_atomic_items_binds_dot_to_each_one() {
     assert!(check("sum((1, 2, 3) ! (. * 2)) = 12", "<a/>"));
-    assert!(check("(('a', 'bb', 'ccc') ! string-length(.)) = (1, 2, 3)", "<a/>"));
+    assert!(check(
+        "(('a', 'bb', 'ccc') ! string-length(.)) = (1, 2, 3)",
+        "<a/>"
+    ));
 }
 
 #[test]
@@ -485,7 +506,10 @@ fn let_binds_the_whole_sequence_not_one_item_at_a_time() {
 
 #[test]
 fn nested_let_expressions_shadow_and_can_reference_the_outer_binding() {
-    assert!(check("(let $x := 1 return let $x := 2 return $x) = 2", "<a/>"));
+    assert!(check(
+        "(let $x := 1 return let $x := 2 return $x) = 2",
+        "<a/>"
+    ));
     assert!(check(
         "(let $x := 1 return let $y := $x + 1 return $y) = 2",
         "<a/>"
@@ -515,7 +539,10 @@ fn eqname_selects_by_namespace_uri_directly() {
     let schema = Schema::from_str(&source).expect("schema should compile");
     let document = Document::from_str(r#"<a xmlns:p="http://example.com/ns"><p:foo/></a>"#)
         .expect("document should parse");
-    assert!(schema.validate(&document).expect("validation should run").is_valid());
+    assert!(schema
+        .validate(&document)
+        .expect("validation should run")
+        .is_valid());
 }
 
 #[test]
@@ -532,7 +559,10 @@ fn eqname_and_a_prefix_resolving_to_the_same_uri_select_the_same_node() {
     let schema = Schema::from_str(&source).expect("schema should compile");
     let document = Document::from_str(r#"<a xmlns:p="http://example.com/ns"><p:foo>x</p:foo></a>"#)
         .expect("document should parse");
-    assert!(schema.validate(&document).expect("validation should run").is_valid());
+    assert!(schema
+        .validate(&document)
+        .expect("validation should run")
+        .is_valid());
 }
 
 #[test]

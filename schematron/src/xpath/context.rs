@@ -3,9 +3,9 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Mutex;
 
-use super::value::{Item, Value};
 #[cfg(test)]
 use super::value::NumericType;
+use super::value::{Item, Value};
 use super::version::XPathVersion;
 use crate::xml::{Document, NodeId};
 
@@ -513,7 +513,10 @@ mod tests {
         let mut vars = Variables::new();
         vars.bind("x", Value::Number(1.0, NumericType::default()));
         vars.bind("x", Value::Number(2.0, NumericType::default()));
-        assert_eq!(vars.lookup("x"), Some(&Value::Number(2.0, NumericType::default())));
+        assert_eq!(
+            vars.lookup("x"),
+            Some(&Value::Number(2.0, NumericType::default()))
+        );
     }
 
     #[test]
@@ -523,7 +526,10 @@ mod tests {
         let mark = vars.mark();
         vars.bind("x", Value::Number(2.0, NumericType::default()));
         vars.truncate(mark);
-        assert_eq!(vars.lookup("x"), Some(&Value::Number(1.0, NumericType::default())));
+        assert_eq!(
+            vars.lookup("x"),
+            Some(&Value::Number(1.0, NumericType::default()))
+        );
     }
 
     #[test]
@@ -573,7 +579,10 @@ mod tests {
         let mut variables = Variables::new();
         variables.bind("outer", Value::String("x".into()));
         variables.bind("inner", Value::String("y".into()));
-        assert_eq!(variables.names().collect::<Vec<_>>(), vec!["outer", "inner"]);
+        assert_eq!(
+            variables.names().collect::<Vec<_>>(),
+            vec!["outer", "inner"]
+        );
 
         let documents = Documents::new();
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

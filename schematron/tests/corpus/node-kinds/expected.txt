@@ -2,4 +2,4 @@
 assert | /a[1]/@x | attribute x
 assert | /a[1]/text()[1] | text
 assert | /a[1]/comment()[1] | comment
-assert | /a[1]/processing-instruction()[1] | pi
+assert | /a[1]/processing-instruction('pi')[1] | pi

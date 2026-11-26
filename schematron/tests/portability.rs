@@ -48,7 +48,10 @@ fn the_cases_the_reference_cannot_compile_are_reported() {
 fn the_documented_divergences_are_reported() {
     // Each of these is a numbered divergence in spec/conformance/.
     for (case, kind) in [
-        ("node-kinds", schematron::LintKind::ContextSelectsANonElementKind),
+        (
+            "node-kinds",
+            schematron::LintKind::ContextSelectsANonElementKind,
+        ),
         ("subject", schematron::LintKind::SubjectMovesTheLocation),
         ("rich-metadata", schematron::LintKind::FlagOrRoleOnTheRule),
     ] {
@@ -164,7 +167,10 @@ fn no_message_or_help_carries_a_run_of_spaces() {
         .into_iter()
         .chain(schema.lint())
         .collect::<Vec<_>>();
-    assert!(!reported.is_empty(), "the probe schema should report something");
+    assert!(
+        !reported.is_empty(),
+        "the probe schema should report something"
+    );
 
     for lint in reported {
         assert!(

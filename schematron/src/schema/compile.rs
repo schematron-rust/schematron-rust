@@ -1921,14 +1921,8 @@ mod tests {
         for source in expressions {
             let expr = crate::xpath::parse(source).expect("coverage expression must parse");
             let mut enclosing = Vec::new();
-            let error = Schema::check_variables(
-                &expr,
-                source,
-                "test",
-                &bindable,
-                &mut enclosing,
-            )
-            .expect_err(source);
+            let error = Schema::check_variables(&expr, source, "test", &bindable, &mut enclosing)
+                .expect_err(source);
             assert!(error.to_string().contains("$missing"), "{source}: {error}");
             assert!(enclosing.is_empty(), "scope leaked while checking {source}");
         }

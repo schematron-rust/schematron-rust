@@ -57,6 +57,7 @@ directory — no Rust code. The cases, and what each pins down:
 | `patterns-are-independent` | One node matched separately by two patterns |
 | `namespaces` | `ns` prefix bindings against a namespaced document |
 | `node-kinds` | Rules matching attributes, text, comments, and PIs |
+| `processing-instruction-locations` | PI locations name the target, so sibling PIs with different targets get distinct locations |
 | `absolute-context` | `/root/a` is not searched across the whole document |
 | `union-context` | `a \| b` as a rule context |
 | `predicate-context` | `line[1]` means "first of its own parent" |

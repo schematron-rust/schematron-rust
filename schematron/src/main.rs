@@ -84,7 +84,8 @@ struct Cli {
     #[arg(long, value_name = "FLAG")]
     flag: Vec<String>,
 
-    /// Stop after this many failed assertions.
+    /// Stop after this many failed assertions; with --flag, counts only
+    /// failed assertions carrying one of those flags.
     #[arg(long, value_name = "N")]
     max_failures: Option<usize>,
 
@@ -225,6 +226,17 @@ fn run(cli: &Cli) -> Result<u8, Exit> {
             "no documents given; pass one or more file paths, or `-` for standard input",
         ));
     }
+    // An SVRL or JSON report is one document, and concatenating two gives
+    // output no XML or JSON reader accepts. There is no standard SVRL wrapper
+    // for several instances, so refuse rather than invent one. --quiet writes
+    // no report, so it can still gate on many documents at once.
+    if cli.documents.len() > 1 && cli.format != Format::Text && !cli.quiet {
+        return Err(Exit::new(
+            EXIT_USAGE,
+            "SVRL and JSON reports describe one document; run once per document, \
+             or use --format text or --quiet to check several in one run",
+        ));
+    }
     if cli.stream && cli.parallel {
         return Err(Exit::new(
             EXIT_USAGE,
@@ -248,7 +260,11 @@ fn run(cli: &Cli) -> Result<u8, Exit> {
         .with_record_fired_rules(record_fired_rules)
         .with_parallel_patterns(cli.parallel);
     if let Some(limit) = cli.max_failures {
-        validate_options = validate_options.with_max_failures(limit);
+        // The cap must count only what --flag keeps, or discarded findings
+        // can exhaust it and the filtered report would claim validity.
+        validate_options = validate_options
+            .with_max_failures(limit)
+            .with_failure_flags(cli.flag.iter().cloned());
     }
 
     let mut rendered = String::new();

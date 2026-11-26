@@ -1,0 +1,6 @@
+# A processing instruction's position counts siblings with the same target,
+# so its location names the target. Each location selects exactly one node.
+assert | /a[1]/processing-instruction('pi')[1] | pi pi one
+assert | /a[1]/processing-instruction('other')[1] | pi other two
+assert | /a[1]/processing-instruction('pi')[2] | pi pi three
+assert | /a[1]/b[1]/processing-instruction('pi')[1] | pi pi four

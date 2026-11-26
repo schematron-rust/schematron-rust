@@ -1376,7 +1376,9 @@ fn temporal_arithmetic(op: BinaryOp, left: &Value, right: &Value) -> Result<Valu
                         .checked_mul(if subtract { -1 } else { 1 })
                         .ok_or_else(month_overflow)?;
                     Duration::from_months(
-                        a.to_months().checked_add(signed).ok_or_else(month_overflow)?,
+                        a.to_months()
+                            .checked_add(signed)
+                            .ok_or_else(month_overflow)?,
                     )
                 }
                 DurationKind::DayTime => {
@@ -1660,7 +1662,10 @@ fn spend(items: u64) -> Result<(), EvalError> {
 fn spend_len(len: usize) -> Result<(), EvalError> {
     // `usize` is never wider than `u64` on a supported target; where it were, the
     // count would be more than the budget holds, so it is refused the same way.
-    u64::try_from(len).ok().ok_or_else(over_budget).and_then(spend)
+    u64::try_from(len)
+        .ok()
+        .ok_or_else(over_budget)
+        .and_then(spend)
 }
 
 const MAX_RANGE: f64 = 1_000_000.0;
@@ -1845,9 +1850,7 @@ fn evaluate_step(
 fn position_matches(n: f64, position: usize) -> Result<bool, EvalError> {
     numeric::usize_to_f64(position)
         .map(|position| (n - position).abs() < f64::EPSILON)
-        .ok_or_else(|| {
-            EvalError::new("a context position is too large to compare with a number")
-        })
+        .ok_or_else(|| EvalError::new("a context position is too large to compare with a number"))
 }
 
 /// Applies one predicate, giving each node the position it holds in the list.
@@ -1941,10 +1944,19 @@ fn siblings(document: &Document, node: NodeId, following: bool) -> Vec<NodeId> {
     let children = document.children(parent);
     if following {
         // Skip up to the node itself; the siblings follow it.
-        children.iter().copied().skip_while(|&n| n != node).skip(1).collect()
+        children
+            .iter()
+            .copied()
+            .skip_while(|&n| n != node)
+            .skip(1)
+            .collect()
     } else {
         // Reverse axis: nearest first.
-        let mut before: Vec<NodeId> = children.iter().copied().take_while(|&n| n != node).collect();
+        let mut before: Vec<NodeId> = children
+            .iter()
+            .copied()
+            .take_while(|&n| n != node)
+            .collect();
         before.reverse();
         before
     }
@@ -2843,7 +2855,10 @@ mod tests {
             let result = evaluate(&expression, &context);
             SEQUENCE_DEPTH.with(|depth| depth.set(0));
             let error = result.expect_err(source);
-            assert!(error.to_string().contains("nested too deeply"), "{source}: {error}");
+            assert!(
+                error.to_string().contains("nested too deeply"),
+                "{source}: {error}"
+            );
         }
     }
 

@@ -41,6 +41,11 @@ struct Run<'a> {
     /// The tree being validated. This is the target document for a pattern
     /// with `@documents`, not necessarily the instance.
     document: &'a Document,
+    /// The root of the tree this run walks. The instance's own root, except
+    /// for a pattern with `@documents`, whose target is merged into a copy
+    /// of the instance arena so that schema- and phase-level node-sets stay
+    /// valid; this is then the target's root.
+    root: NodeId,
     /// The named indexes `key()` looks up, over `document`.
     keys: &'a Keys,
     documents: &'a Documents,
@@ -57,9 +62,10 @@ impl<'a> Run<'a> {
     /// A key indexes one document, as it does in XSLT, so a pattern with
     /// `@documents` gets indexes built over its target rather than over the
     /// instance.
-    fn on(self, document: &'a Document, keys: &'a Keys) -> Self {
+    fn on(self, document: &'a Document, root: NodeId, keys: &'a Keys) -> Self {
         Self {
             document,
+            root,
             keys,
             ..self
         }
@@ -164,6 +170,7 @@ pub(crate) fn validate_streaming<R: std::io::Read>(
             schema,
             checking_wrapper: true,
             document: reader.document(),
+            root: reader.document().root(),
             keys: &keys,
             documents: &documents,
             current_time,
@@ -186,6 +193,7 @@ pub(crate) fn validate_streaming<R: std::io::Read>(
             schema,
             checking_wrapper: false,
             document: reader.document(),
+            root: reader.document().root(),
             keys: &keys,
             documents: &documents,
             current_time,
@@ -290,6 +298,7 @@ fn validate_once(
         schema,
         checking_wrapper: false,
         document,
+        root: document.root(),
         keys: &keys,
         documents,
         current_time: options.resolve_current_time(),
@@ -350,20 +359,12 @@ fn run_patterns_sequentially(
     let mut out = Vec::new();
     let mut failures = 0;
     for pattern in active {
-        for (label, target) in pattern_targets(run, pattern)? {
-            let document = target.as_ref().unwrap_or(run.document);
-            // A `@documents` target is a different document, so it needs its
-            // own indexes; the instance reuses the ones built for the run.
-            let target_keys;
-            let keys = match &target {
-                Some(_) => {
-                    target_keys = build_keys(run.schema, document)?;
-                    &target_keys
-                }
-                None => run.keys,
-            };
+        for (label, loaded) in pattern_targets(run, pattern)? {
+            let target = loaded
+                .map(|loaded| Target::merge(run, &loaded))
+                .transpose()?;
             let outcome = run_pattern(
-                run.on(document, keys),
+                Target::scope(target.as_ref(), run),
                 pattern,
                 label,
                 variables,
@@ -427,20 +428,14 @@ fn run_patterns_in_parallel(
                         // A fresh scope per pattern, from the shared base.
                         let mut variables = variables.clone();
                         let mut failures = 0;
-                        for (label, target) in pattern_targets(run, pattern)? {
-                            let document = target.as_ref().unwrap_or(run.document);
-                            let target_keys;
-                            let keys = match &target {
-                                Some(_) => {
-                                    target_keys = build_keys(run.schema, document)?;
-                                    &target_keys
-                                }
-                                None => run.keys,
-                            };
+                        for (label, loaded) in pattern_targets(run, pattern)? {
+                            let target = loaded
+                                .map(|loaded| Target::merge(run, &loaded))
+                                .transpose()?;
                             out.push((
                                 offset + index,
                                 run_pattern(
-                                    run.on(document, keys),
+                                    Target::scope(target.as_ref(), run),
                                     pattern,
                                     label,
                                     &mut variables,
@@ -481,6 +476,12 @@ fn worker_result<T>(result: std::thread::Result<Result<T>>) -> Result<T> {
 /// evaluation path for no real gain. The linter reports a key nothing looks
 /// up, which is the case eagerness would waste work on. See `spec/keys/`.
 fn build_keys(schema: &Schema, document: &Document) -> Result<Keys> {
+    build_keys_at(schema, document, document.root())
+}
+
+/// Builds every declared key's index over the tree under `root`, which may
+/// be one of several documents merged into `document`'s arena.
+fn build_keys_at(schema: &Schema, document: &Document, root: NodeId) -> Result<Keys> {
     let mut keys = Keys::new();
     if schema.keys().is_empty() {
         return Ok(keys);
@@ -495,9 +496,8 @@ fn build_keys(schema: &Schema, document: &Document) -> Result<Keys> {
         let matched = {
             let expr = schema.expression(&key.match_pattern)?;
             let rooted = root_match_expression(expr);
-            let context =
-                EvalContext::new(document, document.root(), &variables, schema.namespaces())
-                    .with_version(schema.version());
+            let context = EvalContext::new(document, root, &variables, schema.namespaces())
+                .with_version(schema.version());
             match evaluate(&rooted, &context).map_err(|e| {
                 Error::xpath_eval(format!("key[@name='{}']/@match", key.name), e.message)
             })? {
@@ -612,7 +612,7 @@ fn pattern_targets(
 
     let expr = schema.expression(source)?;
     let variables = Variables::new();
-    let context = run.context(document.root(), &variables);
+    let context = run.context(run.root, &variables);
     let value = evaluate(expr, &context)
         .map_err(|e| Error::xpath_eval(format!("pattern/@documents: {source}"), e.message))?;
 
@@ -634,6 +634,40 @@ fn pattern_targets(
     Ok(targets)
 }
 
+/// A `pattern/@documents` target, merged into a copy of the instance arena.
+///
+/// A node-set is a list of indices into one arena. Schema- and phase-level
+/// `let` values are bound once, against the instance, and a pattern run over
+/// a separate target arena would read those indices as nodes of the wrong
+/// tree. Merging the target in beside the instance, as `document()` does,
+/// keeps every bound node-set meaning what it meant. See `spec/validation/`.
+struct Target {
+    document: Document,
+    root: NodeId,
+    keys: Keys,
+}
+
+impl Target {
+    fn merge(run: Run<'_>, loaded: &Document) -> Result<Self> {
+        let mut document = run.document.clone();
+        let root = document.append_document(loaded);
+        let keys = build_keys_at(run.schema, &document, root)?;
+        Ok(Self {
+            document,
+            root,
+            keys,
+        })
+    }
+
+    /// The run for this target, or the instance run when there is none.
+    fn scope<'a>(target: Option<&'a Self>, run: Run<'a>) -> Run<'a> {
+        match target {
+            Some(target) => run.on(&target.document, target.root, &target.keys),
+            None => run,
+        }
+    }
+}
+
 /// Runs one pattern over one document.
 fn run_pattern(
     run: Run<'_>,
@@ -646,13 +680,7 @@ fn run_pattern(
         document, options, ..
     } = run;
     let mark = variables.mark();
-    bind_all(
-        run,
-        document.root(),
-        &pattern.lets,
-        variables,
-        "pattern/let",
-    )?;
+    bind_all(run, run.root, &pattern.lets, variables, "pattern/let")?;
 
     let mut active = ActivePattern {
         id: pattern.id.clone(),
@@ -687,7 +715,7 @@ fn run_pattern(
         return Ok(active);
     }
 
-    for node in document.all_nodes_in_document_order() {
+    for node in document.nodes_in_subtree_order(run.root) {
         let index = claims[node.0];
         if index == UNCLAIMED {
             continue;
@@ -802,7 +830,7 @@ fn matched_nodes(run: Run<'_>, rule: &Rule, variables: &Variables) -> Result<Vec
     };
     let expr = schema.expression(source)?;
     let rooted = root_match_expression(expr);
-    let context = run.context(document.root(), variables);
+    let context = run.context(run.root, variables);
 
     // The overwhelmingly common context is a bare name or wildcard, which
     // roots to `/descendant-or-self::node()/child::TEST`. Evaluated
@@ -811,7 +839,7 @@ fn matched_nodes(run: Run<'_>, rule: &Rule, variables: &Variables) -> Result<Vec
     // fifty times. Walking once and keeping only what matches does the same
     // work without the vector.
     if let Some(test) = simple_descendant_test(&rooted) {
-        let matched = descendant_matches(document, test, &context);
+        let matched = descendant_matches(document, run.root, test, &context);
         #[cfg(debug_assertions)]
         {
             let evaluated = evaluate(&rooted, &context)
@@ -820,8 +848,7 @@ fn matched_nodes(run: Run<'_>, rule: &Rule, variables: &Variables) -> Result<Vec
                 .expect("a compiled rule context must return a node-set")
                 .to_vec();
             debug_assert_eq!(
-                matched,
-                evaluated,
+                matched, evaluated,
                 "the fast path for rule context {source:?} disagreed with the evaluator"
             );
         }
@@ -872,6 +899,7 @@ fn simple_descendant_test(expr: &Expr) -> Option<&NodeTest> {
 /// itself — so one filtered walk gives what the two steps would.
 fn descendant_matches(
     document: &Document,
+    root: NodeId,
     test: &NodeTest,
     context: &crate::xpath::EvalContext<'_>,
 ) -> Vec<NodeId> {
@@ -891,7 +919,7 @@ fn descendant_matches(
     }
 
     let mut out = Vec::new();
-    walk(document, document.root(), test, context, &mut out);
+    walk(document, root, test, context, &mut out);
     out
 }
 
@@ -1002,7 +1030,9 @@ fn fire_rule(
             crate::schema::AssertionKind::Assert => ResultKind::FailedAssert,
             crate::schema::AssertionKind::Report => ResultKind::SuccessfulReport,
         };
-        if kind == ResultKind::FailedAssert {
+        // The assertion's own label wins; the rule's is the fallback.
+        let flag = assertion.flag.clone().or_else(|| rule.flag.clone());
+        if kind == ResultKind::FailedAssert && options.counts_failure(flag.as_deref()) {
             *failures += 1;
         }
 
@@ -1014,7 +1044,7 @@ fn fire_rule(
             id: assertion.id.clone(),
             // The assertion's own label wins; the rule's is the fallback.
             role: assertion.role.clone().or_else(|| rule.role.clone()),
-            flag: assertion.flag.clone().or_else(|| rule.flag.clone()),
+            flag,
             see: assertion.see.clone(),
             icon: assertion.icon.clone(),
             fpi: assertion.fpi.clone(),
@@ -1279,6 +1309,7 @@ mod tests {
             schema: &schema,
             checking_wrapper: false,
             document: &document,
+            root: document.root(),
             keys: &keys,
             documents: &documents,
             current_time: 0.0,
@@ -1336,6 +1367,7 @@ mod tests {
             schema: &schema,
             checking_wrapper: false,
             document: &document,
+            root: document.root(),
             keys: &keys,
             documents: &documents,
             current_time: 0.0,
@@ -1358,7 +1390,10 @@ mod tests {
         )
         .unwrap();
         schema.expressions.remove("item");
-        let run = Run { schema: &schema, ..run };
+        let run = Run {
+            schema: &schema,
+            ..run
+        };
         assert!(run_pattern_scoped_to_record(
             run,
             &schema.model.patterns[0],
@@ -1698,11 +1733,13 @@ mod tests {
     }
 
     fn validation_with_missing_expression(body: &str, expression: &str) -> Error {
-        let source = format!(
-            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">{body}</schema>"#
-        );
+        let source =
+            format!(r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">{body}</schema>"#);
         let mut schema = Schema::from_str(&source).unwrap();
-        assert!(schema.expressions.remove(expression).is_some(), "{expression}");
+        assert!(
+            schema.expressions.remove(expression).is_some(),
+            "{expression}"
+        );
         schema
             .validate(&Document::from_str("<root id='x'><item/></root>").unwrap())
             .unwrap_err()

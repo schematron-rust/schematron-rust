@@ -41,7 +41,7 @@ mod resolver;
 pub use compile::{Schema, SchemaOptions};
 pub use model::{
     Assertion, AssertionKind, Content, Diagnostic, Key, Let, LetValue, Ns, Paragraph, Param,
-    Pattern, Phase, Property, QueryBinding, Rule, RuleChild, SchemaModel,
-    SCHEMATRON_1_5_NAMESPACE, SCHEMATRON_NAMESPACE,
+    Pattern, Phase, Property, QueryBinding, Rule, RuleChild, SchemaModel, SCHEMATRON_1_5_NAMESPACE,
+    SCHEMATRON_NAMESPACE,
 };
 pub use resolver::{FileResolver, MemoryResolver, Resolver, SharedResolver};

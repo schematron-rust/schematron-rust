@@ -240,7 +240,10 @@ mod tests {
 
     #[test]
     fn qname_display_name_uses_prefix() {
-        assert_eq!(QName::new(Some("p"), "x", Some("urn:n")).display_name(), "p:x");
+        assert_eq!(
+            QName::new(Some("p"), "x", Some("urn:n")).display_name(),
+            "p:x"
+        );
         assert_eq!(QName::local("x").display_name(), "x");
     }
 
@@ -269,6 +272,9 @@ mod tests {
         assert!(local.matches_parts(None, "item"));
         assert!(!local.matches_parts(Some("urn:x"), "item"));
         assert_eq!(local.to_string(), "item");
-        assert_eq!(QName::new(Some(""), "item", Some("urn:x")).display_name(), "item");
+        assert_eq!(
+            QName::new(Some(""), "item", Some("urn:x")).display_name(),
+            "item"
+        );
     }
 }

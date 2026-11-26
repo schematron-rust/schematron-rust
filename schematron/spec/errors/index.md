@@ -52,6 +52,10 @@ XPath syntax error in rule[@context='invoice']/assert[1]/@test: expected ')'
                                  ^
 ```
 
+A long expression is cut to 60 characters either side of the offending
+position, with `…` marking each cut, so the caret stays readable for a
+generated or hostile schema. The `expression` field keeps the whole source.
+
 The `context` string is a human-readable path to the schema construct, built
 during compilation: `pattern[@id='lines']/rule[@context='line']/assert[2]/@test`.
 

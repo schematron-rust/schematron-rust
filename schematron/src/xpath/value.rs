@@ -388,9 +388,7 @@ impl Value {
             Value::Number(n, _) => *n,
             Value::Boolean(b) => f64::from(u8::from(*b)),
             Value::String(s) => parse_number(s),
-            Value::NodeSet(_) | Value::Sequence(_) => {
-                parse_number(&self.to_xpath_string(document))
-            }
+            Value::NodeSet(_) | Value::Sequence(_) => parse_number(&self.to_xpath_string(document)),
         }
     }
 
@@ -573,7 +571,10 @@ fn expand_after_point(digits: &str, point: usize) -> Option<String> {
     let mut out = String::new();
     if let Some(zeros) = point.checked_sub(digits.len()) {
         // The point is at or beyond the last digit: the number is whole.
-        if u64::try_from(zeros).ok().is_none_or(|zeros| zeros > MAX_EXPANDED_ZEROS) {
+        if u64::try_from(zeros)
+            .ok()
+            .is_none_or(|zeros| zeros > MAX_EXPANDED_ZEROS)
+        {
             return None;
         }
         out.push_str(digits);
@@ -754,7 +755,10 @@ mod tests {
 
         assert_eq!(Value::Boolean(false).to_xpath_string_scalar(), "false");
         assert_eq!(Value::Boolean(false).to_xpath_string(&document), "false");
-        assert_eq!(Value::Number(2.0, NumericType::Double).to_xpath_string_scalar(), "2");
+        assert_eq!(
+            Value::Number(2.0, NumericType::Double).to_xpath_string_scalar(),
+            "2"
+        );
         assert_eq!(Value::String("s".into()).to_xpath_string_scalar(), "s");
         assert_eq!(Value::NodeSet(vec![element]).to_xpath_string_scalar(), "");
         assert_eq!(Value::Sequence(vec![]).to_xpath_string_scalar(), "");
@@ -771,17 +775,25 @@ mod tests {
         assert!(Value::Sequence(vec![Item::String("x".into())]).to_boolean());
         assert!(!Value::Sequence(vec![Item::Number(f64::NAN, NumericType::Double)]).to_boolean());
         assert!(Value::Sequence(vec![Item::Node(element)]).to_boolean());
-        assert!(Value::Sequence(vec![Item::Boolean(true)]).effective_boolean_value().unwrap());
-        assert!(Value::Sequence(vec![Item::Number(1.0, NumericType::Double), Item::Boolean(true)])
+        assert!(Value::Sequence(vec![Item::Boolean(true)])
             .effective_boolean_value()
-            .unwrap_err()
-            .contains("2 atomic items"));
+            .unwrap());
+        assert!(Value::Sequence(vec![
+            Item::Number(1.0, NumericType::Double),
+            Item::Boolean(true)
+        ])
+        .effective_boolean_value()
+        .unwrap_err()
+        .contains("2 atomic items"));
 
         let sequence = Value::Sequence(vec![Item::String("x".into())]);
         assert_eq!(sequence.as_sequence().unwrap().len(), 1);
         assert!(sequence.as_node_set().is_none());
         assert!(!sequence.contains_function_item());
-        assert_eq!(sequence.clone().into_items(), sequence.as_sequence().unwrap());
+        assert_eq!(
+            sequence.clone().into_items(),
+            sequence.as_sequence().unwrap()
+        );
 
         let nodes = Value::NodeSet(vec![element]);
         assert_eq!(nodes.as_node_set(), Some(&[element][..]));
@@ -817,10 +829,19 @@ mod tests {
         assert_eq!(expand_exponential("1.20e1"), "12");
         assert_eq!(expand_exponential("1E2"), "100");
         // Fallback: the input unchanged, at the first exponent that cannot be expanded.
-        assert_eq!(expand_exponential("1e9223372036854775807"), "1e9223372036854775807");
-        assert_eq!(expand_exponential("1e9223372036854775808"), "1e9223372036854775808");
+        assert_eq!(
+            expand_exponential("1e9223372036854775807"),
+            "1e9223372036854775807"
+        );
+        assert_eq!(
+            expand_exponential("1e9223372036854775808"),
+            "1e9223372036854775808"
+        );
         assert_eq!(expand_exponential("1ex"), "1ex");
-        assert_eq!(expand_exponential("1e-9223372036854775808"), "1e-9223372036854775808");
+        assert_eq!(
+            expand_exponential("1e-9223372036854775808"),
+            "1e-9223372036854775808"
+        );
         // The most zeros written is 400; one more keeps the exponential form.
         assert_eq!(expand_exponential("1e400").len(), 401);
         assert_eq!(expand_exponential("1e401"), "1e401");
@@ -836,6 +857,9 @@ mod tests {
         assert_eq!(expand_exponential_checked("\u{e9}1e-2"), None);
         // More than 400 zeros after the last digit.
         assert_eq!(expand_exponential_checked("1e500"), None);
-        assert_eq!(expand_exponential_checked("1e400").map(|text| text.len()), Some(401));
+        assert_eq!(
+            expand_exponential_checked("1e400").map(|text| text.len()),
+            Some(401)
+        );
     }
 }

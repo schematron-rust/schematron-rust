@@ -65,7 +65,9 @@ fn includes_nest() {
     )
     .unwrap();
 
-    let report = schema.validate(&Document::from_str("<a/>").unwrap()).unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a/>").unwrap())
+        .unwrap();
     assert_eq!(
         report.failures().next().unwrap().text,
         "from the inner include"
@@ -158,7 +160,10 @@ fn an_unsupported_query_binding_is_refused_by_default_and_can_be_forced() {
                     </schema>"#;
 
     let error = Schema::from_str(source).unwrap_err();
-    assert!(matches!(error, Error::UnsupportedQueryBinding { .. }), "{error}");
+    assert!(
+        matches!(error, Error::UnsupportedQueryBinding { .. }),
+        "{error}"
+    );
 
     let forced = SchemaOptions::new().with_allow_unknown_query_binding(true);
     assert!(Schema::from_str_with(source, &forced).is_ok());
@@ -203,7 +208,9 @@ fn the_legacy_schematron_namespace_still_compiles() {
            </schema>"#,
     )
     .unwrap();
-    let report = schema.validate(&Document::from_str("<a/>").unwrap()).unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a/>").unwrap())
+        .unwrap();
     assert_eq!(report.failures().next().unwrap().text, "legacy");
 }
 
@@ -220,10 +227,9 @@ fn a_document_that_is_not_well_formed_reports_line_and_column() {
 fn external_entities_are_never_resolved() {
     // No DTD processing means XXE is structurally impossible rather than
     // merely switched off.
-    let error = Document::from_str(
-        r#"<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>"#,
-    )
-    .unwrap_err();
+    let error =
+        Document::from_str(r#"<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>"#)
+            .unwrap_err();
     assert_contains!(error.to_string(), "entity");
 }
 
@@ -234,7 +240,11 @@ fn pattern_documents_validates_external_files() {
     // against each named document instead of against the instance.
     let directory = std::env::temp_dir().join("schematron-documents-test");
     std::fs::create_dir_all(&directory).unwrap();
-    std::fs::write(directory.join("good.xml"), "<part><name>Widget</name></part>").unwrap();
+    std::fs::write(
+        directory.join("good.xml"),
+        "<part><name>Widget</name></part>",
+    )
+    .unwrap();
     std::fs::write(directory.join("bad.xml"), "<part/>").unwrap();
     let instance = directory.join("catalog.xml");
     std::fs::write(
@@ -267,4 +277,52 @@ fn pattern_documents_validates_external_files() {
     assert_eq!(report.count_failures(), 1);
 
     let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn schema_variables_keep_the_instance_nodes_inside_a_documents_pattern() {
+    // `$expected` is bound once, against the instance. Inside a pattern
+    // whose rules run over an external document it must still be the
+    // instance's node, not the node at the same arena index in the target.
+    // `/`, locations and pattern-level `let` belong to the target.
+    let schema = compile_with(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <let name="expected" value="/order/@total"/>
+             <pattern documents="order/@invoice">
+               <let name="lines" value="count(//line)"/>
+               <rule context="invoice">
+                 <assert test="@total = $expected">invoice <value-of select="@total"/> does not match order <value-of select="$expected"/></assert>
+                 <assert test="count(/invoice/line) = $lines">target root</assert>
+                 <assert test="$lines = 2">lines <value-of select="$lines"/></assert>
+               </rule>
+             </pattern>
+           </schema>"#,
+        &[
+            ("good.xml", r#"<invoice total="10"><line/><line/></invoice>"#),
+            ("bad.xml", r#"<invoice total="12"><line/></invoice>"#),
+        ],
+    )
+    .unwrap();
+
+    let good = Document::from_str(r#"<order total="10" invoice="good.xml"/>"#).unwrap();
+    assert_eq!(schema.validate(&good).unwrap().count_failures(), 0);
+
+    let bad = Document::from_str(r#"<order total="10" invoice="bad.xml"/>"#).unwrap();
+    for options in [
+        schematron::validate::ValidateOptions::new(),
+        schematron::validate::ValidateOptions::new().with_parallel_patterns(true),
+    ] {
+        let report = schema.validate_with(&bad, &options).unwrap();
+        let found: Vec<_> = report
+            .failures()
+            .map(|f| (f.location.as_str(), f.text.trim()))
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                ("/invoice[1]", "invoice 12 does not match order 10"),
+                ("/invoice[1]", "lines 1"),
+            ]
+        );
+    }
 }

@@ -19,6 +19,9 @@ Given a schema `S`, an instance document `D`, and a phase `P`:
              document element, which is what the ISO XSLT skeleton does — so
              the expression is written `catalog/ref/@href`, not `ref/@href`.
      4b. For each target document t in T:
+           - Values bound in steps 2 and 3 keep their meaning. A node-set
+             bound there still holds nodes of D, not the nodes of t at the
+             same positions. `/`, `key()` and locations refer to t.
            - Bind pattern-level `let`, context = root of t.
            - Record that p is active for t.
            - For each node n of t in document order
@@ -172,6 +175,10 @@ with the predicate form, which needs no prefix bound by the consumer:
 
 The ISO reference implementation writes namespaced names the same way, for
 the same reason.
+
+A processing instruction's step names its target, as in
+`processing-instruction('pi')[2]`. Its position counts only siblings with
+the same target, just as an element's counts siblings with the same name.
 
 The node is the `@subject` node when the assertion or its rule names one,
 otherwise the context node.

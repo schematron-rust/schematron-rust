@@ -334,11 +334,7 @@ pub(crate) fn call(
 }
 
 /// Dispatch after [`call`] has validated the name, version, and arity.
-fn call_known(
-    name: &str,
-    args: &[Value],
-    context: &EvalContext<'_>,
-) -> Result<Value, EvalError> {
+fn call_known(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Value, EvalError> {
     let document = context.document;
     match name {
         "last" => count_double(context.size),
@@ -1344,7 +1340,11 @@ fn duration_component(name: &str, args: &[Value], document: &Document) -> Result
         DurationKind::YearMonth => {
             // `unsigned_abs` cannot overflow at `i64::MIN`, unlike `abs`.
             let months = duration.to_months().unsigned_abs();
-            let figure = if component == "years" { months / 12 } else { months % 12 };
+            let figure = if component == "years" {
+                months / 12
+            } else {
+                months % 12
+            };
             numeric::u64_to_f64(figure).ok_or_else(|| {
                 EvalError::new("a year-month duration is too large to be an exact xs:double")
             })?
@@ -2436,8 +2436,14 @@ mod tests {
 
     #[test]
     fn positions_count_from_the_first_and_refuse_an_inexact_one() {
-        assert_eq!(keep_positions(vec!['a', 'b', 'c'], 1, 2.0, 3.0).unwrap(), vec!['b']);
-        assert_eq!(keep_positions(vec!['a', 'b', 'c'], 1, f64::NAN, 3.0).unwrap(), Vec::<char>::new());
+        assert_eq!(
+            keep_positions(vec!['a', 'b', 'c'], 1, 2.0, 3.0).unwrap(),
+            vec!['b']
+        );
+        assert_eq!(
+            keep_positions(vec!['a', 'b', 'c'], 1, f64::NAN, 3.0).unwrap(),
+            Vec::<char>::new()
+        );
         let counted = count_double(3).unwrap();
         assert_eq!(counted, double(3.0));
     }

@@ -65,6 +65,18 @@ pub struct ValidateOptions {
     /// Useful for a fast "is this document broken at all" check over a large
     /// input, where the first failure is enough.
     pub max_failures: Option<usize>,
+    /// Count only failed assertions carrying one of these flags toward
+    /// [`ValidateOptions::max_failures`].
+    ///
+    /// Empty, the default, counts every failed assertion. A caller that
+    /// keeps only some flags from the report must set this to the same
+    /// flags, or failures it is about to discard can use up the cap before
+    /// one it keeps is reached — and the filtered report then wrongly says
+    /// the document is valid. The flag compared is the effective one: the
+    /// assertion's own `@flag`, or else its rule's. Findings with other
+    /// flags are still evaluated and reported; they just do not stop the
+    /// run. See `spec/validation/`.
+    pub failure_flags: Vec<String>,
     /// Record every rule that fired, not only the ones that found something.
     ///
     /// On by default, because SVRL's `fired-rule` events are part of the
@@ -110,6 +122,7 @@ impl ValidateOptions {
         Self {
             phase: PhaseSelection::Default,
             max_failures: None,
+            failure_flags: Vec::new(),
             record_fired_rules: true,
             parallel_patterns: false,
             current_time: None,
@@ -129,6 +142,25 @@ impl ValidateOptions {
     pub fn with_max_failures(mut self, max: usize) -> Self {
         self.max_failures = Some(max);
         self
+    }
+
+    /// Counts only failed assertions with one of these flags toward the
+    /// failure cap; see [`ValidateOptions::failure_flags`].
+    #[must_use]
+    pub fn with_failure_flags<I, S>(mut self, flags: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.failure_flags = flags.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Whether a failed assertion with this effective flag counts toward
+    /// [`ValidateOptions::max_failures`].
+    pub(crate) fn counts_failure(&self, flag: Option<&str>) -> bool {
+        self.failure_flags.is_empty()
+            || flag.is_some_and(|flag| self.failure_flags.iter().any(|f| f == flag))
     }
 
     /// Sets whether to record rules that fired without finding anything.
@@ -227,7 +259,10 @@ mod tests {
 
     #[test]
     fn owned_phase_names_use_the_same_conversion() {
-        assert_eq!(PhaseSelection::from("#ALL".to_string()), PhaseSelection::All);
+        assert_eq!(
+            PhaseSelection::from("#ALL".to_string()),
+            PhaseSelection::All
+        );
         assert_eq!(
             PhaseSelection::from("strict".to_string()),
             PhaseSelection::Named("strict".to_string())

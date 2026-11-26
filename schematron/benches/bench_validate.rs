@@ -9,9 +9,9 @@
 #![allow(missing_docs)]
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::hint::black_box;
 use schematron::validate::ValidateOptions;
 use schematron::{Document, Schema};
+use std::hint::black_box;
 
 const SCHEMA: &str = r#"
 <schema xmlns="http://purl.oclc.org/dsdl/schematron">
@@ -62,9 +62,13 @@ fn bench_validate(c: &mut Criterion) {
         let source = document_of(count);
         let document = Document::from_str(&source).unwrap();
         group.throughput(Throughput::Elements(count as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(count), &document, |b, document| {
-            b.iter(|| schema.validate(black_box(document)).unwrap());
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(count),
+            &document,
+            |b, document| {
+                b.iter(|| schema.validate(black_box(document)).unwrap());
+            },
+        );
     }
     group.finish();
 }
@@ -119,11 +123,19 @@ fn bench_fired_rule_recording(c: &mut Criterion) {
     let mut group = c.benchmark_group("fired_rule_recording");
     group.bench_function("on", |b| {
         let options = ValidateOptions::new().with_record_fired_rules(true);
-        b.iter(|| schema.validate_with(black_box(&document), &options).unwrap());
+        b.iter(|| {
+            schema
+                .validate_with(black_box(&document), &options)
+                .unwrap()
+        });
     });
     group.bench_function("off", |b| {
         let options = ValidateOptions::new().with_record_fired_rules(false);
-        b.iter(|| schema.validate_with(black_box(&document), &options).unwrap());
+        b.iter(|| {
+            schema
+                .validate_with(black_box(&document), &options)
+                .unwrap()
+        });
     });
     group.finish();
 }
@@ -176,11 +188,19 @@ fn bench_parallel_patterns(c: &mut Criterion) {
 
         group.bench_function("sequential", |b| {
             let options = ValidateOptions::new();
-            b.iter(|| schema.validate_with(black_box(&document), &options).unwrap());
+            b.iter(|| {
+                schema
+                    .validate_with(black_box(&document), &options)
+                    .unwrap()
+            });
         });
         group.bench_function("parallel", |b| {
             let options = ValidateOptions::new().with_parallel_patterns(true);
-            b.iter(|| schema.validate_with(black_box(&document), &options).unwrap());
+            b.iter(|| {
+                schema
+                    .validate_with(black_box(&document), &options)
+                    .unwrap()
+            });
         });
 
         group.finish();
@@ -288,7 +308,10 @@ fn bench_location_generation(c: &mut Criterion) {
     // Both must actually report on every node, or this measures nothing.
     assert_eq!(plain_schema.validate(&plain).unwrap().count_failures(), N);
     assert_eq!(
-        namespaced_schema.validate(&namespaced).unwrap().count_failures(),
+        namespaced_schema
+            .validate(&namespaced)
+            .unwrap()
+            .count_failures(),
         N
     );
 
@@ -304,7 +327,10 @@ fn bench_location_generation(c: &mut Criterion) {
     }
     deep.push_str("</order>");
     let deep = Document::from_str(&deep).unwrap();
-    assert_eq!(plain_schema.validate(&deep).unwrap().count_failures(), DEPTH);
+    assert_eq!(
+        plain_schema.validate(&deep).unwrap().count_failures(),
+        DEPTH
+    );
 
     let mut group = c.benchmark_group("location_generation");
     group.throughput(Throughput::Elements(N as u64));

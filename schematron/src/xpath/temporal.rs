@@ -314,7 +314,13 @@ fn duration_totals(
     }
     year_months
         .checked_add(month_part)
-        .and_then(|months| if negative { months.checked_neg() } else { Some(months) })
+        .and_then(|months| {
+            if negative {
+                months.checked_neg()
+            } else {
+                Some(months)
+            }
+        })
         .map(|months| (months, seconds))
 }
 
@@ -408,9 +414,7 @@ pub fn adjust_to_timezone(temporal: &Temporal, new_offset: Option<i32>) -> Optio
         }),
         (Some(_), Some(new)) => temporal
             .to_seconds()
-            .and_then(|instant| {
-                from_unix_seconds(temporal.kind, instant + f64::from(new) * 60.0)
-            })
+            .and_then(|instant| from_unix_seconds(temporal.kind, instant + f64::from(new) * 60.0))
             .map(|shifted| Temporal {
                 offset_minutes: Some(new),
                 ..shifted
@@ -563,19 +567,22 @@ impl Temporal {
     /// point of checking it.
     pub fn parse(text: &str, kind: TemporalKind) -> Result<Temporal, String> {
         let trimmed = text.trim();
-        let reject = || {
-            format!(
-                "{trimmed:?} is not a valid {} value",
-                kind.as_str()
-            )
-        };
+        let reject = || format!("{trimmed:?} is not a valid {} value", kind.as_str());
 
         let (body, offset) = split_timezone(trimmed).ok_or_else(reject)?;
 
         let parsed = match kind {
             TemporalKind::Date => parse_date(body).map(|(y, m, d)| (y, m, d, 0, 0, 0.0)),
-            TemporalKind::Time => parse_time(body)
-                .map(|(h, mi, s)| (TIME_REFERENCE.0, TIME_REFERENCE.1, TIME_REFERENCE.2, h, mi, s)),
+            TemporalKind::Time => parse_time(body).map(|(h, mi, s)| {
+                (
+                    TIME_REFERENCE.0,
+                    TIME_REFERENCE.1,
+                    TIME_REFERENCE.2,
+                    h,
+                    mi,
+                    s,
+                )
+            }),
             TemporalKind::DateTime => {
                 let (date, time) = body.split_once('T').ok_or_else(reject)?;
                 let (year, month, day) = parse_date(date).ok_or_else(reject)?;
@@ -655,7 +662,11 @@ impl Temporal {
     /// Orders two values, reading a value with no timezone as being in
     /// `implicit_minutes`.
     #[must_use]
-    pub fn compare_in(&self, other: &Temporal, implicit_minutes: i32) -> Option<std::cmp::Ordering> {
+    pub fn compare_in(
+        &self,
+        other: &Temporal,
+        implicit_minutes: i32,
+    ) -> Option<std::cmp::Ordering> {
         self.to_seconds_in(implicit_minutes)?
             .partial_cmp(&other.to_seconds_in(implicit_minutes)?)
     }
@@ -879,7 +890,11 @@ fn civil_from_days(days: i64) -> Option<(i64, u32, u32)> {
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_prime = (5 * day_of_year + 2) / 153;
     let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
-    let month = if month_prime < 10 { month_prime + 3 } else { month_prime - 9 };
+    let month = if month_prime < 10 {
+        month_prime + 3
+    } else {
+        month_prime - 9
+    };
     let year = if month <= 2 { year + 1 } else { year };
     i64::try_from(year)
         .ok()
@@ -901,7 +916,8 @@ pub fn from_unix_seconds(kind: TemporalKind, seconds: f64) -> Option<Temporal> {
     let days = (seconds / 86_400.0).floor();
     let rest = seconds - days * 86_400.0;
     let date = numeric::f64_to_i64(days).and_then(civil_from_days);
-    let hour = numeric::f64_to_i64((rest / 3_600.0).floor()).and_then(|hour| u32::try_from(hour).ok());
+    let hour =
+        numeric::f64_to_i64((rest / 3_600.0).floor()).and_then(|hour| u32::try_from(hour).ok());
     let minute = numeric::f64_to_i64(((rest % 3_600.0) / 60.0).floor())
         .and_then(|minute| u32::try_from(minute).ok());
     let ((year, month, day), (hour, minute)) = date.zip(hour.zip(minute))?;
@@ -910,14 +926,18 @@ pub fn from_unix_seconds(kind: TemporalKind, seconds: f64) -> Option<Temporal> {
     Some(match kind {
         // A date has no time of day.
         TemporalKind::Date => Temporal::from_utc(kind, year, month, day, 0, 0, 0.0),
-        TemporalKind::DateTime => {
-            Temporal::from_utc(kind, year, month, day, hour, minute, second)
-        }
+        TemporalKind::DateTime => Temporal::from_utc(kind, year, month, day, hour, minute, second),
         // A time has no date. The reference day is the one `parse_time` uses,
         // so a parsed time and a generated one are on the same footing.
-        TemporalKind::Time => {
-            Temporal::from_utc(kind, TIME_REFERENCE.0, TIME_REFERENCE.1, TIME_REFERENCE.2, hour, minute, second)
-        }
+        TemporalKind::Time => Temporal::from_utc(
+            kind,
+            TIME_REFERENCE.0,
+            TIME_REFERENCE.1,
+            TIME_REFERENCE.2,
+            hour,
+            minute,
+            second,
+        ),
     })
 }
 
@@ -961,7 +981,9 @@ mod tests {
         let utc = Temporal::parse("2026-08-21T00:00:00Z", TemporalKind::DateTime).unwrap();
         let ahead = Temporal::parse("2026-08-21T00:00:00+01:00", TemporalKind::DateTime).unwrap();
         assert!(ahead < utc);
-        assert!((utc.to_seconds().unwrap() - ahead.to_seconds().unwrap() - 3600.0).abs() < f64::EPSILON);
+        assert!(
+            (utc.to_seconds().unwrap() - ahead.to_seconds().unwrap() - 3600.0).abs() < f64::EPSILON
+        );
     }
 
     #[test]
@@ -970,7 +992,10 @@ mod tests {
         // 2002-03-07-07:00, adjusted to -PT10H, rolls back to 2002-03-06.
         let date = Temporal::parse("2002-03-07-07:00", TemporalKind::Date).unwrap();
         let adjusted = adjust_to_timezone(&date, Some(-600)).unwrap();
-        assert_eq!((adjusted.year(), adjusted.month(), adjusted.day()), (2002, 3, 6));
+        assert_eq!(
+            (adjusted.year(), adjusted.month(), adjusted.day()),
+            (2002, 3, 6)
+        );
         assert_eq!(adjusted.offset_minutes(), Some(-600));
     }
 
@@ -1065,7 +1090,10 @@ mod tests {
         let b = Temporal::parse("2026-08-21", TemporalKind::Date).unwrap();
         assert!(a < b);
         assert!(b > a);
-        assert_eq!(a, Temporal::parse("2020-01-01", TemporalKind::Date).unwrap());
+        assert_eq!(
+            a,
+            Temporal::parse("2020-01-01", TemporalKind::Date).unwrap()
+        );
     }
 
     #[test]
@@ -1079,7 +1107,11 @@ mod tests {
             (-44, 3, 15),
         ] {
             let days = days_from_civil(year, month, day).unwrap();
-            assert_eq!(civil_from_days(days).unwrap(), (year, month, day), "{year}-{month}-{day}");
+            assert_eq!(
+                civil_from_days(days).unwrap(),
+                (year, month, day),
+                "{year}-{month}-{day}"
+            );
         }
     }
 
@@ -1192,15 +1224,21 @@ mod duration_tests {
     #[test]
     fn parses_year_month_durations() {
         assert_eq!(
-            Duration::parse("P1Y6M", DurationKind::YearMonth).unwrap().to_months(),
+            Duration::parse("P1Y6M", DurationKind::YearMonth)
+                .unwrap()
+                .to_months(),
             18
         );
         assert_eq!(
-            Duration::parse("P3M", DurationKind::YearMonth).unwrap().to_months(),
+            Duration::parse("P3M", DurationKind::YearMonth)
+                .unwrap()
+                .to_months(),
             3
         );
         assert_eq!(
-            Duration::parse("P2Y", DurationKind::YearMonth).unwrap().to_months(),
+            Duration::parse("P2Y", DurationKind::YearMonth)
+                .unwrap()
+                .to_months(),
             24
         );
     }
@@ -1209,11 +1247,15 @@ mod duration_tests {
     fn m_means_months_before_the_t_and_minutes_after_it() {
         // The one genuinely ambiguous letter in the lexical form.
         assert_eq!(
-            Duration::parse("P1M", DurationKind::YearMonth).unwrap().to_months(),
+            Duration::parse("P1M", DurationKind::YearMonth)
+                .unwrap()
+                .to_months(),
             1
         );
         assert_eq!(
-            Duration::parse("PT1M", DurationKind::DayTime).unwrap().to_seconds(),
+            Duration::parse("PT1M", DurationKind::DayTime)
+                .unwrap()
+                .to_seconds(),
             60.0
         );
     }
@@ -1221,12 +1263,18 @@ mod duration_tests {
     #[test]
     fn parses_negative_durations() {
         assert_eq!(
-            Duration::parse("-P1D", DurationKind::DayTime).unwrap().to_seconds(),
+            Duration::parse("-P1D", DurationKind::DayTime)
+                .unwrap()
+                .to_seconds(),
             -86_400.0
         );
-        assert!(Duration::parse("-P1D", DurationKind::DayTime).unwrap().is_negative());
+        assert!(Duration::parse("-P1D", DurationKind::DayTime)
+            .unwrap()
+            .is_negative());
         assert_eq!(
-            Duration::parse("-P6M", DurationKind::YearMonth).unwrap().to_months(),
+            Duration::parse("-P6M", DurationKind::YearMonth)
+                .unwrap()
+                .to_months(),
             -6
         );
     }
@@ -1242,8 +1290,7 @@ mod duration_tests {
     #[test]
     fn rejects_malformed_durations() {
         for bad in [
-            "", "P", "1D", "PD", "P1X", "PT", "P1DT", "P1M1Y", "PT1S1H", "P1",
-            "PT1..2S",
+            "", "P", "1D", "PD", "P1X", "PT", "P1DT", "P1M1Y", "PT1S1H", "P1", "PT1..2S",
         ] {
             assert!(
                 Duration::parse(bad, DurationKind::DayTime).is_err()
@@ -1258,7 +1305,10 @@ mod duration_tests {
         let short = Duration::parse("P1D", DurationKind::DayTime).unwrap();
         let long = Duration::parse("P90D", DurationKind::DayTime).unwrap();
         assert!(short < long);
-        assert_eq!(short, Duration::parse("PT24H", DurationKind::DayTime).unwrap());
+        assert_eq!(
+            short,
+            Duration::parse("PT24H", DurationKind::DayTime).unwrap()
+        );
     }
 
     #[test]
@@ -1316,8 +1366,14 @@ mod duration_tests {
     #[test]
     fn adding_seconds_moves_a_date() {
         let date = Temporal::parse("2026-08-21", TemporalKind::Date).unwrap();
-        assert_eq!(add_seconds(&date, 86_400.0).unwrap().to_lexical(), "2026-08-22");
-        assert_eq!(add_seconds(&date, -86_400.0).unwrap().to_lexical(), "2026-08-20");
+        assert_eq!(
+            add_seconds(&date, 86_400.0).unwrap().to_lexical(),
+            "2026-08-22"
+        );
+        assert_eq!(
+            add_seconds(&date, -86_400.0).unwrap().to_lexical(),
+            "2026-08-20"
+        );
     }
 
     // RCA-TEST-2: each refusal and fallback at the first failing input.
@@ -1366,11 +1422,16 @@ mod duration_tests {
         // The year and month counts each fit, and their sum does not.
         assert!(duration_totals(&[(7e17, 'Y'), (9e18, 'M')], &[], false).is_none());
         assert!(duration_totals(&[(7e17, 'Y'), (1e17, 'M')], &[], true).is_some());
-        assert_eq!(duration_totals(&[(1.0, 'Y'), (2.0, 'M')], &[], true), Some((-14, 0.0)));
+        assert_eq!(
+            duration_totals(&[(1.0, 'Y'), (2.0, 'M')], &[], true),
+            Some((-14, 0.0))
+        );
         assert!(Duration::parse("P1.5Y", DurationKind::YearMonth).is_err());
         assert!(Duration::parse("P9999999999999999999Y", DurationKind::YearMonth).is_err());
         assert_eq!(
-            Duration::parse("P1Y2M", DurationKind::YearMonth).unwrap().to_months(),
+            Duration::parse("P1Y2M", DurationKind::YearMonth)
+                .unwrap()
+                .to_months(),
             14
         );
     }
@@ -1391,7 +1452,15 @@ mod duration_tests {
     #[test]
     fn an_instant_with_no_exact_seconds_is_refused_by_every_operation_on_it() {
         // Within `i64` years but past 2^53 days: the day count has no exact `f64`.
-        let distant = Temporal::from_utc(TemporalKind::DateTime, 1_000_000_000_000_000, 1, 1, 0, 0, 0.0);
+        let distant = Temporal::from_utc(
+            TemporalKind::DateTime,
+            1_000_000_000_000_000,
+            1,
+            1,
+            0,
+            0,
+            0.0,
+        );
         let near = Temporal::parse("2026-08-21T00:00:00Z", TemporalKind::DateTime).unwrap();
         assert_eq!(distant.to_seconds(), None);
         assert_eq!(distant.to_seconds_in(60), None);
@@ -1412,12 +1481,15 @@ mod duration_tests {
     fn duration_fields_must_be_in_order_and_each_appear_once() {
         assert!(Duration::parse("P1Y1Y", DurationKind::YearMonth).is_err());
         assert!(Duration::parse("P1M1Y", DurationKind::YearMonth).is_err());
-        assert!(Duration::parse("-P1Y2M", DurationKind::YearMonth).unwrap().is_negative());
+        assert!(Duration::parse("-P1Y2M", DurationKind::YearMonth)
+            .unwrap()
+            .is_negative());
         // Both fields fit; their sum does not.
-        assert!(
-            Duration::parse("P700000000000000000Y9000000000000000000M", DurationKind::YearMonth)
-                .is_err()
-        );
+        assert!(Duration::parse(
+            "P700000000000000000Y9000000000000000000M",
+            DurationKind::YearMonth
+        )
+        .is_err());
         assert!(Duration::parse("P1.5M", DurationKind::YearMonth).is_err());
     }
 
@@ -1429,8 +1501,11 @@ mod duration_tests {
         assert!(from_unix_seconds(TemporalKind::DateTime, f64::NEG_INFINITY).is_none());
         // 2^63 days is the first day count that does not fit an `i64`.
         assert!(from_unix_seconds(TemporalKind::Date, 9.3e23).is_none());
-        assert!(add_seconds(&Temporal::parse("2026-08-21", TemporalKind::Date).unwrap(), f64::NAN)
-            .is_none());
+        assert!(add_seconds(
+            &Temporal::parse("2026-08-21", TemporalKind::Date).unwrap(),
+            f64::NAN
+        )
+        .is_none());
     }
 
     #[test]
@@ -1440,7 +1515,13 @@ mod duration_tests {
         // The tail would start inside a character: no designator at all.
         assert_eq!(split_timezone("é12345"), Some(("é12345", None)));
         assert!(Temporal::parse("2026-01-01+aé00", TemporalKind::Date).is_err());
-        assert_eq!(split_timezone("2026-01-01+14:00"), Some(("2026-01-01", Some(840))));
-        assert_eq!(split_timezone("2026-01-01-14:59"), Some(("2026-01-01", Some(-899))));
+        assert_eq!(
+            split_timezone("2026-01-01+14:00"),
+            Some(("2026-01-01", Some(840)))
+        );
+        assert_eq!(
+            split_timezone("2026-01-01-14:59"),
+            Some(("2026-01-01", Some(-899)))
+        );
     }
 }

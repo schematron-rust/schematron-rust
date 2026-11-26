@@ -240,7 +240,11 @@ mod tests {
             ("../../", "http://a/"),
             ("../../g", "http://a/g"),
         ] {
-            assert_eq!(resolve(reference, base), expected, "resolving {reference:?}");
+            assert_eq!(
+                resolve(reference, base),
+                expected,
+                "resolving {reference:?}"
+            );
         }
     }
 
@@ -272,13 +276,20 @@ mod tests {
             ("g#s/./x", "http://a/b/c/g#s/./x"),
             ("g#s/../x", "http://a/b/c/g#s/../x"),
         ] {
-            assert_eq!(resolve(reference, base), expected, "resolving {reference:?}");
+            assert_eq!(
+                resolve(reference, base),
+                expected,
+                "resolving {reference:?}"
+            );
         }
     }
 
     #[test]
     fn a_reference_with_its_own_scheme_ignores_the_base_entirely() {
-        assert_eq!(resolve("mailto:x@example.com", "http://a/b/"), "mailto:x@example.com");
+        assert_eq!(
+            resolve("mailto:x@example.com", "http://a/b/"),
+            "mailto:x@example.com"
+        );
     }
 
     #[test]

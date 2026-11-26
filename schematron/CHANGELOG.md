@@ -5,6 +5,35 @@ git history; this file starts where the first output-affecting change did.
 
 ## Unreleased
 
+- **`--flag` with `--max-failures` no longer passes invalid documents.** The cap
+  counted every failed assertion before `--flag` filtered the report, so an
+  earlier warning could use it up and the CLI printed `no findings` and exited 0
+  despite a failing error assertion. The new `ValidateOptions::failure_flags`
+  (`with_failure_flags`) limits what counts toward the cap, and the CLI sets it
+  from `--flag`.
+- **Schema-level variables are no longer re-read from `pattern/@documents`
+  targets.** A schema- or phase-level `let` bound to nodes of the instance was
+  read as the nodes at the same positions in the external document, so a
+  cross-document assertion could pass using the wrong value. Each target is now
+  merged beside the instance, as `document()` already did, and rules, `/`,
+  `key()` and locations are scoped to the target.
+- **XML 1.0 conformance in both readers.** A repeated attribute name, or two
+  attributes with the same namespace and local name, is now a parse error (exit
+  4 from the CLI). Literal CR LF and lone CR become LF (§2.11), and literal tab,
+  CR and LF in attribute values become spaces (§3.3.3). Character references
+  keep their characters. Findings on such documents can change. They now match
+  other XML processors.
+- **Processing-instruction locations name the target.** `<?a?><?b?>` gave both
+  PIs the location `processing-instruction()[1]`. They are now
+  `processing-instruction('a')[1]` and `processing-instruction('b')[1]`. This
+  is an output change for SVRL, JSON and text reports on PIs.
+- **XPath syntax errors show an excerpt of a long expression.** The message
+  shows at most 60 characters either side of the error, with `…` marking each
+  cut, so a 200 KB expression no longer floods the terminal.
+  `Error::XPathSyntax::expression` still holds the whole source.
+- **`-f svrl` and `-f json` refuse several documents.** Two inputs were written as
+  two concatenated reports, which no XML or JSON reader accepts. This is now a
+  usage error (exit 2). Run once per document, or use text output or `--quiet`.
 - **License change.** CC-BY-NC-SA-4.0 replaced by CC-BY-SA-4.0 in the license
   options; the other six licenses are unchanged.
 - **Invalid options are refused** (RCA-IN-4). A supplied `implicit_timezone` outside

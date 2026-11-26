@@ -74,7 +74,10 @@ fn is_whole_schema(block: &str) -> bool {
     // introduced by a comment still counts — and a bare fragment introduced
     // by one does not.
     if let Some(rest) = body.strip_prefix("<?xml") {
-        body = rest.split_once("?>").map_or(rest, |(_, tail)| tail).trim_start();
+        body = rest
+            .split_once("?>")
+            .map_or(rest, |(_, tail)| tail)
+            .trim_start();
     }
     while let Some(rest) = body.strip_prefix("<!--") {
         let Some((_, tail)) = rest.split_once("-->") else {
@@ -217,7 +220,11 @@ fn repository_governance_and_license_files_are_present() {
         "cc-by-sa-4.0",
     ] {
         assert!(
-            crate_root.join("LICENSES").join(name).join("index.md").is_file(),
+            crate_root
+                .join("LICENSES")
+                .join(name)
+                .join("index.md")
+                .is_file(),
             "the crate must ship LICENSES/{name}/index.md"
         );
     }
@@ -266,8 +273,9 @@ fn the_msrv_spec_agrees_with_cargo_toml() {
     );
 
     // The same command must be the one the testing spec tells people to run.
-    let testing = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/testing/index.md"))
-        .expect("spec/testing/index.md should exist");
+    let testing =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/testing/index.md"))
+            .expect("spec/testing/index.md should exist");
     assert!(
         testing.contains(&format!("cargo +{msrv} test")),
         "spec/testing/index.md does not list the MSRV check for {msrv:?}"
@@ -434,8 +442,9 @@ fn documentation_files_are_within_the_size_budget() {
 #[test]
 fn the_xpath_function_list_in_the_spec_matches_the_engine() {
     // The engine is the source of truth; the spec must not drift from it.
-    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath/index.md"))
-        .expect("spec/xpath/index.md should exist");
+    let spec =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath/index.md"))
+            .expect("spec/xpath/index.md should exist");
 
     for function in schematron::xpath::function_names() {
         // Either spelling counts: the core functions are listed bare, while
@@ -451,8 +460,9 @@ fn the_xpath_function_list_in_the_spec_matches_the_engine() {
 
 #[test]
 fn the_xpath_two_function_list_in_the_spec_matches_the_engine() {
-    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath2/index.md"))
-        .expect("spec/xpath2/index.md should exist");
+    let spec =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath2/index.md"))
+            .expect("spec/xpath2/index.md should exist");
 
     for function in schematron::xpath::function_names_v2() {
         let bare = format!("`{function}`");
@@ -466,8 +476,9 @@ fn the_xpath_two_function_list_in_the_spec_matches_the_engine() {
 
 #[test]
 fn the_xpath_three_function_list_in_the_spec_matches_the_engine() {
-    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath3/index.md"))
-        .expect("spec/xpath3/index.md should exist");
+    let spec =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/xpath3/index.md"))
+            .expect("spec/xpath3/index.md should exist");
 
     for function in schematron::xpath::function_names_v3() {
         let bare = format!("`{function}`");
@@ -483,8 +494,9 @@ fn the_xpath_three_function_list_in_the_spec_matches_the_engine() {
 fn the_lint_table_in_the_spec_matches_the_linter() {
     // Every lint must be documented, and every documented lint must exist.
     // A lint nobody can look up is a lint nobody acts on.
-    let spec = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/linting/index.md"))
-        .expect("spec/linting/index.md should exist");
+    let spec =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/linting/index.md"))
+            .expect("spec/linting/index.md should exist");
 
     // The kind names as the source spells them, taken from the source rather
     // than from a list here, so the two cannot drift.
@@ -697,7 +709,10 @@ fn regex_lite_tests_count() -> impl Fn(&str) -> bool {
             };
             // Look at the token immediately before "tests".
             let before = lower[..position].trim_end();
-            let token = before.rsplit(|c: char| c.is_whitespace()).next().unwrap_or("");
+            let token = before
+                .rsplit(|c: char| c.is_whitespace())
+                .next()
+                .unwrap_or("");
             let digits = token.trim_start_matches(|c: char| !c.is_ascii_digit());
             if digits.len() >= 2 && digits.chars().all(|c| c.is_ascii_digit()) {
                 return true;

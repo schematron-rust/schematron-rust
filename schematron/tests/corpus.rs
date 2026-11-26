@@ -246,10 +246,9 @@ fn every_corpus_case_is_documented_and_every_documented_case_exists() {
     // direction is a defect: an undocumented case is invisible to a reader
     // deciding whether a behaviour is covered, and a documented case that
     // does not exist is a claim of coverage that is not there.
-    let spec = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/testing/index.md"),
-    )
-    .expect("spec/testing/ should exist");
+    let spec =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/testing/index.md"))
+            .expect("spec/testing/ should exist");
 
     // Only the corpus table counts. The file holds other tables whose first
     // column is also a backticked lowercase name — the sabotage coverage

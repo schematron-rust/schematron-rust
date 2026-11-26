@@ -89,6 +89,19 @@ Handled:
   document only this parser would accept is worse than one it refuses, since
   the whole point of the answer is that other tools would agree with it.
 - `xml:` prefix bound implicitly to `http://www.w3.org/XML/1998/namespace`.
+- **Duplicate attributes are rejected.** A tag in which an attribute name,
+  namespace declarations included, appears twice is a parse error. So is a
+  tag in which two attributes share a namespace URI and local name under
+  different prefixes. [XML 1.0 WFC: Unique Att Spec](https://www.w3.org/TR/2008/REC-xml-20081126/#uniqattspec);
+  [Namespaces in XML 1.0 §6.3](https://www.w3.org/TR/xml-names/#uniqAttrs)
+- **End-of-line handling.** Before anything else reads them, a literal
+  CR LF pair and a lone CR become LF in text, CDATA, comments, processing
+  instructions and attribute values. The reference `&#13;` still yields a
+  carriage return. [XML 1.0 §2.11](https://www.w3.org/TR/2008/REC-xml-20081126/#sec-line-ends)
+- **Attribute-value normalization** for CDATA-typed attributes (all of
+  them, since no DTD is read). Each literal tab and line end in an attribute
+  value becomes a space. A character reference such as `&#9;` keeps the
+  character it names. [XML 1.0 §3.3.3](https://www.w3.org/TR/2008/REC-xml-20081126/#AVNormalize)
 
 Deliberately not handled, and reported as errors rather than guessed at:
 

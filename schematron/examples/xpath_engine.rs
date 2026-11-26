@@ -54,8 +54,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Relational comparison always converts to number, so a non-numeric
     //    string becomes NaN and every comparison against it is false.
-    println!("\n  '@id > 0'       => {}", evaluate_one("@id > 0")?.to_boolean());
-    println!("  '@id <= 0'      => {}", evaluate_one("@id <= 0")?.to_boolean());
+    println!(
+        "\n  '@id > 0'       => {}",
+        evaluate_one("@id > 0")?.to_boolean()
+    );
+    println!(
+        "  '@id <= 0'      => {}",
+        evaluate_one("@id <= 0")?.to_boolean()
+    );
     println!("  both false, because 'A-1' converts to NaN");
 
     // 3. Number formatting is XPath's, not Rust's: no exponent, ever.

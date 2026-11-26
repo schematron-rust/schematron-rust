@@ -109,11 +109,17 @@ const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
          spec/conformance/.",
     ),
     (
-    "node-kinds",
-    "The reference walks the tree with `select=\"@*|*\"`, so it visits only \
+        "node-kinds",
+        "The reference walks the tree with `select=\"@*|*\"`, so it visits only \
      elements and attributes and its generated text(), comment() and \
      processing-instruction() templates can never fire. This crate visits all \
      seven node kinds, so a rule with context=\"comment()\" works. See \
+     spec/conformance/.",
+    ),
+    (
+        "processing-instruction-locations",
+        "Same cause as node-kinds: the reference never visits processing \
+     instructions, so its processing-instruction() rule cannot fire. See \
      spec/conformance/.",
     ),
 ];
@@ -164,7 +170,11 @@ fn xsltproc(stylesheet: &Path, input: &Path, params: &[(&str, &str)]) -> Result<
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(stderr.lines().next().unwrap_or("xsltproc failed").to_string());
+        return Err(stderr
+            .lines()
+            .next()
+            .unwrap_or("xsltproc failed")
+            .to_string());
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
@@ -217,8 +227,8 @@ fn normalize(text: &str) -> String {
 /// the sequence — how many times each rule fired, in what order, under which
 /// pattern — rather than the nodes themselves.
 fn fired_rules(svrl: &str) -> Result<Vec<String>, String> {
-    let report = schematron::Report::from_svrl(svrl)
-        .map_err(|e| format!("SVRL did not parse: {e}"))?;
+    let report =
+        schematron::Report::from_svrl(svrl).map_err(|e| format!("SVRL did not parse: {e}"))?;
     Ok(report
         .patterns
         .iter()
@@ -237,8 +247,8 @@ fn fired_rules(svrl: &str) -> Result<Vec<String>, String> {
 
 /// The `@location` of each finding, in the same order as [`findings`].
 fn locations(svrl: &str) -> Result<Vec<String>, String> {
-    let report = schematron::Report::from_svrl(svrl)
-        .map_err(|e| format!("SVRL did not parse: {e}"))?;
+    let report =
+        schematron::Report::from_svrl(svrl).map_err(|e| format!("SVRL did not parse: {e}"))?;
     Ok(report
         .assertions()
         .map(|assertion| assertion.location.clone())
@@ -336,8 +346,8 @@ fn compare_locations(
 /// Parsed with the crate's own reader, which is what makes this test possible
 /// at all — and which the corpus round-trip test independently checks.
 fn findings(svrl: &str) -> Result<Vec<Finding>, String> {
-    let report = schematron::Report::from_svrl(svrl)
-        .map_err(|e| format!("SVRL did not parse: {e}"))?;
+    let report =
+        schematron::Report::from_svrl(svrl).map_err(|e| format!("SVRL did not parse: {e}"))?;
 
     Ok(report
         .assertions()
@@ -496,7 +506,9 @@ fn we_agree_with_the_reference_implementation() {
         };
 
         if cannot_run.contains_key(name.as_str()) {
-            stale.push(format!("{name}: listed as unrunnable, but the reference ran it"));
+            stale.push(format!(
+                "{name}: listed as unrunnable, but the reference ran it"
+            ));
         }
 
         let ours = match our_svrl(&schema, &document, phase) {
@@ -613,10 +625,7 @@ impl Rng {
 /// XPath 1.0 has no default namespace, so an unprefixed name matches nothing
 /// in a namespaced document — which makes them worth generating rather than
 /// only hand-testing.
-const NAMESPACES: &[(&str, &str)] = &[
-    ("p", "http://example.com/p"),
-    ("q", "http://example.com/q"),
-];
+const NAMESPACES: &[(&str, &str)] = &[("p", "http://example.com/p"), ("q", "http://example.com/q")];
 
 /// Element names, written the same way in a generated document and in the
 /// XPath that addresses it. That works because the document declares these
@@ -645,15 +654,15 @@ const TEXT_PIECES: &[&str] = &[
     "3.5",
     "foo",
     "10",
-    "&#102;oo",           // decimal character reference for "foo"
-    "&#x66;oo",           // the same, in hex
-    "f&#111;o",           // a reference in the middle
-    "<![CDATA[foo]]>",    // CDATA that resolves to the same string again
+    "&#102;oo",        // decimal character reference for "foo"
+    "&#x66;oo",        // the same, in hex
+    "f&#111;o",        // a reference in the middle
+    "<![CDATA[foo]]>", // CDATA that resolves to the same string again
     "<![CDATA[1]]>",
     "&amp;",
     "&lt;",
     "&gt;",
-    "a&#32;b",            // an escaped space
+    "a&#32;b", // an escaped space
     " ",
     "  ",
     "\n  ",
@@ -835,10 +844,18 @@ fn generate_number(rng: &mut Rng, depth: usize) -> String {
         2 => format!("sum({})", generate_path(rng)),
         3 => "string-length(.)".to_string(),
         4 => format!("number(@{})", rng.pick(ATTRIBUTES)),
-        9 => format!("count({})", rng.pick(&[
-            "text()", "comment()", "processing-instruction()", "node()",
-            ".//text()", ".//comment()", ".//node()",
-        ])),
+        9 => format!(
+            "count({})",
+            rng.pick(&[
+                "text()",
+                "comment()",
+                "processing-instruction()",
+                "node()",
+                ".//text()",
+                ".//comment()",
+                ".//node()",
+            ])
+        ),
         5 => format!("floor({})", generate_number(rng, 0)),
         6 => format!("ceiling({})", generate_number(rng, 0)),
         7 => format!("round({})", generate_number(rng, 0)),
@@ -949,10 +966,16 @@ fn generate_expression(rng: &mut Rng, depth: usize, variables: &[String]) -> Str
 
         // Node kinds. Only ever inside a test — never as a rule context,
         // which is the `node-kinds` divergence recorded above.
-        26 => format!("{} {comparison} '{value}'", rng.pick(&[
-            "text()", "normalize-space(text())", "string(comment())",
-            "name(processing-instruction())", "string(node())",
-        ])),
+        26 => format!(
+            "{} {comparison} '{value}'",
+            rng.pick(&[
+                "text()",
+                "normalize-space(text())",
+                "string(comment())",
+                "name(processing-instruction())",
+                "string(node())",
+            ])
+        ),
         27 => format!("count({}) {comparison} {number}", generate_path(rng)),
         31 => generate_path(rng),
         28 => format!("{} {comparison} '{value}'", generate_path(rng)),
@@ -972,7 +995,11 @@ fn generate_expression(rng: &mut Rng, depth: usize, variables: &[String]) -> Str
             generate_number(rng, 2),
             generate_number(rng, 1)
         ),
-        _ => format!("{} {comparison} {}", generate_string(rng), generate_string(rng)),
+        _ => format!(
+            "{} {comparison} {}",
+            generate_string(rng),
+            generate_string(rng)
+        ),
     }
 }
 
@@ -989,12 +1016,15 @@ fn generate_value_of(rng: &mut Rng) -> String {
 
 /// XML-escapes a value destined for an attribute.
 fn escape(value: &str) -> String {
-    value.replace('&', "&amp;").replace('<', "&lt;").replace('"', "&quot;")
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('"', "&quot;")
 }
 
 const CONTEXTS: &[&str] = &[
-    "a", "b", "c", "*", "a/b", "//b", "a[@x]", "@x", "root", "root/*", "p:a",
-    "p:b", "q:a", "p:*", "//p:a", "p:a/b",
+    "a", "b", "c", "*", "a/b", "//b", "a[@x]", "@x", "root", "root/*", "p:a", "p:b", "q:a", "p:*",
+    "//p:a", "p:a/b",
 ];
 
 /// One rule's body: an optional variable, then assertions.
@@ -1024,10 +1054,7 @@ fn generate_message(rng: &mut Rng, label: &str) -> String {
             // `name` with no `path` is the context node's name; with one, the
             // name of whatever the path selects first.
             1 => out.push_str("<name/>"),
-            2 => out.push_str(&format!(
-                "<name path=\"{}\"/>",
-                escape(&generate_path(rng))
-            )),
+            2 => out.push_str(&format!("<name path=\"{}\"/>", escape(&generate_path(rng)))),
             3 => out.push_str("<emph>emphasised</emph>"),
             4 => out.push_str("<span class=\"c\">spanned</span>"),
             _ => out.push_str("<dir value=\"ltr\">directed</dir>"),
@@ -1075,18 +1102,24 @@ fn generate_rule_body(
         // make every case with a rule-level flag differ.
         let mut attributes = String::new();
         if rng.chance(1, 3) {
-            attributes.push_str(&format!(" flag=\"{}\"", rng.pick(&["error", "warning", "info"])));
+            attributes.push_str(&format!(
+                " flag=\"{}\"",
+                rng.pick(&["error", "warning", "info"])
+            ));
         }
         if rng.chance(1, 3) {
-            attributes.push_str(&format!(" role=\"{}\"", rng.pick(&["required", "structure"])));
+            attributes.push_str(&format!(
+                " role=\"{}\"",
+                rng.pick(&["required", "structure"])
+            ));
         }
         // A diagnostic, whose message the comparison also checks.
         // A library fragment is spliced into another schema without the
         // `diagnostics` section it was written beside, so an assertion there
         // must not reference one — it would name an id the host schema has
         // never heard of.
-        let diagnostic = (allow_diagnostics && rng.chance(1, 3))
-            .then(|| format!("d{label}a{assertion}"));
+        let diagnostic =
+            (allow_diagnostics && rng.chance(1, 3)).then(|| format!("d{label}a{assertion}"));
         if let Some(id) = &diagnostic {
             attributes.push_str(&format!(" diagnostics=\"{id}\""));
         }
@@ -1127,9 +1160,34 @@ fn generate_library(rng: &mut Rng) -> String {
     generate_rule_body(rng, "libr", &[], &mut out, &mut diagnostics, false);
     out.push_str("  </rule>\n");
 
-    debug_assert!(diagnostics.is_empty(), "library parts reference no diagnostics");
+    debug_assert!(
+        diagnostics.is_empty(),
+        "library parts reference no diagnostics"
+    );
     out.push_str("</schema>\n");
     out
+}
+
+/// Writes an abstract pattern and the pattern `instance` that instantiates
+/// it. Split out of [`generate_schema`] unchanged, so the generator draws
+/// from `rng` in the same order and every seed still yields the same case.
+fn push_abstract_pattern(rng: &mut Rng, instance: &str, global: &[String], out: &mut String) {
+    out.push_str("  <pattern abstract=\"true\" id=\"abs0\">\n    <rule context=\"$ctx\">\n");
+    out.push_str(&format!(
+        "      <assert test=\"$val\">abs0a0</assert>\n      <report test=\"{}\">abs0a1</report>\n",
+        escape(&generate_expression(rng, 1, global))
+    ));
+    out.push_str("    </rule>\n  </pattern>\n");
+    out.push_str(&format!("  <pattern id=\"{instance}\" is-a=\"abs0\">\n"));
+    out.push_str(&format!(
+        "    <param name=\"ctx\" value=\"{}\"/>\n",
+        escape(CONTEXTS[rng.below(CONTEXTS.len())])
+    ));
+    out.push_str(&format!(
+        "    <param name=\"val\" value=\"{}\"/>\n",
+        escape(&generate_expression(rng, 1, &[]))
+    ));
+    out.push_str("  </pattern>\n");
 }
 
 /// Builds a schema, and names the phase to run it under, if any.
@@ -1190,22 +1248,7 @@ fn generate_schema(rng: &mut Rng) -> (String, Option<String>) {
     // `$ctx` and `$val` are replaced by the `param` values before anything is
     // compiled, which is a text substitution the reference performs too.
     if abstract_pattern {
-        out.push_str("  <pattern abstract=\"true\" id=\"abs0\">\n    <rule context=\"$ctx\">\n");
-        out.push_str(&format!(
-            "      <assert test=\"$val\">abs0a0</assert>\n      <report test=\"{}\">abs0a1</report>\n",
-            escape(&generate_expression(rng, 1, &global))
-        ));
-        out.push_str("    </rule>\n  </pattern>\n");
-        out.push_str(&format!("  <pattern id=\"{instance}\" is-a=\"abs0\">\n"));
-        out.push_str(&format!(
-            "    <param name=\"ctx\" value=\"{}\"/>\n",
-            escape(CONTEXTS[rng.below(CONTEXTS.len())])
-        ));
-        out.push_str(&format!(
-            "    <param name=\"val\" value=\"{}\"/>\n",
-            escape(&generate_expression(rng, 1, &[]))
-        ));
-        out.push_str("  </pattern>\n");
+        push_abstract_pattern(rng, &instance, &global, &mut out);
     }
 
     if include_pattern {
@@ -1221,7 +1264,14 @@ fn generate_schema(rng: &mut Rng) -> (String, Option<String>) {
         let abstract_rule = rng.chance(1, 3);
         if abstract_rule {
             out.push_str(&format!("    <rule abstract=\"true\" id=\"ar{index}\">\n"));
-            generate_rule_body(rng, &format!("{id}ar"), &global, &mut out, &mut diagnostics, true);
+            generate_rule_body(
+                rng,
+                &format!("{id}ar"),
+                &global,
+                &mut out,
+                &mut diagnostics,
+                true,
+            );
             out.push_str("    </rule>\n");
         }
 
@@ -1234,7 +1284,14 @@ fn generate_schema(rng: &mut Rng) -> (String, Option<String>) {
             if extends_href && rng.chance(1, 2) {
                 out.push_str("      <extends href=\"lib.sch#libr\"/>\n");
             }
-            generate_rule_body(rng, &format!("{id}r{rule}"), &global, &mut out, &mut diagnostics, true);
+            generate_rule_body(
+                rng,
+                &format!("{id}r{rule}"),
+                &global,
+                &mut out,
+                &mut diagnostics,
+                true,
+            );
             out.push_str("    </rule>\n");
         }
         out.push_str("  </pattern>\n");

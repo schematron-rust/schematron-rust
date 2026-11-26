@@ -219,7 +219,9 @@ impl Report {
 
     /// The rules that fired, across every pattern.
     pub fn fired_rules(&self) -> impl Iterator<Item = &FiredRule> {
-        self.patterns.iter().flat_map(|pattern| pattern.rules.iter())
+        self.patterns
+            .iter()
+            .flat_map(|pattern| pattern.rules.iter())
     }
 
     /// How many rules fired.

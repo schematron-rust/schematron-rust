@@ -143,10 +143,22 @@ impl<'a> Builder<'a> {
     /// Pushes the namespace declarations of a start tag, returning nothing;
     /// the caller has already recorded the stack mark.
     fn declare_namespaces(&mut self, start: &BytesStart<'_>, position: usize) -> Result<()> {
+        // XML 1.0 WFC "Unique Att Spec": no attribute name, namespace
+        // declarations included, may appear twice in one tag. quick-xml's own
+        // check is off (`with_checks(false)`), so it is made here, once per
+        // tag, before anything is bound.
+        let mut names: Vec<String> = Vec::new();
         for attribute in start.attributes().with_checks(false) {
             let attribute =
                 attribute.map_err(|e| self.error(position, format!("malformed attribute: {e}")))?;
             let key = attribute.key.as_ref();
+            if names.iter().any(|seen| seen == key) {
+                return Err(self.error(
+                    position,
+                    format!("duplicate attribute {key}: an attribute name may appear only once in a tag"),
+                ));
+            }
+            names.push(key.to_string());
             let prefix = if key == "xmlns" {
                 ""
             } else if let Some(rest) = key.strip_prefix("xmlns:") {
@@ -206,6 +218,24 @@ impl<'a> Builder<'a> {
                 continue;
             }
             let name = self.qname(&key, true, position)?;
+            // Namespaces in XML 1.0 section 6.3: two attributes with
+            // different prefixes bound to the same URI are the same
+            // attribute.
+            let element_attributes = &self.doc.nodes[element.0].attributes;
+            if element_attributes.iter().any(|&other| {
+                self.doc.nodes[other.0]
+                    .name
+                    .as_ref()
+                    .is_some_and(|seen| seen.local == name.local && seen.uri == name.uri)
+            }) {
+                return Err(self.error(
+                    position,
+                    format!(
+                        "duplicate attribute {key}: it has the same namespace and local name \
+                         as another attribute on this element"
+                    ),
+                ));
+            }
             let value =
                 decode_value(&attribute.value).map_err(|message| self.error(position, message))?;
             let order = self.next_order();
@@ -236,8 +266,29 @@ impl<'a> Builder<'a> {
     }
 }
 
+/// Decodes an attribute value: line ends, then attribute-value
+/// normalization, then references.
+///
+/// XML 1.0 section 3.3.3 turns each literal tab, line feed and carriage
+/// return in an attribute value into a space, but a character reference
+/// such as `&#9;` is kept as the character it names. That is why the
+/// replacement runs on the raw text, before references are expanded.
 fn decode_value(raw: &str) -> std::result::Result<String, String> {
-    unescape(raw)
+    let normalized: String = normalize_line_ends(raw)
+        .chars()
+        .map(|c| if c == '\t' || c == '\n' { ' ' } else { c })
+        .collect();
+    unescape(&normalized)
+}
+
+/// XML 1.0 section 2.11: a CR LF pair, or a CR on its own, becomes a single
+/// LF before any other processing. Applied to literal text only. A
+/// reference such as `&#13;` still yields a carriage return.
+pub(crate) fn normalize_line_ends(raw: &str) -> std::borrow::Cow<'_, str> {
+    if !raw.contains('\r') {
+        return std::borrow::Cow::Borrowed(raw);
+    }
+    std::borrow::Cow::Owned(raw.replace("\r\n", "\n").replace('\r', "\n"))
 }
 
 /// Expands the five predefined entities and numeric character references.
@@ -517,8 +568,8 @@ pub(crate) fn handle_event(
         }
 
         Event::Text(text) => {
-            let raw = text.as_ref();
-            let decoded = unescape(raw).map_err(|m| builder.error(position, m))?;
+            let raw = normalize_line_ends(text.as_ref());
+            let decoded = unescape(&raw).map_err(|m| builder.error(position, m))?;
             // Whitespace outside the document element is not a text node.
             if parent == builder.doc.root {
                 if !decoded.chars().all(super::is_xml_space) {
@@ -532,7 +583,7 @@ pub(crate) fn handle_event(
         }
 
         Event::CData(cdata) => {
-            let raw = cdata.as_ref().to_string();
+            let raw = normalize_line_ends(cdata.as_ref()).into_owned();
             if parent == builder.doc.root {
                 return Err(builder.error(position, "CDATA outside the document element"));
             }
@@ -540,13 +591,13 @@ pub(crate) fn handle_event(
         }
 
         Event::Comment(comment) => {
-            let raw = comment.as_ref().to_string();
+            let raw = normalize_line_ends(comment.as_ref()).into_owned();
             let id = builder.push_node(NodeKind::Comment, parent);
             builder.doc.nodes[id.0].value = raw;
         }
 
         Event::PI(pi) => {
-            let raw = pi.as_ref().to_string();
+            let raw = normalize_line_ends(pi.as_ref()).into_owned();
             let (target, content) = match raw.find(super::is_xml_space) {
                 Some(i) => (
                     raw[..i].to_string(),
@@ -870,6 +921,20 @@ mod tests {
         assert!(Document::from_str("<![CDATA[x]]><a/>").is_err());
         assert!(Document::from_str("&amp;<a/>").is_err());
         assert!(Document::from_str("<!-- only a comment -->").is_err());
+    }
+
+    #[test]
+    fn the_nesting_limit_is_exact() {
+        let nested = |depth: usize| "<a>".repeat(depth) + &"</a>".repeat(depth);
+        assert!(Document::from_str(&nested(MAX_DEPTH)).is_ok());
+        assert!(Document::from_str(&nested(MAX_DEPTH + 1)).is_err());
+    }
+
+    #[test]
+    fn a_namespace_declaration_goes_out_of_scope_at_its_end_tag() {
+        assert!(Document::from_str(r#"<r><a xmlns:p="urn:p"><p:b/></a></r>"#).is_ok());
+        let error = Document::from_str(r#"<r><a xmlns:p="urn:p"/><p:b/></r>"#).unwrap_err();
+        assert!(error.to_string().contains('p'), "{error}");
     }
 
     #[test]

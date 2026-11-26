@@ -67,9 +67,13 @@ fn bench_full_validate_orders(c: &mut Criterion) {
         let source = orders_of(count);
         let document = Document::from_str(&source).unwrap();
         group.throughput(Throughput::Elements(count as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(count), &document, |b, document| {
-            b.iter(|| schema.validate_with(black_box(document), &options).unwrap());
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(count),
+            &document,
+            |b, document| {
+                b.iter(|| schema.validate_with(black_box(document), &options).unwrap());
+            },
+        );
     }
     group.finish();
 }
@@ -92,5 +96,9 @@ fn bench_streaming_validate_orders(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_full_validate_orders, bench_streaming_validate_orders);
+criterion_group!(
+    benches,
+    bench_full_validate_orders,
+    bench_streaming_validate_orders
+);
 criterion_main!(benches);

@@ -35,7 +35,10 @@ fn main() -> schematron::Result<()> {
     let report = schema.validate(&document)?;
 
     println!("=== text ===\n");
-    print!("{}", report.to_text_with(&TextOptions::verbose().with_label("order.xml")));
+    print!(
+        "{}",
+        report.to_text_with(&TextOptions::verbose().with_label("order.xml"))
+    );
 
     println!("\n=== SVRL, findings only ===\n");
     print!("{}", report.to_svrl_with(&SvrlOptions::findings_only()));

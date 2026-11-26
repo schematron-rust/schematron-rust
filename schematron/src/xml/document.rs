@@ -583,8 +583,17 @@ impl Document {
             }
             NodeKind::Text => self.push_positional_location_step(id, "text()", out),
             NodeKind::Comment => self.push_positional_location_step(id, "comment()", out),
+            // Processing instructions are counted per target, as an element
+            // is per name (`finalize_subtree`), so the step must name the
+            // target. Without it, `<?a?><?b?>` gives both the location
+            // `processing-instruction()[1]`. A target is an XML name, so it
+            // can never contain the quote.
             NodeKind::ProcessingInstruction => {
-                self.push_positional_location_step(id, "processing-instruction()", out);
+                out.push_str("processing-instruction('");
+                out.push_str(self.name(id).map_or("", |name| name.local.as_str()));
+                out.push_str("')[");
+                out.push_str(itoa(self.position_among_siblings(id)).as_str());
+                out.push(']');
             }
         }
     }
@@ -745,6 +754,9 @@ mod tests {
         assert_eq!(primary.location(second), "/x[1]/y[2]");
         assert!(primary.is_descendant_of(second, root));
         assert!(!primary.is_descendant_of(second, primary.root()));
+        // A node is not its own descendant.
+        assert!(!primary.is_descendant_of(root, root));
+        assert!(!primary.is_descendant_of(second, second));
     }
 
     #[test]
@@ -799,7 +811,7 @@ mod tests {
             } else if d.kind(child) == NodeKind::Comment {
                 assert!(location.contains("comment()"));
             } else if d.kind(child) == NodeKind::ProcessingInstruction {
-                assert!(location.contains("processing-instruction()"));
+                assert!(location.contains("processing-instruction('"));
             }
         }
     }

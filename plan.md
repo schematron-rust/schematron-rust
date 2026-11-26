@@ -29,8 +29,10 @@ a rule actually fires on the wrapper.
 
 ## Deferred by external prerequisites
 
-There is no remaining actionable repository or GitHub issue backlog in this
-assessment. These recorded items need evidence or state outside the checkout:
+The actionable backlog from the 2026-11-26 audits is in the
+[task list](tasks.md#audit-backlog-assessed-2026-11-26): confirmed XML
+conformance, location and multi-document output defects, plus GitHub issue
+#28. These recorded items need evidence or state outside the checkout:
 
 | Item | Prerequisite before work resumes |
 |---|---|

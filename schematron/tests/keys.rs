@@ -146,7 +146,10 @@ fn a_key_needs_all_three_attributes() {
         let source = schema_with(&format!(
             r#"{body}<pattern><rule context="a"><assert test="b">m</assert></rule></pattern>"#
         ));
-        assert!(Schema::from_str(&source).is_err(), "{body} should be rejected");
+        assert!(
+            Schema::from_str(&source).is_err(),
+            "{body} should be rejected"
+        );
     }
 }
 
@@ -232,8 +235,8 @@ fn calling_key_without_indexes_is_an_error() {
 fn keys_are_built_per_document_for_a_documents_pattern() {
     // A key indexes one document, as it does in XSLT — so a @documents
     // pattern gets indexes over its target, not over the instance.
-    use std::sync::Arc;
     use schematron::schema::{MemoryResolver, SchemaOptions};
+    use std::sync::Arc;
 
     let resolver = MemoryResolver::new().with(
         "external.xml",
@@ -253,8 +256,7 @@ fn keys_are_built_per_document_for_a_documents_pattern() {
     )
     .expect("schema should compile");
 
-    let document =
-        Document::from_str(r#"<root><ref href="external.xml"/></root>"#).unwrap();
+    let document = Document::from_str(r#"<root><ref href="external.xml"/></root>"#).unwrap();
     let report = schema.validate(&document).unwrap();
 
     // The index was built over the external document, where X exists and Y

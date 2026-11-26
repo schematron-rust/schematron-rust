@@ -264,9 +264,7 @@ impl SequenceType {
                     Some(crate::xml::NodeKind::Attribute) => "attribute",
                     Some(crate::xml::NodeKind::Text) => "text",
                     Some(crate::xml::NodeKind::Comment) => "comment",
-                    Some(crate::xml::NodeKind::ProcessingInstruction) => {
-                        "processing-instruction"
-                    }
+                    Some(crate::xml::NodeKind::ProcessingInstruction) => "processing-instruction",
                     Some(crate::xml::NodeKind::Root) => "document-node",
                     Some(crate::xml::NodeKind::Namespace) => "namespace-node",
                 };
@@ -794,6 +792,9 @@ mod tests {
     fn name_tests_display_prefixed_local_and_eqname_forms() {
         assert_eq!(NameTest::parse("p:a").to_string(), "p:a");
         assert_eq!(NameTest::parse("a").to_string(), "a");
-        assert_eq!(NameTest::eqname("urn:x".into(), "a".into()).to_string(), "Q{urn:x}a");
+        assert_eq!(
+            NameTest::eqname("urn:x".into(), "a".into()).to_string(),
+            "Q{urn:x}a"
+        );
     }
 }

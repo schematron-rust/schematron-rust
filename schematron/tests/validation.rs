@@ -14,7 +14,10 @@ fn failures(schema: &str, document: &str) -> Vec<String> {
     let schema = Schema::from_str(schema).expect("schema should compile");
     let document = Document::from_str(document).expect("document should parse");
     let report = schema.validate(&document).expect("validation should run");
-    report.failures().map(|f| f.text.trim().to_string()).collect()
+    report
+        .failures()
+        .map(|f| f.text.trim().to_string())
+        .collect()
 }
 
 /// As `failures`, but for successful reports.
@@ -22,7 +25,10 @@ fn reports(schema: &str, document: &str) -> Vec<String> {
     let schema = Schema::from_str(schema).expect("schema should compile");
     let document = Document::from_str(document).expect("document should parse");
     let report = schema.validate(&document).expect("validation should run");
-    report.reports().map(|r| r.text.trim().to_string()).collect()
+    report
+        .reports()
+        .map(|r| r.text.trim().to_string())
+        .collect()
 }
 
 /// Wraps pattern bodies in a schema envelope, to keep the tests readable.
@@ -54,7 +60,9 @@ fn a_successful_report_does_not_make_a_document_invalid() {
         r#"<pattern><rule context="a"><report test="b">has b</report></rule></pattern>"#,
     ))
     .unwrap();
-    let report = schema.validate(&Document::from_str("<a><b/></a>").unwrap()).unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a><b/></a>").unwrap())
+        .unwrap();
     assert!(report.is_valid());
     assert_eq!(report.reports().count(), 1);
 }
@@ -156,7 +164,9 @@ fn namespaced_documents_need_a_prefix_binding() {
            <pattern><rule context="n:a"><assert test="n:b">fires</assert></rule></pattern>"#,
     );
     let schema = Schema::from_str(&bound).unwrap();
-    let report = schema.validate(&Document::from_str(document).unwrap()).unwrap();
+    let report = schema
+        .validate(&Document::from_str(document).unwrap())
+        .unwrap();
     assert_eq!(report.count_fired_rules(), 1);
     assert!(report.is_valid());
 }
@@ -201,7 +211,10 @@ fn a_rule_level_let_sees_the_firing_node() {
              <assert test="false()"><value-of select="$n"/></assert>
            </rule></pattern>"#,
     );
-    assert_eq!(failures(&schema, "<r><a n='1'/><a n='2'/></r>"), vec!["1", "2"]);
+    assert_eq!(
+        failures(&schema, "<r><a n='1'/><a n='2'/></r>"),
+        vec!["1", "2"]
+    );
 }
 
 #[test]
@@ -227,7 +240,10 @@ fn phases_select_which_patterns_run() {
     assert_eq!(full.count_failures(), 2);
 
     let all = schema
-        .validate_with(&document, &ValidateOptions::new().with_phase(PhaseSelection::All))
+        .validate_with(
+            &document,
+            &ValidateOptions::new().with_phase(PhaseSelection::All),
+        )
         .unwrap();
     assert_eq!(all.count_failures(), 2);
 }
@@ -259,7 +275,9 @@ fn diagnostics_are_instantiated_in_the_assertion_context() {
            </diagnostics>"#,
     );
     let schema = Schema::from_str(&schema).unwrap();
-    let report = schema.validate(&Document::from_str("<a n='4'/>").unwrap()).unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a n='4'/>").unwrap())
+        .unwrap();
     let failure = report.failures().next().unwrap();
     assert_eq!(failure.diagnostics.len(), 1);
     assert_eq!(failure.diagnostics[0].text.trim(), "n is 4");
@@ -273,7 +291,9 @@ fn subject_moves_the_reported_location() {
            </rule></pattern>"#,
     ))
     .unwrap();
-    let report = schema.validate(&Document::from_str("<a><b/></a>").unwrap()).unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a><b/></a>").unwrap())
+        .unwrap();
     assert_eq!(report.failures().next().unwrap().location, "/a[1]/b[1]");
 }
 
@@ -286,7 +306,9 @@ fn flags_and_roles_fall_back_from_assertion_to_rule() {
            </rule></pattern>"#,
     ))
     .unwrap();
-    let report = schema.validate(&Document::from_str("<a/>").unwrap()).unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a/>").unwrap())
+        .unwrap();
     let found: Vec<_> = report.failures().collect();
     assert_eq!(found[0].flag.as_deref(), Some("error"));
     assert_eq!(found[0].role.as_deref(), Some("structure"));
@@ -309,7 +331,10 @@ fn abstract_patterns_are_instantiated_per_parameter_set() {
            </pattern>"#,
     );
     let found = failures(&schema, "<r><invoice/><order/></r>");
-    assert_eq!(found, vec!["a invoice needs a child", "a order needs a child"]);
+    assert_eq!(
+        found,
+        vec!["a invoice needs a child", "a order needs a child"]
+    );
 }
 
 #[test]
@@ -347,6 +372,48 @@ fn max_failures_stops_early() {
         .validate_with(&document, &ValidateOptions::new().with_max_failures(2))
         .unwrap();
     assert_eq!(limited.count_failures(), 2);
+}
+
+#[test]
+fn failure_flags_limit_what_counts_toward_the_cap() {
+    // A warning comes first in document order. Counting it would stop the
+    // run before the error is evaluated, and a caller keeping only errors
+    // would then see a clean report for an invalid document.
+    let schema = Schema::from_str(&schema_with(
+        r#"<pattern>
+             <rule context="a" flag="warning">
+               <assert test="false()">rule-level warning</assert>
+               <assert test="false()" flag="error">own error</assert>
+             </rule>
+           </pattern>"#,
+    ))
+    .unwrap();
+    let document = Document::from_str("<r><a/><a/></r>").unwrap();
+
+    let uncounted = schema
+        .validate_with(&document, &ValidateOptions::new().with_max_failures(1))
+        .unwrap();
+    let texts: Vec<_> = uncounted.failures().map(|f| f.text.trim()).collect();
+    assert_eq!(texts, vec!["rule-level warning"]);
+
+    let options = ValidateOptions::new()
+        .with_max_failures(1)
+        .with_failure_flags(["error"]);
+    assert_eq!(options.failure_flags, vec!["error".to_string()]);
+    let counted = schema.validate_with(&document, &options).unwrap();
+    let found: Vec<_> = counted
+        .failures()
+        .map(|f| (f.flag.as_deref(), f.text.trim()))
+        .collect();
+    // The warning is still reported; only the error counted, and the run
+    // stopped at the first one.
+    assert_eq!(
+        found,
+        vec![
+            (Some("warning"), "rule-level warning"),
+            (Some("error"), "own error")
+        ]
+    );
 }
 
 #[test]
@@ -405,7 +472,13 @@ fn one_schema_validates_many_documents_concurrently() {
         .collect();
 
     let counts: Vec<usize> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-    assert_eq!(counts.iter().try_fold(0_usize, |total, n| total.checked_add(*n)).unwrap(), 4);
+    assert_eq!(
+        counts
+            .iter()
+            .try_fold(0_usize, |total, n| total.checked_add(*n))
+            .unwrap(),
+        4
+    );
 }
 
 #[test]
@@ -463,4 +536,24 @@ fn out_of_range_run_options_are_rejected() {
     schema
         .validate_with(&document, &edge)
         .expect("the edge values are valid");
+}
+
+#[test]
+fn an_absolute_context_is_not_mistaken_for_a_descendant_match() {
+    // `/node()/b` has the same two-step shape as the rooted form of a bare
+    // name, but its first step is `child::`, so it matches only children of
+    // the document element: one `b` here, not both.
+    let schema = Schema::from_str(&schema_with(
+        r#"<pattern><rule context="/node()/b"><report test="true()">b</report></rule></pattern>
+           <pattern><rule context="/descendant-or-self::x/b"><report test="true()">xb</report></rule></pattern>"#,
+    ))
+    .unwrap();
+    let document = Document::from_str("<r><b/><x><b/></x></r>").unwrap();
+    let report = schema.validate(&document).unwrap();
+    let found: Vec<_> = report
+        .reports()
+        .map(|r| (r.location.as_str(), r.text.trim()))
+        .collect();
+    assert_eq!(found, vec![("/r[1]/b[1]", "b"), ("/r[1]/x[1]/b[1]", "xb")]);
+    assert_eq!(report.count_fired_rules(), 2);
 }

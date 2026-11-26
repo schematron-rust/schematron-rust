@@ -56,7 +56,9 @@ fn document(lines: usize) -> Document {
         if i % 5 == 0 {
             source.push_str(&format!("<line qty=\"{qty}\" amount=\"50\"/>"));
         } else {
-            source.push_str(&format!("<line qty=\"{qty}\" amount=\"5\"><sku>S-{i}</sku></line>"));
+            source.push_str(&format!(
+                "<line qty=\"{qty}\" amount=\"5\"><sku>S-{i}</sku></line>"
+            ));
         }
     }
     source.push_str("</order>");
@@ -114,9 +116,7 @@ fn repeated_parallel_runs_agree_with_each_other() {
 #[test]
 fn pattern_order_is_preserved() {
     let schema = multi_pattern_schema();
-    let report = schema
-        .validate_with(&document(10), &parallel())
-        .unwrap();
+    let report = schema.validate_with(&document(10), &parallel()).unwrap();
 
     let ids: Vec<&str> = report
         .patterns
@@ -210,9 +210,7 @@ fn an_error_in_one_pattern_still_surfaces() {
     )
     .unwrap();
     let document = Document::from_str("<a/>").unwrap();
-    let error = schema
-        .validate_with(&document, &parallel())
-        .unwrap_err();
+    let error = schema.validate_with(&document, &parallel()).unwrap_err();
     assert_contains!(error.to_string(), "$elsewhere");
 }
 
@@ -263,4 +261,39 @@ fn phases_are_honoured_under_parallel_evaluation() {
     let report = schema.validate_with(&document, &options).unwrap();
     assert_eq!(report.count_failures(), 1);
     assert_eq!(report.failures().next().unwrap().text, "one");
+}
+
+#[test]
+fn many_more_patterns_than_threads_keep_schema_order() {
+    // Enough patterns that each worker gets a chunk of several, so the
+    // offset each result is filed under decides the order of the report.
+    let mut body = String::new();
+    for i in 0..100 {
+        body.push_str(&format!(
+            r#"<pattern id="p{i}"><rule context="line"><assert test="false()">p{i}</assert></rule></pattern>"#
+        ));
+    }
+    let schema = Schema::from_str(&format!(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">{body}</schema>"#
+    ))
+    .unwrap();
+    let document = Document::from_str("<order><line/><line/></order>").unwrap();
+
+    let sequential = schema
+        .validate_with(&document, &ValidateOptions::new())
+        .unwrap();
+    let parallel = schema
+        .validate_with(
+            &document,
+            &ValidateOptions::new().with_parallel_patterns(true),
+        )
+        .unwrap();
+    assert_eq!(parallel, sequential);
+    let ids: Vec<_> = parallel
+        .patterns
+        .iter()
+        .map(|p| p.id.clone().unwrap())
+        .collect();
+    let expected: Vec<_> = (0..100).map(|i| format!("p{i}")).collect();
+    assert_eq!(ids, expected);
 }

@@ -63,7 +63,10 @@ fn main() -> schematron::Result<()> {
     let options = SchemaOptions::new().with_resolver(Arc::new(resolver));
     let schema = Schema::from_str_with(MAIN, &options)?;
 
-    println!("compiled {} pattern(s) from includes", schema.patterns().len());
+    println!(
+        "compiled {} pattern(s) from includes",
+        schema.patterns().len()
+    );
 
     let document = Document::from_str("<order><line/></order>")?;
     let report = schema.validate(&document)?;

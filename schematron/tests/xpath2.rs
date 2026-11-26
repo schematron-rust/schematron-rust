@@ -25,12 +25,17 @@ fn schema_with(binding: &str, body: &str) -> String {
 fn check(test: &str, document: &str) -> bool {
     let source = schema_with(
         "xslt2",
-        &format!(r#"<pattern><rule context="a"><assert test="{test}">failed</assert></rule></pattern>"#),
+        &format!(
+            r#"<pattern><rule context="a"><assert test="{test}">failed</assert></rule></pattern>"#
+        ),
     );
     let schema = Schema::from_str(&source)
         .unwrap_or_else(|e| panic!("schema with test {test:?} should compile: {e}"));
     let document = Document::from_str(document).expect("document should parse");
-    schema.validate(&document).expect("validation should run").is_valid()
+    schema
+        .validate(&document)
+        .expect("validation should run")
+        .is_valid()
 }
 
 /// Like [`check`], but with `document`'s base URI set first — for the
@@ -38,13 +43,18 @@ fn check(test: &str, document: &str) -> bool {
 fn check_with_base(test: &str, document: &str, base: &str) -> bool {
     let source = schema_with(
         "xslt2",
-        &format!(r#"<pattern><rule context="a"><assert test="{test}">failed</assert></rule></pattern>"#),
+        &format!(
+            r#"<pattern><rule context="a"><assert test="{test}">failed</assert></rule></pattern>"#
+        ),
     );
     let schema = Schema::from_str(&source)
         .unwrap_or_else(|e| panic!("schema with test {test:?} should compile: {e}"));
     let mut document = Document::from_str(document).expect("document should parse");
     document.set_base_uri(base);
-    schema.validate(&document).expect("validation should run").is_valid()
+    schema
+        .validate(&document)
+        .expect("validation should run")
+        .is_valid()
 }
 
 /// The compile error for a test under a binding, if it does not compile.
@@ -96,7 +106,10 @@ fn a_conditional_evaluates_only_the_taken_branch() {
     // it is evaluated — and is not caught at compile time, because operand
     // types are not known until there is a document.
     assert!(check("if (true()) then true() else boolean(1 | 2)", "<a/>"));
-    assert!(check("if (false()) then boolean(1 | 2) else true()", "<a/>"));
+    assert!(check(
+        "if (false()) then boolean(1 | 2) else true()",
+        "<a/>"
+    ));
 }
 
 #[test]
@@ -279,7 +292,10 @@ fn an_absurd_range_is_an_error_rather_than_an_allocation() {
 
 #[test]
 fn for_iterates_and_concatenates() {
-    assert!(check("count(for $b in b return $b) = 3", "<a><b/><b/><b/></a>"));
+    assert!(check(
+        "count(for $b in b return $b) = 3",
+        "<a><b/><b/><b/></a>"
+    ));
     // The bound variable is a node, so a path can continue from it.
     assert!(check(
         "count(for $b in b return $b/c) = 2",
@@ -308,7 +324,10 @@ fn every_is_true_for_an_empty_input_and_some_is_false() {
 #[test]
 fn quantifiers_work_over_a_constructed_sequence() {
     assert!(check("some $n in (1 to 10) satisfies $n = 7", "<a/>"));
-    assert!(check("every $n in (2, 4, 6) satisfies $n mod 2 = 0", "<a/>"));
+    assert!(check(
+        "every $n in (2, 4, 6) satisfies $n mod 2 = 0",
+        "<a/>"
+    ));
 }
 
 #[test]
@@ -316,10 +335,7 @@ fn a_bound_variable_does_not_escape_its_expression() {
     // `$b` is bound only inside the quantified expression. Referencing it
     // outside is an unbound variable, and since no `let` binds that name the
     // schema does not even compile.
-    let message = compile_error(
-        "xslt2",
-        "(every $b in b satisfies true()) and $b",
-    );
+    let message = compile_error("xslt2", "(every $b in b satisfies true()) and $b");
     assert_contains!(message, "$b");
 }
 
@@ -347,7 +363,10 @@ fn distinct_values_removes_duplicates_keeping_order() {
         "string-join(distinct-values((1, 2, 1, 3, 2)), ',') = '1,2,3'",
         "<a/>"
     ));
-    assert!(check("count(distinct-values(b)) = 2", "<a><b>x</b><b>y</b><b>x</b></a>"));
+    assert!(check(
+        "count(distinct-values(b)) = 2",
+        "<a><b>x</b><b>y</b><b>x</b></a>"
+    ));
 }
 
 #[test]
@@ -359,7 +378,10 @@ fn index_of_reports_one_based_positions() {
 
 #[test]
 fn reverse_reverses_a_sequence() {
-    assert!(check("string-join(reverse((1, 2, 3)), ',') = '3,2,1'", "<a/>"));
+    assert!(check(
+        "string-join(reverse((1, 2, 3)), ',') = '3,2,1'",
+        "<a/>"
+    ));
     assert!(check("count(reverse(())) = 0", "<a/>"));
 }
 
@@ -368,7 +390,10 @@ fn unordered_returns_every_item_unchanged() {
     // The result order is implementation-defined; this crate's choice is to
     // leave it as-is, so the count and membership are what's guaranteed.
     assert!(check("count(unordered((3, 1, 2))) = 3", "<a/>"));
-    assert!(check("string-join(unordered((3, 1, 2)), ',') = '3,1,2'", "<a/>"));
+    assert!(check(
+        "string-join(unordered((3, 1, 2)), ',') = '3,1,2'",
+        "<a/>"
+    ));
 }
 
 #[test]
@@ -425,7 +450,10 @@ fn remove_drops_one_item_by_position() {
 fn cardinality_checks_pass_through_a_matching_sequence() {
     assert!(check("count(zero-or-one(())) = 0", "<a/>"));
     assert!(check("zero-or-one((1)) = 1", "<a/>"));
-    assert!(check("string-join(one-or-more((1, 2)), ',') = '1,2'", "<a/>"));
+    assert!(check(
+        "string-join(one-or-more((1, 2)), ',') = '1,2'",
+        "<a/>"
+    ));
     assert!(check("exactly-one((1)) = 1", "<a/>"));
 }
 
@@ -450,7 +478,10 @@ fn cardinality_checks_raise_on_a_mismatch() {
 fn data_atomizes_nodes_and_passes_atomic_values_through() {
     assert!(check("data(@x) eq 'open'", r#"<a x="open"/>"#));
     assert!(check("data(1) = 1", "<a/>"));
-    assert!(check("string-join(data((@x, 'y')), ',') = 'open,y'", r#"<a x="open"/>"#));
+    assert!(check(
+        "string-join(data((@x, 'y')), ',') = 'open,y'",
+        r#"<a x="open"/>"#
+    ));
 }
 
 #[test]
@@ -614,12 +645,18 @@ fn check_at_fixed_time(test: &str, document: &str) -> bool {
 
 #[test]
 fn the_clock_reports_the_supplied_instant() {
-    assert!(check_at_fixed_time("current-date() = xs:date('2026-08-21Z')", "<a/>"));
+    assert!(check_at_fixed_time(
+        "current-date() = xs:date('2026-08-21Z')",
+        "<a/>"
+    ));
     assert!(check_at_fixed_time(
         "current-dateTime() = xs:dateTime('2026-08-21T12:00:00Z')",
         "<a/>"
     ));
-    assert!(check_at_fixed_time("year-from-date(current-date()) = 2026", "<a/>"));
+    assert!(check_at_fixed_time(
+        "year-from-date(current-date()) = 2026",
+        "<a/>"
+    ));
 }
 
 #[test]
@@ -628,8 +665,14 @@ fn the_canonical_schematron_example_now_runs() {
     // allowed" — the example Schematron is most often quoted with, and which
     // this crate could not run until dates existed.
     let test = "@ContractDate &lt; current-date()";
-    assert!(check_at_fixed_time(test, r#"<a ContractDate="2020-01-01"/>"#));
-    assert!(!check_at_fixed_time(test, r#"<a ContractDate="2099-12-31"/>"#));
+    assert!(check_at_fixed_time(
+        test,
+        r#"<a ContractDate="2020-01-01"/>"#
+    ));
+    assert!(!check_at_fixed_time(
+        test,
+        r#"<a ContractDate="2099-12-31"/>"#
+    ));
 }
 
 #[test]
@@ -1026,8 +1069,14 @@ fn duration_components_can_be_read() {
         "seconds-from-duration(xs:dayTimeDuration('P1DT2H30M15S')) = 15",
         "<a/>"
     ));
-    assert!(check("years-from-duration(xs:yearMonthDuration('P1Y6M')) = 1", "<a/>"));
-    assert!(check("months-from-duration(xs:yearMonthDuration('P1Y6M')) = 6", "<a/>"));
+    assert!(check(
+        "years-from-duration(xs:yearMonthDuration('P1Y6M')) = 1",
+        "<a/>"
+    ));
+    assert!(check(
+        "months-from-duration(xs:yearMonthDuration('P1Y6M')) = 6",
+        "<a/>"
+    ));
 }
 
 #[test]
@@ -1044,7 +1093,10 @@ fn a_negative_duration_signs_every_component() {
 
 #[test]
 fn a_component_accessor_refuses_the_wrong_subtype() {
-    let message = eval_error("days-from-duration(xs:yearMonthDuration('P1M')) = 0", "<a/>");
+    let message = eval_error(
+        "days-from-duration(xs:yearMonthDuration('P1M')) = 0",
+        "<a/>",
+    );
     assert_contains!(message, "xs:dayTimeDuration");
 }
 
@@ -1060,11 +1112,17 @@ fn adding_two_dates_is_an_error() {
 
 #[test]
 fn a_malformed_duration_is_an_error() {
-    let message = eval_error("xs:dayTimeDuration('P1X') eq xs:dayTimeDuration('P1D')", "<a/>");
+    let message = eval_error(
+        "xs:dayTimeDuration('P1X') eq xs:dayTimeDuration('P1D')",
+        "<a/>",
+    );
     assert_contains!(message, "P1X");
 
     // A month field in a dayTimeDuration is not a dayTimeDuration.
-    let message = eval_error("xs:dayTimeDuration('P1M') eq xs:dayTimeDuration('P1D')", "<a/>");
+    let message = eval_error(
+        "xs:dayTimeDuration('P1M') eq xs:dayTimeDuration('P1D')",
+        "<a/>",
+    );
     assert_contains!(message, "P1M");
 }
 
@@ -1211,7 +1269,10 @@ fn the_implicit_timezone_can_be_set() {
 
     // Read as UTC-5, the offsetless value is the same instant.
     let options = ValidateOptions::new().with_implicit_timezone(-5 * 60);
-    assert!(schema.validate_with(&document, &options).unwrap().is_valid());
+    assert!(schema
+        .validate_with(&document, &options)
+        .unwrap()
+        .is_valid());
 }
 
 #[test]
@@ -1285,7 +1346,10 @@ fn adjust_to_timezone_with_one_argument_uses_the_implicit_timezone() {
     let schema = Schema::from_str(&source).expect("schema should compile");
     let document = Document::from_str("<a/>").unwrap();
     let options = ValidateOptions::new().with_implicit_timezone(-5 * 60);
-    assert!(schema.validate_with(&document, &options).unwrap().is_valid());
+    assert!(schema
+        .validate_with(&document, &options)
+        .unwrap()
+        .is_valid());
 }
 
 #[test]
@@ -1305,7 +1369,10 @@ fn adjust_to_timezone_refuses_an_out_of_range_timezone() {
 
 #[test]
 fn implicit_timezone_reports_the_runs_setting() {
-    assert!(check("implicit-timezone() eq xs:dayTimeDuration('PT0S')", "<a/>"));
+    assert!(check(
+        "implicit-timezone() eq xs:dayTimeDuration('PT0S')",
+        "<a/>"
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -1341,7 +1408,10 @@ fn castable_as_checks_the_lexical_form() {
 
 #[test]
 fn cast_as_converts_and_the_result_is_usable() {
-    assert!(check("'2026-08-21' cast as xs:date eq xs:date('2026-08-21')", "<a/>"));
+    assert!(check(
+        "'2026-08-21' cast as xs:date eq xs:date('2026-08-21')",
+        "<a/>"
+    ));
     assert!(check("'12' cast as xs:integer = 12", "<a/>"));
     assert!(check("@n cast as xs:double + 1 = 3", r#"<a n="2"/>"#));
     assert!(check("'true' cast as xs:boolean", "<a/>"));
@@ -1428,10 +1498,19 @@ fn an_integer_is_also_a_decimal_but_not_a_double() {
 
 #[test]
 fn cast_as_tags_the_result_with_the_type_named() {
-    assert!(check("'1' cast as xs:integer instance of xs:integer", "<a/>"));
-    assert!(check("'1.5' cast as xs:decimal instance of xs:decimal", "<a/>"));
+    assert!(check(
+        "'1' cast as xs:integer instance of xs:integer",
+        "<a/>"
+    ));
+    assert!(check(
+        "'1.5' cast as xs:decimal instance of xs:decimal",
+        "<a/>"
+    ));
     assert!(check("'1.5' cast as xs:float instance of xs:float", "<a/>"));
-    assert!(check("'1.5' cast as xs:double instance of xs:double", "<a/>"));
+    assert!(check(
+        "'1.5' cast as xs:double instance of xs:double",
+        "<a/>"
+    ));
     // Casting itself is still lexical, unaffected by this: `'1'` is castable
     // as `xs:integer` whether or not the source text looks like one.
     assert!(check("'1' castable as xs:integer", "<a/>"));
@@ -1440,7 +1519,10 @@ fn cast_as_tags_the_result_with_the_type_named() {
 #[test]
 fn a_for_bound_item_keeps_its_tag() {
     // Binding a sequence item to a variable does not launder its type.
-    assert!(check("some $x in (1, 2) satisfies $x instance of xs:integer", "<a/>"));
+    assert!(check(
+        "some $x in (1, 2) satisfies $x instance of xs:integer",
+        "<a/>"
+    ));
     assert!(check(
         "(for $x in (1.5) return $x) instance of xs:decimal",
         "<a/>"
@@ -1456,7 +1538,10 @@ fn computed_numbers_are_still_double() {
     assert!(check("(1 + 1) instance of xs:double", "<a/>"));
     assert!(!check("(1 + 1) instance of xs:integer", "<a/>"));
     assert!(check("count((1, 2)) instance of xs:double", "<a/>"));
-    assert!(check("every $x in (1 to 3) satisfies $x instance of xs:double", "<a/>"));
+    assert!(check(
+        "every $x in (1 to 3) satisfies $x instance of xs:double",
+        "<a/>"
+    ));
 }
 
 #[test]
@@ -1480,7 +1565,10 @@ fn empty_sequence_matches_only_nothing() {
 
 #[test]
 fn treat_as_passes_through_or_errors() {
-    assert!(check("(b treat as element()) instance of element()", "<a><b/></a>"));
+    assert!(check(
+        "(b treat as element()) instance of element()",
+        "<a><b/></a>"
+    ));
 
     let message = eval_error("(b treat as attribute()) instance of node()", "<a><b/></a>");
     assert_contains!(message, "treat as");
@@ -1596,7 +1684,10 @@ fn nested_ranges_and_loops_are_bounded_together() {
 
     // Each of these is legitimate and must keep working.
     assert!(check("count(1 to 999999) = 999999", DOC));
-    assert!(check("count(for $i in 1 to 999 return for $j in 1 to 999 return $j) = 998001", DOC));
+    assert!(check(
+        "count(for $i in 1 to 999 return for $j in 1 to 999 return $j) = 998001",
+        DOC
+    ));
     assert!(check("count(for $i in 1 to 10 return $i * 2) = 10", DOC));
     assert!(check("some $i in 1 to 10 satisfies $i = 5", DOC));
 
@@ -1608,7 +1699,9 @@ fn nested_ranges_and_loops_are_bounded_together() {
     ] {
         let source = schema_with(
             "xslt2",
-            &format!(r#"<pattern><rule context="a"><assert test="{test}">m</assert></rule></pattern>"#),
+            &format!(
+                r#"<pattern><rule context="a"><assert test="{test}">m</assert></rule></pattern>"#
+            ),
         );
         let schema = Schema::from_str(&source).expect("it compiles; the cost is at evaluation");
         let document = Document::from_str(DOC).unwrap();
