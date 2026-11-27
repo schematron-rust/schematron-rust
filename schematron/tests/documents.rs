@@ -413,3 +413,29 @@ fn document_is_found_inside_every_nesting_construct() {
         assert_eq!(report.count_failures(), 0, "{test}");
     }
 }
+
+#[test]
+fn deep_equal_compares_whole_documents() {
+    // Same number of children at the root, different content.
+    let schema = schema_with(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+             <pattern><rule context="/a">
+               <assert test="not(deep-equal(document('x.xml'), document('y.xml')))">differ</assert>
+               <assert test="deep-equal(document('x.xml'), document('x2.xml'))">same</assert>
+             </rule></pattern>
+           </schema>"#,
+        &[
+            ("x.xml", "<r><x/></r>"),
+            ("y.xml", "<r><y/></r>"),
+            ("x2.xml", "<r><x/></r>"),
+        ],
+    );
+    let report = schema
+        .validate(&Document::from_str("<a/>").unwrap())
+        .unwrap();
+    let failures: Vec<_> = report
+        .failures()
+        .map(|f| f.text.trim().to_string())
+        .collect();
+    assert_is_empty!(failures);
+}

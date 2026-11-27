@@ -27,6 +27,10 @@ git history; this file starts where the first output-affecting change did.
   PIs the location `processing-instruction()[1]`. They are now
   `processing-instruction('a')[1]` and `processing-instruction('b')[1]`. This
   is an output change for SVRL, JSON and text reports on PIs.
+- **The simple map operator sets the context position and size.**
+  `(10, 20, 30) ! position()` was `(1, 1, 1)` and `last()` was always `1`. Each
+  item now has its position in the sequence and the sequence's length, per
+  XPath 3.0 §3.14. Found by mutation testing.
 - **XPath syntax errors show an excerpt of a long expression.** The message
   shows at most 60 characters either side of the error, with `…` marking each
   cut, so a 200 KB expression no longer floods the terminal.

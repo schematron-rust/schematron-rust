@@ -416,10 +416,10 @@ pub(crate) fn for_each_pair(
 /// the results.
 ///
 /// A multiplying construct exactly like `for-each`, so it shares the same
-/// budget — see [`SequenceScope`]. Per F&O, the context *position* and
-/// *size* are reset to 1 for every evaluation of `E2`; unlike an axis
-/// step's predicates, which see the step's own position and size among
-/// its siblings, `!` always presents a singleton.
+/// budget — see [`SequenceScope`]. Per XPath 3.0 section 3.14, each item's
+/// position in `E1`'s result is the context *position* and that result's
+/// length is the context *size*, so `(10, 20, 30) ! position()` is
+/// `(1, 2, 3)`.
 ///
 /// The interesting part is what "the context item" means for `.` when the
 /// item isn't a node. A node moves `context.node` exactly the way `for`'s
@@ -439,14 +439,18 @@ fn evaluate_simple_map(
     let _scope = SequenceScope::enter()?;
     let items = evaluate(left, context)?.into_items();
     spend_len(items.len())?;
-    let mut out = Vec::with_capacity(items.len());
-    for item in items {
+    let size = items.len();
+    let mut out = Vec::with_capacity(size);
+    // XPath 3.0 section 3.14: each item provides an inner focus, with its
+    // position in the sequence as the context position and the sequence's
+    // length as the context size.
+    for (position, item) in (1..).zip(items) {
         let inner = match item {
-            Item::Node(node) => context.focus(node, 1, 1),
+            Item::Node(node) => context.focus(node, position, size),
             other => EvalContext {
                 context_item: Some(other),
-                position: 1,
-                size: 1,
+                position,
+                size,
                 ..context.clone()
             },
         };
@@ -2098,6 +2102,68 @@ mod tests {
     }
 
     const DOC: &str = "<a><b id='1'>one</b><b id='2'>two</b><c><d/></c></a>";
+
+    /// Evaluates under `version`, returning the error message if any.
+    fn eval_error(version: XPathVersion, expression: &str) -> Option<String> {
+        let document = Document::from_str(DOC).unwrap();
+        let expr = parse(expression).unwrap();
+        let variables = Variables::new();
+        let namespaces = Namespaces::new();
+        let context = EvalContext::new(
+            &document,
+            document.document_element().unwrap(),
+            &variables,
+            &namespaces,
+        )
+        .with_version(version);
+        evaluate(&expr, &context).err().map(|e| e.message)
+    }
+
+    #[test]
+    fn functions_from_a_later_version_are_unknown_at_runtime() {
+        // The compiler refuses these first; a direct evaluate() call must too.
+        let v1 = eval_error(XPathVersion::V1, "upper-case('a')").unwrap();
+        assert!(v1.contains("is an XPath 2.0 function"), "{v1}");
+        let v2 = eval_error(XPathVersion::V2, "for-each((), ())").unwrap();
+        assert!(v2.contains("XPath 3.0"), "{v2}");
+        assert_eq!(eval_error(XPathVersion::V2, "upper-case('a')"), None);
+    }
+
+    #[test]
+    fn following_and_preceding_stop_at_a_subtree_boundary() {
+        // `d` is the last node of `c`'s subtree and of `a`'s.
+        assert_eq!(number(DOC, "count(c/following::node())"), 0.0);
+        assert_eq!(number(DOC, "count(c/d/preceding::*)"), 2.0);
+        assert_eq!(number(DOC, "count(b[1]/following::*)"), 3.0);
+    }
+
+    #[test]
+    fn a_position_predicate_needs_an_exact_match() {
+        // 1 + 2^-52 is a different number from 1, so it selects nothing.
+        assert_eq!(number(DOC, "count(b[1.0000000000000002])"), 0.0);
+        assert_eq!(number(DOC, "count(b[1.0])"), 1.0);
+    }
+
+    #[test]
+    fn id_matches_only_id_attributes() {
+        let source = "<a><b k='x'/><b id='y'/><b xml:id='z'/></a>";
+        assert_eq!(number(source, "count(id('x'))"), 0.0);
+        assert_eq!(number(source, "count(id('y z'))"), 2.0);
+    }
+
+    #[test]
+    fn equality_converts_by_the_xpath_one_precedence() {
+        // A node-set against a number compares each node's number.
+        assert!(boolean("<a><n>2</n><n>x</n></a>", "n = 2"));
+        assert!(!boolean("<a><n>2</n></a>", "n = 3"));
+        assert!(boolean("<a><n>2</n><n>3</n></a>", "n != 2"));
+        assert!(!boolean("<a><n>2</n></a>", "n != 2"));
+        // Neither side a node-set: a boolean on either side wins, then a number.
+        assert!(boolean(DOC, "true() = 'x'"));
+        assert!(boolean(DOC, "'x' = true()"));
+        assert!(boolean(DOC, "1 = '1.0'"));
+        assert!(boolean(DOC, "'1.0' = 1"));
+    }
 
     fn with_exhausted_sequence_budget<T>(
         run: impl FnOnce() -> Result<T, EvalError>,

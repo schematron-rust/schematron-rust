@@ -657,6 +657,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn operator_and_quantifier_keywords_are_spelled_as_written() {
+        assert_eq!(TypeOp::InstanceOf.as_str(), "instance of");
+        assert_eq!(TypeOp::CastableAs.as_str(), "castable as");
+        assert_eq!(TypeOp::CastAs.as_str(), "cast as");
+        assert_eq!(TypeOp::TreatAs.as_str(), "treat as");
+        assert_eq!(Quantifier::Some.as_str(), "some");
+        assert_eq!(Quantifier::Every.as_str(), "every");
+    }
+
+    #[test]
     fn reverse_axes_are_marked() {
         assert!(Axis::Ancestor.is_reverse());
         assert!(Axis::PrecedingSibling.is_reverse());

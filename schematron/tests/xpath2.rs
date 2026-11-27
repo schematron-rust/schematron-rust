@@ -1749,3 +1749,116 @@ fn a_timezone_that_overflows_minutes_is_refused() {
     );
     assert!(error.contains("outside the valid range"), "{error}");
 }
+
+#[test]
+fn ranges_from_zero_and_duration_types_are_exact() {
+    assert!(check("count(0 to 5) = 6", "<a/>"));
+    assert!(check(
+        "xs:dayTimeDuration('PT1H') instance of xs:duration",
+        "<a/>"
+    ));
+    assert!(check(
+        "not(xs:dayTimeDuration('PT1H') instance of xs:date)",
+        "<a/>"
+    ));
+}
+
+/// Whether validating `<a .../>` with `test` under `xslt2` is an evaluation error.
+fn evaluation_fails(test: &str, document: &str) -> Option<String> {
+    let source = schema_with(
+        "xslt2",
+        &format!(
+            r#"<pattern><rule context="a"><assert test="{test}">failed</assert></rule></pattern>"#
+        ),
+    );
+    let schema = Schema::from_str(&source).unwrap();
+    schema
+        .validate(&Document::from_str(document).unwrap())
+        .err()
+        .map(|e| e.to_string())
+}
+
+#[test]
+fn temporal_and_duration_operations_keep_their_types_and_signs() {
+    assert!(check(
+        "xs:date('2020-01-01') != xs:date('2020-01-02')",
+        "<a/>"
+    ));
+    assert!(check(
+        "not(xs:date('2020-01-01') != xs:date('2020-01-01'))",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:date('2020-01-01') instance of xs:anyAtomicType",
+        "<a/>"
+    ));
+    assert!(check(
+        "not(xs:date('2020-01-01') instance of xs:string)",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:dayTimeDuration('PT2H') - xs:dayTimeDuration('PT30M') = xs:dayTimeDuration('PT1H30M')",
+        "<a/>"
+    ));
+    assert!(check(
+        "xs:yearMonthDuration('P2Y') - xs:yearMonthDuration('P3M') = xs:yearMonthDuration('P1Y9M')",
+        "<a/>"
+    ));
+    assert_contains!(
+        evaluation_fails(
+            "xs:date('2020-01-01') lt xs:dateTime('2020-01-01T00:00:00')",
+            "<a/>"
+        )
+        .unwrap(),
+        "lt"
+    );
+}
+
+#[test]
+fn value_comparison_errors_name_the_general_comparison() {
+    for (op, general) in [
+        ("eq", "="),
+        ("ne", "!="),
+        ("lt", "<"),
+        ("le", "<="),
+        ("gt", ">"),
+        ("ge", ">="),
+    ] {
+        let message = evaluation_fails(&format!("(1, 2) {op} 1"), "<a/>").unwrap();
+        assert_contains!(message, &format!("use `{general}`"));
+    }
+}
+
+#[test]
+fn ranges_check_their_bounds_and_budget() {
+    assert_contains!(
+        evaluation_fails("count(1 to number('x')) = 0", "<a/>").unwrap(),
+        "must be numbers"
+    );
+    assert_contains!(
+        evaluation_fails("count(number('x') to 1) = 0", "<a/>").unwrap(),
+        "must be numbers"
+    );
+    // Ten items, far from either limit, however large the bounds are.
+    assert!(check("count(9000000 to 9000009) = 10", "<a/>"));
+    // Scopes close: a hundred sequential inner `for`s never nest.
+    assert!(check(
+        "sum(for $i in 1 to 100 return (for $j in 1 return $j)) = 100",
+        "<a/>"
+    ));
+}
+
+#[test]
+fn sequence_functions_compare_and_atomize_exactly() {
+    assert!(check("deep-equal(number('x'), number('x'))", "<a/>"));
+    assert!(check("not(deep-equal(number('x'), 1))", "<a/>"));
+    assert!(check(
+        "not(deep-equal(xs:date('2020-01-02'), xs:date('2020-01-01')))",
+        "<a/>"
+    ));
+    assert!(check("not(deep-equal(@x, @y))", "<a x='1' y='1'/>"));
+    assert!(check("deep-equal(@x, @x)", "<a x='1' y='1'/>"));
+    assert!(check("not(data(.) instance of node())", "<a>v</a>"));
+    assert!(check("string(max((1, number('x')))) = 'NaN'", "<a/>"));
+    assert!(check("string(min((number('x'), 1))) = 'NaN'", "<a/>"));
+}

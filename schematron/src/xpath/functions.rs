@@ -1771,6 +1771,13 @@ fn lang(wanted: &str, document: &Document, node: NodeId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_xpath_three_function_names_are_listed_sorted() {
+        let names = function_names_v3();
+        assert!(names.contains(&"for-each"), "{names:?}");
+        assert!(names.windows(2).all(|pair| pair[0] < pair[1]), "{names:?}");
+    }
     use crate::xpath::{Documents, Namespaces, Variables};
 
     #[test]

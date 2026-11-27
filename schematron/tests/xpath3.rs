@@ -454,12 +454,19 @@ fn simple_map_chains() {
 }
 
 #[test]
-fn simple_map_resets_context_position_and_size_to_one_each_time() {
-    // Unlike an axis step, `!` always presents a singleton to its right
-    // side — `position()` is 1 for every item, never the item's index in
-    // the sequence being mapped.
-    assert!(check("sum((10, 20, 30) ! position()) = 3", "<a/>"));
-    assert!(check("sum((10, 20, 30) ! last()) = 3", "<a/>"));
+fn simple_map_sets_the_context_position_and_size_from_the_sequence() {
+    // XPath 3.0 section 3.14: each item's position in the mapped sequence
+    // is the context position, and the sequence's length is the context
+    // size. Atomic items and nodes alike.
+    assert!(check(
+        "string-join((10, 20, 30) ! string(position()), ',') = '1,2,3'",
+        "<a/>"
+    ));
+    assert!(check("deep-equal((10, 20) ! last(), (2, 2))", "<a/>"));
+    assert!(check(
+        "string-join(b ! concat(position(), '/', last()), ',') = '1/2,2/2'",
+        "<a><b/><b/></a>"
+    ));
 }
 
 #[test]
@@ -591,4 +598,15 @@ fn function_lookup_with_an_arity_too_large_for_any_function_finds_none() {
         "empty(function-lookup('concat', 1000000000000000000000000000000))",
         "<a/>"
     ));
+}
+
+#[test]
+fn a_predicate_inside_a_simple_map_sees_the_node_not_the_mapped_item() {
+    // Inside `//a[...]`, `.` is the `a` node, never the string being mapped.
+    assert!(check("'s' ! count(//a[. = 'x']) = 1", "<a>x</a>"));
+}
+
+#[test]
+fn function_lookup_accepts_arity_zero() {
+    assert!(check("function-lookup('true', 0)()", "<a/>"));
 }

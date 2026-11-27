@@ -210,9 +210,11 @@ bounded by the same limit a triple-nested `for-each` is. See
 operator except a path step itself — real XPath 3.0's grammar nests
 `UnionExpr` around `SimpleMapExpr`, so `a ! b | c` means `(a ! b) | c`, and
 `RangeExpr` around that in turn, so `1 to 2 ! f()` means `1 to (2 ! f())`.
-Per F&O, the context *position* and *size* are reset to `1` for every
-evaluation of `E2`, unlike an axis step's predicates, which see the step's
-own position among its siblings.
+Each item provides an inner focus. The item is the context item, its
+position in `E1`'s result is the context *position*, and that result's
+length is the context *size*, so `(10, 20, 30) ! position()` is `(1, 2, 3)`
+and `(10, 20) ! last()` is `(2, 2)`.
+[XPath 3.0 §3.14](https://www.w3.org/TR/xpath-30/#id-map-operator)
 
 `.` is how `E2` refers to the current item — the same way a path step's
 predicate refers to the node it is testing. When the item is a **node**,

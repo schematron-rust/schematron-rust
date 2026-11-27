@@ -509,6 +509,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_document_registry_counts_what_it_holds() {
+        let mut documents = Documents::new();
+        assert!(documents.is_empty());
+        assert_eq!(documents.len(), 0);
+        documents.insert("a.xml", None, "a.xml", NodeId(1));
+        documents.insert("b.xml", None, "b.xml", NodeId(2));
+        assert!(!documents.is_empty());
+        assert_eq!(documents.len(), 2);
+    }
+
+    #[test]
     fn inner_binding_shadows_outer() {
         let mut vars = Variables::new();
         vars.bind("x", Value::Number(1.0, NumericType::default()));
