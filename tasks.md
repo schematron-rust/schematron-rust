@@ -140,10 +140,14 @@ inputs.
 
 ### Open GitHub issue
 
-- [ ] **#28 Exact `xs:decimal`.** Under XPath 2.0, `0.1 + 0.2 = 0.3` is false
+- [x] **#28 Exact `xs:decimal`.** Under XPath 2.0, `0.1 + 0.2 = 0.3` is false
   because decimals are tagged `f64`. This is a representation change across
   arithmetic, comparison, `sum()`/`avg()` and formatting, not a local patch.
   Specify it in `spec/xpath2/` before writing code.
+  Done on branch `exact-decimal`, using `rust_decimal` (28 digits) and
+  specified in "Exact decimal arithmetic" in `spec/xpath2/`. Under xslt2,
+  `0.1 + 0.2 = 0.3`, and 18-digit integers print exactly. XPath 1.0 output
+  is unchanged, and `xpath_one_numbers_are_still_doubles` checks it.
 
 ### Engineering gaps worth doing (from the Mistral list, verified absent)
 

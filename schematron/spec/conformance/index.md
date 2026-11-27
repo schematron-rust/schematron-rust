@@ -113,7 +113,10 @@ Not supported, by design:
 ## Numeric behaviour
 
 XPath 1.0 numbers are IEEE 754 doubles, and the crate uses `f64` directly, so
-`0.1 + 0.2 != 0.3` here exactly as it does in every other conformant engine.
+under an XPath 1.0 binding `0.1 + 0.2 != 0.3` here exactly as it does in every
+other conformant engine. Under XPath 2.0 and 3.0, `xs:integer` and
+`xs:decimal` are exact, so `0.1 + 0.2 = 0.3`; see "Exact decimal arithmetic"
+in [xpath2/](../xpath2/index.md).
 Number-to-string conversion follows XPath 1.0's format, not Rust's `Display`.
 
 ## Limits

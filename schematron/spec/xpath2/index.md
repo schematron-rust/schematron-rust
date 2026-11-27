@@ -335,9 +335,8 @@ An empty operand is `false` for `castable as`, and the empty sequence for
 
 ### Numbers, and what `instance of` reports
 
-The crate holds every number as an IEEE 754 double, as XPath 1.0 requires and
-as the whole engine's arithmetic is built on — that never changes. What
-*does* change, since phase 4, is that a number also carries a static
+Under XPath 1.0 the crate holds every number as an IEEE 754 double, as
+XPath 1.0 requires. Under XPath 2.0 and 3.0 a number also carries a
 `xs:integer`/`xs:decimal`/`xs:float`/`xs:double` tag, tracked wherever XPath
 2.0 defines it unambiguously and lexically: a numeric literal as written, and
 the result of an explicit `cast as`/`castable as`, or the matching atomic
@@ -367,20 +366,65 @@ that happened to be a harmless-looking default. It isn't — `1` is an
 `IntegerLiteral`, typed `xs:integer`, which does not derive from `xs:double`
 — so real XPath 2.0 says `false`, and the crate now agrees.
 
-**What stays deliberately untracked.** Arithmetic (`+ - * div mod`), every
-function in the library, and `for`'s `to` ranges always produce `xs:double`,
-never the operand's own type — this crate does not implement XPath 2.0's
-full numeric type promotion (where, say, `1 + 1` would stay `xs:integer`).
-Threading a type lattice through every arithmetic operation and every
-numeric function is the risk [roadmap/](../roadmap/index.md) weighs phase 4
-against; tracking only literals, casts, and constructors closes the concrete gap above
-without taking it on:
+### Exact decimal arithmetic
+
+`xs:integer` and `xs:decimal` are exact. Each value of either type carries
+an exact decimal beside its nearest double, using the
+[`rust_decimal`](https://docs.rs/rust_decimal) representation: 96 bits of
+coefficient and a scale of up to 28, so 28 or 29 significant digits, above
+the 18 that XML Schema Part 2 requires of a conforming processor.
+`xs:float` and `xs:double` stay IEEE 754 doubles.
+
+Arithmetic follows XPath 2.0's numeric promotion (XPath 2.0 §B.2, F&O §6.2):
+
+| Operands | `+` `-` `*` `mod` | `div` |
+|---|---|---|
+| integer and integer | `xs:integer`, exact | `xs:decimal`, exact to 28 places |
+| integer or decimal, both exact | `xs:decimal`, exact | `xs:decimal`, exact to 28 places |
+| either one `xs:float`, `xs:double`, or untyped | `xs:double`, IEEE 754 | `xs:double`, IEEE 754 |
+
+An untyped operand, such as an attribute or element value, is converted to
+`xs:double` as XPath 2.0 specifies for arithmetic. To keep exactness, cast it:
+`xs:decimal(@price) * 3`. Unary minus keeps its operand's type.
 
 | Expression | Result |
 |---|---|
-| `(1 + 1) instance of xs:integer` | false — arithmetic always widens to double |
-| `(1 + 1) instance of xs:double` | true |
-| `count((1, 2)) instance of xs:double` | true |
+| `0.1 + 0.2 = 0.3` | true |
+| `string(0.1 + 0.2)` | `"0.3"` |
+| `(0.1 + 0.2) instance of xs:decimal` | true |
+| `(1 + 1) instance of xs:integer` | true |
+| `(4 div 2) instance of xs:decimal` | true; integer division yields a decimal |
+| `string(1 div 3)` | `"0.3333333333333333333333333333"`, 28 places |
+| `string(123456789012345678 + 1)` | `"123456789012345679"` |
+| `(1 + xs:double(1)) instance of xs:double` | true; a double operand promotes |
+| `(@n + 1) instance of xs:double` | true; an untyped operand is a double |
+
+Division or `mod` by zero with two exact operands is an evaluation error
+(`FOAR0001`), as XPath 2.0 requires. With a double operand it remains an
+infinity or `NaN`. A result outside the representable range (about
+±7.9 × 10^28) is an evaluation error (`FOAR0002`), never a silently rounded
+double.
+
+Exact values compare exactly in `=`, `!=`, `<`, `<=`, `>`, `>=`, `eq`, `ne`, `lt`,
+`le`, `gt`, `ge` and `deep-equal()` when both sides are exact. Otherwise both are
+compared as doubles. `sum()`, `avg()`, `min()`, `max()`, `abs()`, `floor()`,
+`ceiling()` and `round()` keep an all-exact input exact: `sum()` of integers is an `xs:integer`, and `avg()` of exact values is
+an `xs:decimal`. A `to` range yields `xs:integer` items. Other library
+functions, such as `count()` and `string-length()`, still return `xs:double`.
+
+An exact value converts to a string in its canonical form: no exponent, no
+trailing fractional zeros, and no decimal point when it is integral, so
+`string(1.50)` is `"1.5"` and `string(2.0)` is `"2"`. Casting a double to
+`xs:decimal` or `xs:integer` reads the double's shortest string, so
+`xs:decimal(0.1e0)` is exactly `0.1`.
+
+A numeric literal is exact when it fits the representation. A longer
+fractional part is rounded to 28 places. An integer or decimal literal
+larger in magnitude than about 7.9 × 10^28 becomes an `xs:double`.
+
+**XPath 1.0 is unchanged.** Under the `xslt` and `xpath` bindings every
+number is a double, every literal included, so `string(123456789012345678)`
+is still `"123456789012345680"` there, as XPath 1.0 requires.
 
 Casting and `castable as` themselves are unaffected by any of this, because
 they still read the lexical form rather than a tracked type — lexical is the

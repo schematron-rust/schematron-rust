@@ -277,29 +277,29 @@ Reversing them breaks `a and (b)`, which shipped broken in 0.1.0.
 
 - Test: `src/xpath/lexer.rs::tests::operator_names_beat_function_names`
 
-### A number's tracked type never changes how it is computed
+### Exact numbers exist only under XPath 2.0, and never change a double
 
-`Value::Number`/`Item::Number` carry a `NumericType` tag (`Integer`,
-`Decimal`, `Float`, `Double`) so `instance of` can answer what a number's
-declared type is — but every function that touches the `f64` next to the tag
-(`to_number`, arithmetic, `format_number`, comparisons) strips the tag first
-and is otherwise unchanged from before the tag existed. Only two things ever
-set a tag more specific than `Double`: a numeric literal, tagged lexically at
-the lexer (`1` is `Integer`, `1.0` is `Decimal`, regardless of value); and an
-explicit `cast as`/`castable as`. Arithmetic, every function in the library,
-and `for`'s `to` ranges always produce `Double`.
+`Value::Number`/`Item::Number` carry a `NumericType`. `Integer` and
+`Decimal` hold the exact value as a `rust_decimal::Decimal`; the `f64`
+beside them is its nearest double, and every path that reads the `f64`
+(`to_number`, node and string comparisons, the double arithmetic) is
+unchanged. Three things create an exact number: a numeric literal (tagged
+lexically at the lexer, so `1` is `Integer` and `1.0` is `Decimal`), an
+explicit `cast as` or constructor such as `xs:decimal()`, and a `to` range
+(`Integer` items). Exact arithmetic, exact comparison, the canonical decimal
+string, and the exact `sum`/`avg`/`min`/`max`/`abs`/`floor`/`ceiling`/`round`
+apply only when every operand is exact, and live in `src/xpath/decimal.rs`.
 
-Do not extend the tag to track anything through arithmetic or a function
-result — that is a deliberate, documented limit
-(`spec/xpath2/`, "Numbers, and what `instance of` reports"), not an
-oversight to "complete." Threading a numeric type lattice through every
-arithmetic operation and function is exactly the risk weighed against, and
-rejected, in `spec/roadmap/` before this tag was added.
+**Under XPath 1.0 there are no exact numbers.** A literal evaluated under a
+1.0 binding is `Double` (`eval.rs`, `literal_number`), and `to` ranges and
+casts are 2.0 syntax. Exactness is therefore keyed off the value alone, with
+no version check at each use, and an XPath 1.0 result can never change. Keep
+it that way: anything that would create an exact number must be unreachable
+from a 1.0 expression. See "Exact decimal arithmetic" in `spec/xpath2/`.
 
 - Test: `tests/xpath2.rs::a_literal_carries_the_type_it_is_written_as`
-- Test: `tests/xpath2.rs::computed_numbers_are_still_double`
-
-## Performance
+- Test: `tests/xpath2.rs::exact_arithmetic_follows_xpath_two_promotion`
+- Test: `tests/xpath2.rs::xpath_one_numbers_are_still_doubles`
 
 ### Expressions are parsed once per schema, not once per document
 

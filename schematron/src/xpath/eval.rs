@@ -10,6 +10,9 @@ use super::ast::{
     SequenceType, Step, TypeOp,
 };
 use super::context::EvalContext;
+use std::cmp::Ordering;
+
+use super::decimal::{self, Exact};
 use super::functions;
 use super::numeric;
 use super::temporal::{add_months, add_seconds, Duration, DurationKind, Temporal, TemporalKind};
@@ -66,7 +69,7 @@ impl std::error::Error for EvalError {}
 pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalError> {
     match expr {
         Expr::Literal(text) => Ok(Value::String(text.clone())),
-        Expr::Number(value, numeric_type) => Ok(Value::Number(*value, *numeric_type)),
+        Expr::Number(value, numeric_type) => Ok(literal_number(*value, *numeric_type, context)),
 
         Expr::Variable(name) => {
             let key = name.to_string();
@@ -83,13 +86,7 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
             })
         }
 
-        Expr::Negate(inner) => {
-            let value = evaluate(inner, context)?;
-            Ok(Value::Number(
-                -value.to_number(context.document),
-                NumericType::Double,
-            ))
-        }
+        Expr::Negate(inner) => Ok(negate(&evaluate(inner, context)?, context.document)),
 
         Expr::Binary(op, left, right) => evaluate_binary(*op, left, right, context),
 
@@ -554,6 +551,9 @@ fn evaluate_binary(
             if has_temporal(&left) || has_temporal(&right) {
                 return compare_temporals(op, &left, &right, context);
             }
+            if let Some(ordering) = decimal::compare(&left, &right) {
+                return Ok(Value::Boolean((ordering == Ordering::Equal) == want_equal));
+            }
             Ok(Value::Boolean(compare_equality(
                 &left, &right, document, want_equal,
             )))
@@ -563,6 +563,9 @@ fn evaluate_binary(
             reject_function_item(op.as_str(), &left, &right)?;
             if has_temporal(&left) || has_temporal(&right) {
                 return compare_temporals(op, &left, &right, context);
+            }
+            if let Some(ordering) = decimal::compare(&left, &right) {
+                return Ok(Value::Boolean(ordering_satisfies(op, ordering)));
             }
             Ok(Value::Boolean(compare_relational(
                 op, &left, &right, document,
@@ -586,6 +589,10 @@ fn evaluate_binary(
         }
 
         Eager::Arithmetic(op) => {
+            // Two exact operands stay exact, with XPath 2.0's promotion.
+            if let (Some(a), Some(b)) = (Exact::of_value(&left), Exact::of_value(&right)) {
+                return decimal::arithmetic(op, a, b).map(Exact::into_value);
+            }
             let a = left.to_number(document);
             let b = right.to_number(document);
             let result = match op {
@@ -599,9 +606,8 @@ fn evaluate_binary(
             };
             Ok(Value::Number(
                 result,
-                // Arithmetic always yields `xs:double`, never the operands'
-                // own type — this crate does not implement XPath 2.0's
-                // numeric type promotion. See `spec/xpath2/`.
+                // Any non-exact operand promotes the result to `xs:double`.
+                // See "Exact decimal arithmetic" in `spec/xpath2/`.
                 NumericType::Double,
             ))
         }
@@ -1155,9 +1161,9 @@ fn numeric_type_matches(ty: NumericType, local: &str) -> bool {
         (_, "anyAtomicType")
             | (NumericType::Double, "double")
             | (NumericType::Float, "float")
-            | (NumericType::Decimal | NumericType::Integer, "decimal")
+            | (NumericType::Decimal(_) | NumericType::Integer(_), "decimal")
             | (
-                NumericType::Integer,
+                NumericType::Integer(_),
                 "integer" | "long" | "int" | "short" | "byte"
             )
     )
@@ -1191,19 +1197,28 @@ pub(super) fn cast_item(item: &Item, type_name: &str, document: &Document) -> Re
             };
             Item::Number(number, numeric_type)
         }
+        // Exact: the lexical form is read as a decimal, never through a
+        // double, so `xs:decimal('0.1')` is exactly 0.1. A value too large
+        // for the representation is refused, as XPath 2.0's FOCA0001 does.
         "decimal" => {
-            let number = super::value::parse_number(&text);
-            if number.is_nan() || number.is_infinite() {
-                return Err(reject());
+            let exact = super::decimal::parse_lexical(&text).ok_or_else(reject)?;
+            super::decimal::Exact {
+                value: exact,
+                integer: false,
             }
-            Item::Number(number, NumericType::Decimal)
+            .into_item()
         }
         "integer" | "long" | "int" | "short" | "byte" => {
             let number = super::value::parse_number(&text);
             if number.is_nan() || number.fract() != 0.0 {
                 return Err(reject());
             }
-            Item::Number(number, NumericType::Integer)
+            let exact = super::decimal::parse_lexical(&text).ok_or_else(reject)?;
+            super::decimal::Exact {
+                value: exact.trunc().normalize(),
+                integer: true,
+            }
+            .into_item()
         }
         // The parse errors carry the specific reason; the framing is added
         // here so that every failed cast reads the same way whatever the
@@ -1504,6 +1519,13 @@ fn compare_items(
 
     match (&a, &b) {
         (Item::String(x), Item::String(y)) => Ok(Some(x.cmp(y))),
+        (Item::Number(_, tx), Item::Number(_, ty))
+            if Exact::of(*tx).is_some() && Exact::of(*ty).is_some() =>
+        {
+            Ok(Exact::of(*tx)
+                .zip(Exact::of(*ty))
+                .map(|(x, y)| x.value.cmp(&y.value)))
+        }
         (Item::Number(x, _), Item::Number(y, _)) => Ok(x.partial_cmp(y)),
         (Item::Boolean(x), Item::Boolean(y)) => Ok(Some(x.cmp(y))),
         (Item::Temporal(x), Item::Temporal(y)) if x.kind() == y.kind() => {
@@ -1519,6 +1541,36 @@ fn compare_items(
             b.type_name(),
             general_counterpart(op)
         ))),
+    }
+}
+
+/// A numeric literal's value. XPath 1.0 has one numeric type, so a 1.0
+/// literal is a double whatever its lexical form; only 2.0 and later keep it
+/// exact. See "Exact decimal arithmetic" in `spec/xpath2/`.
+fn literal_number(value: f64, numeric_type: NumericType, context: &EvalContext<'_>) -> Value {
+    if context.version.is_v2() {
+        Value::Number(value, numeric_type)
+    } else {
+        Value::Number(value, NumericType::Double)
+    }
+}
+
+/// Unary minus: an exact number keeps its type, anything else is a double.
+fn negate(value: &Value, document: &Document) -> Value {
+    if let Some(exact) = Exact::of_value(value) {
+        decimal::negate(exact).into_value()
+    } else {
+        Value::Number(-value.to_number(document), NumericType::Double)
+    }
+}
+
+/// Whether `ordering` satisfies a relational operator (`<`, `<=`, `>`, `>=`).
+const fn ordering_satisfies(op: BinaryOp, ordering: Ordering) -> bool {
+    match op {
+        BinaryOp::Less => matches!(ordering, Ordering::Less),
+        BinaryOp::LessEqual => !matches!(ordering, Ordering::Greater),
+        BinaryOp::Greater => matches!(ordering, Ordering::Greater),
+        _ => !matches!(ordering, Ordering::Less),
     }
 }
 
@@ -1709,9 +1761,13 @@ fn range_items(from: f64, to: f64) -> Result<Vec<Item>, EvalError> {
     let mut items = Vec::new();
     let mut current = from;
     while current <= to {
-        // `to` is arithmetic-flavoured, not a literal or a cast, so its
-        // items are `xs:double` like every other computed number.
-        items.push(Item::Number(current, NumericType::Double));
+        // XPath 2.0 types a range's items as `xs:integer`. `current` is
+        // integral here; fallback: `xs:double`, for a bound beyond the
+        // `i64` range, where no exact integer could be formed anyway.
+        let numeric_type = numeric::f64_to_i64(current).map_or(NumericType::Double, |integer| {
+            NumericType::Integer(rust_decimal::Decimal::from(integer))
+        });
+        items.push(Item::Number(current, numeric_type));
         current += 1.0;
     }
     Ok(items)

@@ -5,6 +5,19 @@ git history; this file starts where the first output-affecting change did.
 
 ## Unreleased
 
+- **Exact `xs:integer` and `xs:decimal` under XPath 2.0 and 3.0** (issue #28).
+  These two types now hold an exact decimal (28 digits, via the new
+  `rust_decimal` dependency) beside the nearest double. Arithmetic follows XPath
+  2.0's numeric promotion: `0.1 + 0.2 = 0.3`, `1 + 1` is an `xs:integer`,
+  `4 div 2` is an `xs:decimal`, and `string(123456789012345678 + 1)` is exact.
+  Comparisons, `sum`/`avg`/`min`/`max`, `abs`/`floor`/`ceiling`/`round`, `to`
+  ranges (now `xs:integer`), and number-to-string conversion follow suit. Exact
+  division or `mod` by zero is now the error `FOAR0001` rather than an infinity,
+  and exact overflow is `FOAR0002`. `xs:decimal('1e3')`, which is not a decimal
+  literal, and values too large to hold exactly are refused. XPath 1.0 bindings
+  are unchanged. Breaking for 0.x: `NumericType::Integer` and
+  `NumericType::Decimal` now carry a `Decimal`, which `schematron::xpath`
+  re-exports.
 - **`--flag` with `--max-failures` no longer passes invalid documents.** The cap
   counted every failed assertion before `--flag` filtered the report, so an
   earlier warning could use it up and the CLI printed `no findings` and exited 0

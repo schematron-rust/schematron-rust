@@ -24,6 +24,9 @@ clap = { version = "4", features = ["derive"], optional = true }
 # writing one is out of scope. Pure Rust; default features trimmed to what
 # XML Schema regular expressions actually use.
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "unicode-gencat"] }
+# XPath 2.0's xs:integer and xs:decimal are exact. Pure Rust; 28 digits of
+# precision, above the 18 XML Schema requires. See spec/xpath2/.
+rust_decimal = { version = "1", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 assertables = "10"

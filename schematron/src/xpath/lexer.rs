@@ -514,19 +514,25 @@ impl<'a> Lexer<'a> {
         // is a decimal even though it equals the integer `1`. There is no
         // exponent syntax in this grammar, so DoubleLiteral is never
         // produced here.
-        let numeric_type = if self.peek() == Some(b'.') {
+        let is_decimal = self.peek() == Some(b'.');
+        if is_decimal {
             self.position += 1;
             while self.peek().is_some_and(|c| c.is_ascii_digit()) {
                 self.position += 1;
             }
-            NumericType::Decimal
-        } else {
-            NumericType::Integer
-        };
+        }
         let text = &self.input[start..self.position];
         let value = text
             .parse::<f64>()
             .expect("the numeric-token grammar only admits valid f64 syntax");
+        // The literal's exact value rides with it; evaluation under XPath 1.0
+        // reads it as a double instead. One too large to hold exactly is an
+        // `xs:double`. See "Exact decimal arithmetic" in spec/xpath2/.
+        let numeric_type = match super::decimal::parse_lexical(text) {
+            Some(exact) if is_decimal => NumericType::Decimal(exact),
+            Some(exact) => NumericType::Integer(exact),
+            None => NumericType::Double,
+        };
         self.push(TokenKind::Number(value, numeric_type), start);
     }
 
@@ -686,6 +692,14 @@ fn is_name_char(c: u8) -> bool {
 mod tests {
     use super::*;
 
+    fn integer(value: i64) -> NumericType {
+        NumericType::Integer(rust_decimal::Decimal::from(value))
+    }
+
+    fn decimal(text: &str) -> NumericType {
+        NumericType::Decimal(text.parse().unwrap())
+    }
+
     fn kinds(input: &str) -> Vec<TokenKind> {
         tokenize(input)
             .unwrap()
@@ -702,7 +716,7 @@ mod tests {
             (TokenKind::NodeType("text".into()), "text"),
             (TokenKind::FunctionName("count".into()), "count()"),
             (TokenKind::Literal("x".into()), "'x'"),
-            (TokenKind::Number(2.0, NumericType::Integer), "2"),
+            (TokenKind::Number(2.0, integer(2)), "2"),
             (TokenKind::Variable("v".into()), "$v"),
             (TokenKind::Slash, "/"),
             (TokenKind::DoubleSlash, "//"),
@@ -807,7 +821,7 @@ mod tests {
             vec![
                 TokenKind::Name("string-length".into()),
                 TokenKind::Hash,
-                TokenKind::Number(1.0, NumericType::Integer),
+                TokenKind::Number(1.0, integer(1)),
             ]
         );
         assert_eq!(
@@ -900,18 +914,9 @@ mod tests {
 
     #[test]
     fn numbers_with_and_without_a_leading_digit() {
-        assert_eq!(
-            kinds("1"),
-            vec![TokenKind::Number(1.0, NumericType::Integer)]
-        );
-        assert_eq!(
-            kinds(".5"),
-            vec![TokenKind::Number(0.5, NumericType::Decimal)]
-        );
-        assert_eq!(
-            kinds("1.5"),
-            vec![TokenKind::Number(1.5, NumericType::Decimal)]
-        );
+        assert_eq!(kinds("1"), vec![TokenKind::Number(1.0, integer(1))]);
+        assert_eq!(kinds(".5"), vec![TokenKind::Number(0.5, decimal("0.5"))]);
+        assert_eq!(kinds("1.5"), vec![TokenKind::Number(1.5, decimal("1.5"))]);
     }
 
     #[test]
@@ -995,7 +1000,7 @@ mod tests {
             vec![
                 TokenKind::Variable("x".into()),
                 TokenKind::Assign,
-                TokenKind::Number(1.0, NumericType::Integer),
+                TokenKind::Number(1.0, integer(1)),
             ]
         );
         assert_eq!(kinds("child::a")[1], TokenKind::ColonColon);

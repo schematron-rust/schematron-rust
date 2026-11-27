@@ -8,6 +8,7 @@
 //! validated, so `contains(@x)` is an error the moment the schema loads.
 
 use super::context::EvalContext;
+use super::decimal::{self, Exact};
 use super::eval::{cast_item, EvalError};
 use super::numeric;
 use super::temporal::{
@@ -416,6 +417,16 @@ fn call_known(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<V
         // is -Infinity instead of Infinity.
         "sum" => {
             let items = aggregate_items(name, &args[0], context.version)?;
+            // All-exact input stays exact. The empty sum keeps the double
+            // `0` below, which XPath 1.0 requires and 2.0 prints the same.
+            if let Some(numbers) = decimal::all_exact(&items).filter(|numbers| !numbers.is_empty())
+            {
+                return decimal::sum(&numbers)
+                    .map(Exact::into_value)
+                    .ok_or_else(|| {
+                        EvalError::new("FOAR0002: sum() is outside the range of xs:decimal")
+                    });
+            }
             Ok(double(
                 items
                     .iter()
@@ -423,9 +434,7 @@ fn call_known(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<V
                     .fold(0.0, |a, b| a + b),
             ))
         }
-        "floor" => Ok(double(args[0].to_number(document).floor())),
-        "ceiling" => Ok(double(args[0].to_number(document).ceil())),
-        "round" => Ok(double(round_half_up(args[0].to_number(document)))),
+        "floor" | "ceiling" | "round" => rounding(name, &args[0], document),
 
         "current" => Ok(Value::NodeSet(vec![context.current])),
 
@@ -472,21 +481,20 @@ fn call_v2(name: &str, args: &[Value], context: &EvalContext<'_>) -> Result<Valu
         "xs:string" | "xs:boolean" | "xs:integer" | "xs:decimal" | "xs:float" | "xs:double" => {
             atomic_constructor(name, args, context)
         }
-        "abs" => Ok(double(args[0].to_number(document).abs())),
-        "min" => Ok(double(extreme(args, document, f64::min))),
-        "max" => Ok(double(extreme(args, document, f64::max))),
-        "avg" => {
-            let numbers = numbers_of(args, document);
-            if numbers.is_empty() {
-                // XPath 2.0's avg() of an empty sequence is the empty
-                // sequence; without sequences, NaN is the honest analogue and
-                // behaves the same way in every comparison.
-                return Ok(double(f64::NAN));
+        "abs" => Ok(match Exact::of_value(&args[0]) {
+            Some(exact) => Exact {
+                value: exact.value.abs(),
+                ..exact
             }
-            // Folded from `0.0` for the same reason as `sum()` above.
-            let total: f64 = numbers.iter().fold(0.0, |a, b| a + b);
-            as_f64(numbers.len()).map(|count| double(total / count))
-        }
+            .into_value(),
+            None => double(args[0].to_number(document).abs()),
+        }),
+        "min" | "max" => Ok(match exact_sequence(&args[0]) {
+            Some(numbers) => exact_extreme(name, &numbers),
+            None if name == "min" => double(extreme(args, document, f64::min)),
+            None => double(extreme(args, document, f64::max)),
+        }),
+        "avg" => average(args, document),
         "exists" => Ok(Value::Boolean(!sequence_items(&args[0]).is_empty())),
         "empty" => Ok(Value::Boolean(sequence_items(&args[0]).is_empty())),
         "string-join" => {
@@ -1448,6 +1456,98 @@ fn numbers_of(args: &[Value], document: &Document) -> Vec<f64> {
         // A single scalar is a one-item sequence in XPath 2.0 terms.
         other => vec![other.to_number(document)],
     }
+}
+
+/// `floor()`, `ceiling()` and `round()`: exact for an exact number, keeping
+/// its type, and on the double otherwise.
+fn rounding(name: &str, value: &Value, document: &Document) -> Result<Value, EvalError> {
+    if let Some(exact) = Exact::of_value(value) {
+        return exact_rounding(name, exact);
+    }
+    let number = value.to_number(document);
+    Ok(double(match name {
+        "floor" => number.floor(),
+        "ceiling" => number.ceil(),
+        _ => round_half_up(number),
+    }))
+}
+
+/// `avg()`: exact when every input is, and on doubles otherwise.
+fn average(args: &[Value], document: &Document) -> Result<Value, EvalError> {
+    if let Some(numbers) = exact_sequence(&args[0]) {
+        return exact_average(&numbers);
+    }
+    let numbers = numbers_of(args, document);
+    if numbers.is_empty() {
+        // XPath 2.0's avg() of an empty sequence is the empty
+        // sequence; without sequences, NaN is the honest analogue and
+        // behaves the same way in every comparison.
+        return Ok(double(f64::NAN));
+    }
+    // Folded from `0.0` for the same reason as `sum()`.
+    let total: f64 = numbers.iter().fold(0.0, |a, b| a + b);
+    as_f64(numbers.len()).map(|count| double(total / count))
+}
+
+/// The exact numbers of a non-empty, all-exact sequence argument.
+///
+/// Exact numbers exist only under XPath 2.0 and later, so this is `None` for
+/// every XPath 1.0 argument.
+fn exact_sequence(value: &Value) -> Option<Vec<Exact>> {
+    decimal::all_exact(&sequence_items(value)).filter(|numbers| !numbers.is_empty())
+}
+
+/// `floor()`, `ceiling()` and `round()` of an exact number, keeping its type.
+fn exact_rounding(name: &str, exact: Exact) -> Result<Value, EvalError> {
+    let rounded = match name {
+        "floor" => Some(exact.value.floor()),
+        "ceiling" => Some(exact.value.ceil()),
+        // Halfway goes towards positive infinity, as for doubles.
+        _ => exact
+            .value
+            .checked_add(rust_decimal::Decimal::new(5, 1))
+            .map(|half_up| half_up.floor()),
+    };
+    rounded
+        .map(|value| Exact { value, ..exact }.into_value())
+        .ok_or_else(|| {
+            EvalError::new(format!(
+                "FOAR0002: {name}() is outside the range of xs:decimal"
+            ))
+        })
+}
+
+/// `min()` or `max()` of an all-exact sequence. The result is an
+/// `xs:integer` only when every input is one, as XPath 2.0's promotion of
+/// the inputs to a common type gives.
+fn exact_extreme(name: &str, numbers: &[Exact]) -> Value {
+    let integer = numbers.iter().all(|number| number.integer);
+    let chosen = if name == "min" {
+        numbers.iter().map(|number| number.value).min()
+    } else {
+        numbers.iter().map(|number| number.value).max()
+    };
+    chosen.map_or(Value::Sequence(Vec::new()), |value| {
+        Exact { value, integer }.into_value()
+    })
+}
+
+/// `avg()` of an all-exact sequence: an `xs:decimal`.
+fn exact_average(numbers: &[Exact]) -> Result<Value, EvalError> {
+    let overflow = || EvalError::new("FOAR0002: avg() is outside the range of xs:decimal");
+    let total = decimal::sum(numbers).ok_or_else(overflow)?;
+    let count = rust_decimal::Decimal::from(numbers.len());
+    total
+        .value
+        .checked_div(count)
+        .map(|value| {
+            Exact {
+                value,
+                integer: false,
+            }
+            .into_value()
+        })
+        .ok_or_else(overflow)
 }
 
 /// `min()` and `max()`, which differ only in the comparison.

@@ -1054,7 +1054,7 @@ impl Parser {
             Some(TokenKind::Name(name)) if self.peek() == Some(&TokenKind::Hash) => {
                 self.index += 1; // `#`
                 match self.advance() {
-                    Some(TokenKind::Number(value, super::value::NumericType::Integer))
+                    Some(TokenKind::Number(value, super::value::NumericType::Integer(_)))
                         if value >= 0.0 =>
                     {
                         if let Some(arity) = numeric::f64_to_usize(value) {

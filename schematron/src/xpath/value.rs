@@ -9,6 +9,7 @@ use super::ast::Expr;
 use super::context::Variables;
 use super::temporal::{Duration, Temporal};
 use crate::xml::{Document, NodeId};
+use rust_decimal::Decimal;
 use std::sync::Arc;
 
 /// An XPath 1.0 value.
@@ -50,31 +51,30 @@ pub enum Value {
 /// Which XPath 2.0 numeric type a [`Value::Number`]/[`Item::Number`]
 /// statically carries.
 ///
-/// This tags a number's declared type; it never changes how the `f64` next
-/// to it is computed. Arithmetic (`+ - * div mod`), every function in the
-/// XPath function library, and `for`'s `to` ranges always produce
-/// [`NumericType::Double`] — exactly the single-double behaviour the crate
-/// had before this type existed. Only three things carry a more specific tag:
-/// a numeric literal as written (`1` is [`NumericType::Integer`], `1.5` is
-/// [`NumericType::Decimal`] — XPath 2.0 assigns these types lexically, not
-/// by value, so `1.0` is a decimal even though it equals the integer `1`),
-/// an explicit `cast as`/`castable as`, and the equivalent atomic constructor
-/// such as `xs:decimal()`.
+/// The exact types, [`NumericType::Integer`] and [`NumericType::Decimal`],
+/// hold the exact value; the `f64` beside them is its nearest double. They
+/// exist only under XPath 2.0 and later: a numeric literal as written (`1` is
+/// an integer, `1.5` a decimal — XPath 2.0 assigns these types lexically, so
+/// `1.0` is a decimal even though it equals the integer `1`), an explicit
+/// `cast as` or constructor such as `xs:decimal()`, a `to` range, and
+/// arithmetic or aggregation over exact operands. Under XPath 1.0 every number
+/// is [`NumericType::Double`].
 ///
 /// `xs:integer` derives from `xs:decimal` by restriction in XML Schema, so
 /// `instance of xs:decimal` also matches [`NumericType::Integer`].
 /// `xs:float` and `xs:double` are separate primitive types with no
 /// derivation between them or `xs:decimal`, so they match nothing but
-/// themselves. See `spec/xpath2/` for the full account, including the
-/// deliberate limit that only literals, casts, and constructors are tracked.
+/// themselves. See "Exact decimal arithmetic" in `spec/xpath2/`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum NumericType {
     /// `xs:integer` (and its further restrictions `xs:long`, `xs:int`,
-    /// `xs:short`, `xs:byte`, which this crate does not distinguish from it).
-    Integer,
-    /// `xs:decimal`.
-    Decimal,
+    /// `xs:short`, `xs:byte`, which this crate does not distinguish from it),
+    /// holding the exact integer. The `f64` beside it is its nearest double.
+    Integer(Decimal),
+    /// `xs:decimal`, holding the exact decimal. The `f64` beside it is its
+    /// nearest double. See "Exact decimal arithmetic" in `spec/xpath2/`.
+    Decimal(Decimal),
     /// `xs:float`.
     Float,
     /// `xs:double` — the type every number had before this enum existed,
@@ -187,7 +187,7 @@ impl Item {
         match self {
             Item::Node(node) => document.string_value(*node),
             Item::String(text) => text.clone(),
-            Item::Number(number, _) => format_number(*number),
+            Item::Number(number, numeric_type) => format_typed_number(*number, *numeric_type),
             Item::Boolean(boolean) => if *boolean { "true" } else { "false" }.to_string(),
             Item::Temporal(temporal) => temporal.to_lexical(),
             Item::Duration(duration) => duration.to_lexical(),
@@ -352,7 +352,7 @@ impl Value {
                 .first()
                 .map_or_else(String::new, |&n| document.string_value(n)),
             Value::Boolean(b) => if *b { "true" } else { "false" }.to_string(),
-            Value::Number(n, _) => format_number(*n),
+            Value::Number(n, numeric_type) => format_typed_number(*n, *numeric_type),
             Value::String(s) => s.clone(),
             // The string value of a sequence is its first item's, matching
             // how a node-set behaves; XPath 2.0 makes a multi-item sequence a
@@ -372,7 +372,7 @@ impl Value {
         match self {
             Value::NodeSet(_) | Value::Sequence(_) => String::new(),
             Value::Boolean(b) => if *b { "true" } else { "false" }.to_string(),
-            Value::Number(n, _) => format_number(*n),
+            Value::Number(n, numeric_type) => format_typed_number(*n, *numeric_type),
             Value::String(s) => s.clone(),
         }
     }
@@ -455,6 +455,15 @@ pub fn parse_number(input: &str) -> f64 {
         return f64::NAN;
     }
     trimmed.parse::<f64>().unwrap_or(f64::NAN)
+}
+
+/// Formats a number by its type: an exact `xs:integer` or `xs:decimal` in its
+/// canonical decimal form, anything else as [`format_number`] formats a double.
+fn format_typed_number(number: f64, numeric_type: NumericType) -> String {
+    match super::decimal::Exact::of(numeric_type) {
+        Some(exact) => super::decimal::format(exact.value),
+        None => format_number(number),
+    }
 }
 
 /// Formats a number as XPath 1.0's `string()` function does.
@@ -674,7 +683,7 @@ mod tests {
             (Item::Node(attribute), " 12 ", 12.0, "node"),
             (Item::String(" 7 ".into()), " 7 ", 7.0, "string"),
             (
-                Item::Number(2.5, NumericType::Decimal),
+                Item::Number(2.5, NumericType::Decimal(Decimal::new(25, 1))),
                 "2.5",
                 2.5,
                 "number",
@@ -735,7 +744,7 @@ mod tests {
             (Value::NodeSet(vec![element]), "node-set", "19", 19.0),
             (Value::Boolean(true), "boolean", "true", 1.0),
             (
-                Value::Number(19.0, NumericType::Integer),
+                Value::Number(19.0, NumericType::Integer(Decimal::from(19))),
                 "number",
                 "19",
                 19.0,

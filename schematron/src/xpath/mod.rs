@@ -56,6 +56,7 @@
 
 mod ast;
 mod context;
+mod decimal;
 mod eval;
 mod functions;
 mod lexer;
@@ -83,6 +84,10 @@ pub use functions::{
     check_function, check_regex, function_names, function_names_v2, function_names_v3,
 };
 pub use parser::{parse, ParseError, MAX_RECURSION_DEPTH};
+/// The exact decimal held by [`NumericType::Integer`] and
+/// [`NumericType::Decimal`], re-exported so a caller need not depend on
+/// `rust_decimal` directly.
+pub use rust_decimal::Decimal;
 pub use value::{
     flatten_into_sequence, format_number, parse_number, FunctionItem, Item, NumericType, Value,
 };

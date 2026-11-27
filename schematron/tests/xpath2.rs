@@ -1530,18 +1530,120 @@ fn a_for_bound_item_keeps_its_tag() {
 }
 
 #[test]
-fn computed_numbers_are_still_double() {
-    // Deliberately out of scope: this crate tracks a numeric type only for
-    // literals and explicit casts. Arithmetic, every function in the
-    // library, and `to` ranges always produce `xs:double`, exactly as
-    // before this hierarchy existed. Documented in spec/xpath2/.
-    assert!(check("(1 + 1) instance of xs:double", "<a/>"));
-    assert!(!check("(1 + 1) instance of xs:integer", "<a/>"));
-    assert!(check("count((1, 2)) instance of xs:double", "<a/>"));
+fn exact_arithmetic_follows_xpath_two_promotion() {
+    // "Exact decimal arithmetic" in spec/xpath2/, row by row.
+    for test in [
+        "0.1 + 0.2 = 0.3",
+        "string(0.1 + 0.2) = '0.3'",
+        "(0.1 + 0.2) instance of xs:decimal",
+        "(1 + 1) instance of xs:integer",
+        "(7 mod 2) instance of xs:integer",
+        "(2 * 3) instance of xs:integer",
+        "(4 div 2) instance of xs:decimal",
+        "not((4 div 2) instance of xs:integer)",
+        "string(1 div 3) = '0.3333333333333333333333333333'",
+        "string(123456789012345678 + 1) = '123456789012345679'",
+        "123456789012345678 != 123456789012345679",
+        "123456789012345678 lt 123456789012345679",
+        "(1 + xs:double(1)) instance of xs:double",
+        "(@n + 1) instance of xs:double",
+        "(xs:decimal(@n) + 1) instance of xs:decimal",
+        "string(-(0.5)) = '-0.5'",
+        "(-1) instance of xs:integer",
+        "string(1.50) = '1.5'",
+        "string(2.0) = '2'",
+        "string(xs:decimal('0012.3400')) = '12.34'",
+        "xs:decimal(xs:double(0.1)) = 0.1",
+        "string(xs:integer('10.0')) = '10'",
+        "deep-equal(0.1 + 0.2, 0.3)",
+        "0.3 = (for $x in (0.1, 0.2) return $x + 0.1)",
+        "every $x in (1 to 3) satisfies $x instance of xs:integer",
+        "count((1, 2)) instance of xs:double",
+        // General comparisons, each operator, exactly.
+        "0.1 + 0.2 <= 0.3",
+        "0.3 >= 0.1 + 0.2",
+        "not(0.1 + 0.2 < 0.3)",
+        "not(0.1 + 0.2 > 0.3)",
+        "123456789012345678 < 123456789012345679",
+        "123456789012345679 > 123456789012345678",
+    ] {
+        assert!(check(test, "<a n='2'/>"), "{test}");
+    }
+}
+
+#[test]
+fn exact_aggregates_and_rounding_keep_their_type() {
+    for test in [
+        "sum((0.1, 0.2)) = 0.3",
+        "sum((1, 2)) instance of xs:integer",
+        "sum((1, 2.5)) instance of xs:decimal",
+        "sum(()) = 0",
+        "avg((1, 2)) instance of xs:decimal",
+        "string(avg((1, 2))) = '1.5'",
+        "min((3, 1.5, 2)) = 1.5",
+        "min((3, 1.5)) instance of xs:decimal",
+        "max((3, 1, 2)) instance of xs:integer",
+        "max((3, 1, 2)) = 3",
+        "string(abs(-0.25)) = '0.25'",
+        "abs(-2) instance of xs:integer",
+        "string(floor(-1.5)) = '-2'",
+        "string(ceiling(1.25)) = '2'",
+        "string(round(2.5)) = '3'",
+        "string(round(-2.5)) = '-2'",
+        "floor(1.5) instance of xs:decimal",
+        "round(1) instance of xs:integer",
+        // Not all exact: the double path, as before.
+        "sum((1, xs:double(2))) instance of xs:double",
+        "max((1, xs:double(2))) instance of xs:double",
+        "avg((1, xs:double(2))) = 1.5",
+        "floor(xs:double(1.5)) = 1",
+    ] {
+        assert!(check(test, "<a/>"), "{test}");
+    }
+}
+
+#[test]
+fn exact_division_by_zero_and_overflow_are_errors() {
+    for (test, code) in [
+        ("1 div 0 = 0", "FOAR0001"),
+        ("1.5 mod 0 = 0", "FOAR0001"),
+        ("79228162514264337593543950335 + 1 = 0", "FOAR0002"),
+        ("79228162514264337593543950335 * 2 = 0", "FOAR0002"),
+        ("sum((79228162514264337593543950335, 1)) = 0", "FOAR0002"),
+        ("avg((79228162514264337593543950335, 1)) = 0", "FOAR0002"),
+        ("round(79228162514264337593543950335) = 0", "FOAR0002"),
+    ] {
+        assert_contains!(evaluation_fails(test, "<a/>").unwrap(), code);
+    }
+    // With a double operand, IEEE 754 as before.
+    assert!(check("string(1 div xs:double(0)) = 'Infinity'", "<a/>"));
+    // Too large to be exact: a literal is a double, a cast is refused.
     assert!(check(
-        "every $x in (1 to 3) satisfies $x instance of xs:double",
+        "100000000000000000000000000000 instance of xs:double",
         "<a/>"
     ));
+    assert!(evaluation_fails("xs:decimal('100000000000000000000000000000') = 0", "<a/>").is_some());
+    assert!(evaluation_fails("xs:decimal('1e3') = 0", "<a/>").is_some());
+    assert!(evaluation_fails("xs:integer('100000000000000000000000000000') = 0", "<a/>").is_some());
+}
+
+#[test]
+fn xpath_one_numbers_are_still_doubles() {
+    let schema = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern><rule context="a">
+               <report test="true()">[<value-of select="123456789012345678"/>|<value-of select="0.1 + 0.2"/>|<value-of select="1 div 0"/>]</report>
+             </rule></pattern>
+           </schema>"#,
+    )
+    .unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a/>").unwrap())
+        .unwrap();
+    assert_eq!(
+        report.reports().next().unwrap().text,
+        "[123456789012345680|0.30000000000000004|Infinity]"
+    );
 }
 
 #[test]
