@@ -3,7 +3,7 @@
 Releases of the `schematron` crate. Earlier entries than 0.4.0 are in the
 git history; this file starts where the first output-affecting change did.
 
-## Unreleased
+## 0.18.0 - 2026-11-27
 
 - **Operator chains of any length compile.** A chain of more than 32 operands,
   such as a 33-way `@x = 'a' or @x = 'b' or …` or a 40-term sum, was refused as
