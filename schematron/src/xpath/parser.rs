@@ -21,7 +21,10 @@ use super::numeric;
 /// The limit counts nested sub-expressions: parentheses, predicates,
 /// function arguments, and unary minus. It does not count the length of a
 /// location path, which is parsed iteratively, so `a/b/c/…` of any length is
-/// fine. Thirty-two is far beyond any expression a person writes; the
+/// fine. A chain of `or`, `and`, `|` or `||` is grouped as a balanced tree and
+/// counts that tree's height, about log2 of its operands, so it is fine too;
+/// see `Parser::parse_associative_chain`. A chain of any other operator
+/// counts one level per operand. Thirty-two is far beyond any expression a person writes; the
 /// ceiling is set by how much stack one nesting level costs in an
 /// unoptimised build, where each level descends the whole precedence chain
 /// — and needs deliberate headroom, not just whatever survives today's
@@ -94,6 +97,7 @@ pub fn parse(input: &str) -> Result<Expr, ParseError> {
         tokens,
         index: 0,
         depth: 0,
+        peak: 0,
         length: input.len(),
     };
     let expr = parser.parse_expr()?;
@@ -111,6 +115,10 @@ struct Parser {
     tokens: Vec<Token>,
     index: usize,
     depth: usize,
+    /// The deepest `depth` reached since it was last reset. An associative
+    /// chain reads it to learn how deeply its operands nest, so the balanced
+    /// tree built from them can be checked against the limit as a whole.
+    peak: usize,
     length: usize,
 }
 
@@ -208,6 +216,7 @@ impl Parser {
         )]
         let deeper = self.depth + 1;
         self.depth = deeper;
+        self.peak = self.peak.max(deeper);
         Ok(())
     }
 
@@ -382,16 +391,72 @@ impl Parser {
         Ok(left)
     }
 
+    /// A chain of one associative operator (`or`, `and`, `|`, `||`).
+    ///
+    /// Read left to right, evaluated left to right, and so the same as
+    /// [`Parser::parse_binary_chain`] in every result and error. Only the tree
+    /// differs: the operands are grouped as a balanced tree instead of a
+    /// left-leaning one. Each operand is still visited first to last, and
+    /// `or` and `and` still short-circuit in the same order, but the tree is
+    /// only about log2(n) levels deep, where a left-leaning one is n deep. The
+    /// code that walks it, evaluates it and drops it recurses once per level,
+    /// so an `or` of 500 alternatives needs 9 levels of stack, not 500.
+    ///
+    /// The limit applies to that height plus the deepest nesting inside any
+    /// operand, which is what a walk of the finished tree recurses through.
+    fn parse_associative_chain(
+        &mut self,
+        operand: fn(&mut Self) -> Result<Expr, ParseError>,
+        op_of: fn(&TokenKind) -> Option<BinaryOp>,
+    ) -> Result<Expr, ParseError> {
+        let start = self.depth;
+        let outer_peak = std::mem::replace(&mut self.peak, start);
+        let collected = self.collect_operands(operand, op_of);
+        let inner_peak = std::mem::replace(&mut self.peak, outer_peak);
+        let (operands, op) = collected?;
+
+        let (tree, height) = balanced_chain(op, operands);
+        // Fallback: 0 — `peak` starts at `start` and only rises, so this
+        // never underflows.
+        let nesting = inner_peak.checked_sub(start).unwrap_or(OUTERMOST_DEPTH);
+        let deepest = start
+            .checked_add(height)
+            .and_then(|d| d.checked_add(nesting));
+        if deepest.is_none_or(|deepest| deepest > MAX_RECURSION_DEPTH) {
+            return self.error(format!(
+                "expression nested deeper than the limit of {MAX_RECURSION_DEPTH}"
+            ));
+        }
+        self.peak = self.peak.max(deepest.unwrap_or(MAX_RECURSION_DEPTH));
+        Ok(tree)
+    }
+
+    /// The operands of an associative chain, in order, and its operator.
+    fn collect_operands(
+        &mut self,
+        operand: fn(&mut Self) -> Result<Expr, ParseError>,
+        op_of: fn(&TokenKind) -> Option<BinaryOp>,
+    ) -> Result<(Vec<Expr>, Option<BinaryOp>), ParseError> {
+        let mut operands = vec![operand(self)?];
+        let mut op = None;
+        while let Some(next) = self.peek().and_then(op_of) {
+            self.index += 1;
+            op = Some(next);
+            operands.push(operand(self)?);
+        }
+        Ok((operands, op))
+    }
+
     /// `OrExpr := AndExpr ('or' AndExpr)*`
     fn parse_or(&mut self) -> Result<Expr, ParseError> {
-        self.parse_binary_chain(Self::parse_and, |kind| {
+        self.parse_associative_chain(Self::parse_and, |kind| {
             matches!(kind, TokenKind::Or).then_some(BinaryOp::Or)
         })
     }
 
     /// `AndExpr := EqualityExpr ('and' EqualityExpr)*`
     fn parse_and(&mut self) -> Result<Expr, ParseError> {
-        self.parse_binary_chain(Self::parse_equality, |kind| {
+        self.parse_associative_chain(Self::parse_equality, |kind| {
             matches!(kind, TokenKind::And).then_some(BinaryOp::And)
         })
     }
@@ -431,7 +496,7 @@ impl Parser {
     /// `BinaryOp::Concat` at compile time, same as every other 3.0-only
     /// construct.
     fn parse_concat(&mut self) -> Result<Expr, ParseError> {
-        self.parse_binary_chain(Self::parse_range, |kind| {
+        self.parse_associative_chain(Self::parse_range, |kind| {
             matches!(kind, TokenKind::DoublePipe).then_some(BinaryOp::Concat)
         })
     }
@@ -691,7 +756,7 @@ impl Parser {
 
     /// `UnionExpr := PathExpr ('|' PathExpr)*`
     fn parse_union(&mut self) -> Result<Expr, ParseError> {
-        self.parse_binary_chain(Self::parse_simple_map, |kind| {
+        self.parse_associative_chain(Self::parse_simple_map, |kind| {
             matches!(kind, TokenKind::Pipe).then_some(BinaryOp::Union)
         })
     }
@@ -1154,6 +1219,32 @@ fn descendant_or_self_step() -> Step {
     }
 }
 
+/// The operands of one associative operator as a balanced tree, in order, and
+/// the tree's height (0 for a single operand).
+///
+/// Equal to the left-leaning tree for `or`, `and`, `|` and `||`, because each is
+/// associative and the operands keep their order.
+fn balanced_chain(op: Option<BinaryOp>, mut operands: Vec<Expr>) -> (Expr, usize) {
+    let (Some(op), true) = (op, operands.len() > 1) else {
+        // One operand and no operator: the chain is just that operand.
+        return (
+            operands
+                .pop()
+                .unwrap_or(Expr::Number(0.0, super::value::NumericType::Double)),
+            OUTERMOST_DEPTH,
+        );
+    };
+    let right = operands.split_off(operands.len() / 2);
+    let (left, left_height) = balanced_chain(Some(op), operands);
+    let (right, right_height) = balanced_chain(Some(op), right);
+    #[expect(
+        clippy::arithmetic_side_effects,
+        reason = "RCA-EXC-2: the height of a tree over at most usize::MAX operands is below 64"
+    )]
+    let height = left_height.max(right_height) + 1;
+    (Expr::Binary(op, Box::new(left), Box::new(right)), height)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1266,6 +1357,7 @@ mod tests {
             ],
             index: 0,
             depth: 0,
+            peak: 0,
             length: 8,
         };
         assert!(parser.parse_node_test(Axis::Child).is_err());
@@ -1282,6 +1374,7 @@ mod tests {
                 .collect(),
             index: 0,
             depth: 0,
+            peak: 0,
         }
     }
 
@@ -1496,6 +1589,120 @@ mod tests {
         assert_eq!(e.position, 7);
     }
 
+    /// `n` copies of `item` joined by `op`.
+    fn chain(item: &str, op: &str, n: usize) -> String {
+        vec![item; n].join(&format!(" {op} "))
+    }
+
+    /// `inner` inside `depth` pairs of parentheses.
+    fn nested(inner: &str, depth: usize) -> String {
+        format!("{}{inner}{}", "(".repeat(depth), ")".repeat(depth))
+    }
+
+    #[test]
+    fn long_associative_chains_parse_as_shallow_balanced_trees() {
+        // Each of `or`, `and`, `|` and `||` is associative, so n operands
+        // need only about log2(n) levels, not n.
+        for (item, op) in [("a", "or"), ("a", "and"), ("a", "|"), ("'x'", "||")] {
+            for n in [1, 2, 3, 32, 33, 1000, 20_000] {
+                assert!(parse(&chain(item, op, n)).is_ok(), "{n} operands of {op}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_balanced_chain_keeps_its_operands_in_order() {
+        // Reading the tree's names first to last gives the source order, for
+        // every operator that is grouped this way and for several sizes.
+        for (op, count) in [("or", 7), ("and", 5), ("|", 9), ("or", 2), ("and", 16)] {
+            let names: Vec<String> = (0..count).map(|i| format!("n{i}")).collect();
+            let text = format!("{:?}", parse(&names.join(&format!(" {op} "))).unwrap());
+            let found: Vec<&str> = text
+                .split("local: \"")
+                .skip(1)
+                .map(|rest| rest.split('"').next().unwrap_or_default())
+                .collect();
+            assert_eq!(found, names, "{count} operands of {op}");
+        }
+    }
+
+    #[test]
+    fn a_failing_operand_ends_a_per_operand_chain_cleanly() {
+        // The chains that still count per operand give back what they took
+        // when an operand fails to parse, so the next parse starts clean.
+        for source in ["1 + )", "1 + 1 + )", "1 = ", "1 * 2 * +", "a ! "] {
+            assert!(parse(source).is_err(), "{source}");
+        }
+        // The same parser object is never reused, but a chain after a
+        // failure inside a bracketed operand must still count from zero.
+        assert!(parse("(1 + ) or (1 + 1 + 1)").is_err());
+        assert!(parse(&chain("1", "+", 32)).is_ok());
+    }
+
+    #[test]
+    fn the_limit_counts_a_chain_s_height_plus_the_nesting_inside_it() {
+        // The most parentheses `wrap` can put around an operand and still parse.
+        fn most(wrap: impl Fn(usize) -> String) -> usize {
+            (0..=MAX_RECURSION_DEPTH)
+                .take_while(|&depth| parse(&wrap(depth)).is_ok())
+                .last()
+                .unwrap_or_default()
+        }
+        let alone = most(|depth| nested("a", depth));
+        assert!(alone >= 30, "{alone}");
+
+        // Two operands make a tree of height 1, and the nesting inside one
+        // operand counts on top of it.
+        assert_eq!(
+            most(|depth| format!("{} or a", nested("a", depth))),
+            alone - 1
+        );
+        assert_eq!(
+            most(|depth| format!("a or {}", nested("a", depth))),
+            alone - 1
+        );
+        // 3 to 4 operands, height 2; 5 to 8, height 3; 33, height 6.
+        assert_eq!(most(|d| format!("{} or a or a", nested("a", d))), alone - 2);
+        assert_eq!(
+            most(|d| format!("{} or {}", nested("a", d), chain("a", "or", 4))),
+            alone - 3
+        );
+        assert_eq!(
+            most(|d| format!("{} or {}", nested("a", d), chain("a", "or", 32))),
+            alone - 6
+        );
+        // The other associative operators count the same way.
+        assert_eq!(most(|d| format!("{} | a", nested("a", d))), alone - 1);
+        assert_eq!(most(|d| format!("{} and a", nested("a", d))), alone - 1);
+
+        // A chain inside an operand adds its own height on top of the outer
+        // chain's: one for the `or`, and two for four `and` operands.
+        let inside = |d: usize| format!("{} or a", nested(&chain("a", "and", 4), d));
+        assert_eq!(most(inside), alone - 1 - 2);
+        // The deepest single path counts, not the sum over operands: the
+        // shallow operands beside it cost nothing extra.
+        let beside = |d: usize| {
+            format!(
+                "{} or {} or {}",
+                nested("a", d),
+                nested("a", 20),
+                nested("a", 20)
+            )
+        };
+        assert_eq!(most(beside), alone - 2);
+    }
+
+    #[test]
+    fn chains_of_other_operators_are_still_charged_per_operand() {
+        // Arithmetic and comparison chains are not associative (floating
+        // point, mixed operators, comparison chaining), so they keep the
+        // left-leaning tree, and its depth, exactly as before.
+        assert!(parse(&chain("1", "+", 32)).is_ok());
+        assert!(parse(&chain("1", "+", 33)).is_err());
+        assert!(parse(&chain("1", "=", 33)).is_err());
+        assert!(parse(&chain("1", "*", 33)).is_err());
+    }
+
     #[test]
     fn refuses_absurd_nesting_instead_of_overflowing() {
         let deep = format!("{}a{}", "(".repeat(5000), ")".repeat(5000));
@@ -1542,8 +1749,13 @@ mod tests {
         // already guards for `(args)(args)…`, just not yet extended to
         // `or`, `and`, the comparisons, `||`, `+`/`-`, `*`/`div`/`mod`, `|`,
         // and (added when `!` itself was written, sharing the same
-        // `parse_binary_chain`) `!`. One fix covers all nine.
-        for operator in ["or", "and", "=", "<", "||", "+", "*", "|", "!"] {
+        // `parse_binary_chain`) `!`.
+        //
+        // `or`, `and`, `||` and `|` are associative, so they no longer need
+        // the bound: they are parsed as balanced trees and are covered by
+        // `associative_chains_do_not_overflow_the_stack` below. The rest
+        // keep the per-operand bound, and keep this test.
+        for operator in ["=", "<", "+", "*", "!"] {
             let chain = format!("a{}", format!(" {operator} a").repeat(5000));
             let error = parse(&chain).unwrap_err();
             assert!(
@@ -1557,6 +1769,21 @@ mod tests {
                 format!(" {operator} a").repeat(MAX_RECURSION_DEPTH / 2)
             );
             assert!(parse(&shallow).is_ok(), "operator {operator:?}");
+        }
+    }
+
+    #[test]
+    fn associative_chains_do_not_overflow_the_stack() {
+        // The same finding as above, for the operators that no longer count
+        // per operand: fifty thousand of them parse into a tree whose height is
+        // about sixteen, and walking, cloning, comparing and dropping that
+        // tree recurses that far and no further.
+        for (item, op) in [("a", "or"), ("a", "and"), ("a", "|"), ("'x'", "||")] {
+            let expr = parse(&chain(item, op, 50_000)).unwrap();
+            let copy = expr.clone();
+            assert_eq!(expr, copy);
+            drop(copy);
+            drop(expr);
         }
     }
 

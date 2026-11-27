@@ -557,3 +557,97 @@ fn an_absolute_context_is_not_mistaken_for_a_descendant_match() {
     assert_eq!(found, vec![("/r[1]/b[1]", "b"), ("/r[1]/x[1]/b[1]", "xb")]);
     assert_eq!(report.count_fired_rules(), 2);
 }
+
+#[test]
+fn long_alternative_lists_evaluate_in_order_and_short_circuit() {
+    // A generated enumeration: this is what a 400-way `or` is for.
+    let alternatives: Vec<String> = (0..400).map(|i| format!("@code = 'c{i}'")).collect();
+    let any = alternatives.join(" or ");
+    let all: Vec<String> = (0..400)
+        .map(|i| format!("string-length(@code) > {}", i % 2))
+        .collect();
+    let every = all.join(" and ");
+    let union = vec!["self::a"; 400].join(" | ");
+    // Under xslt2, an exact division by zero is an error when it is reached.
+    let source = |tail: &str| {
+        format!(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+                 <pattern><rule context="a">
+                   <assert test="{any}">code not listed</assert>
+                   <assert test="{every}">not every length</assert>
+                   <assert test="count({union}) = 1">union</assert>
+                   <assert test="{tail}">tail</assert>
+                 </rule></pattern>
+               </schema>"#
+        )
+    };
+    let document = Document::from_str("<a code='c399'/>").unwrap();
+
+    // The alternatives are tried first to last, and the first true one stops
+    // the chain, so the division after it is never reached.
+    let stops = Schema::from_str(&source("true() or 1 div 0 = 1 or 1 div 0 = 2")).unwrap();
+    assert!(stops.validate(&document).unwrap().is_valid());
+
+    // With every earlier alternative false, the division is reached.
+    let reaches = Schema::from_str(&source("false() or false() or 1 div 0 = 1")).unwrap();
+    assert_contains!(
+        reaches.validate(&document).unwrap_err().to_string(),
+        "FOAR0001"
+    );
+}
+
+#[test]
+fn associative_chains_give_the_same_answers_as_a_left_to_right_fold() {
+    let document = Document::from_str("<r><b/><c/><b/></r>").unwrap();
+    let cases = [
+        ("count(b | c | b | c | b)", "3"),
+        ("count(/r/b | /r/c)", "3"),
+        ("name((c | b | b)[1])", "b"),
+        ("false() or false() or true() or false()", "true"),
+        ("true() and true() and false() and true()", "false"),
+        ("string(1 = 1 or 2 = 3 or 4 = 5)", "true"),
+    ];
+    for (expression, expected) in cases {
+        let schema = Schema::from_str(&schema_with(&format!(
+            r#"<pattern><rule context="/r"><report test="true()"><value-of select="{expression}"/></report></rule></pattern>"#
+        )))
+        .unwrap();
+        let report = schema.validate(&document).unwrap();
+        assert_eq!(
+            report.reports().next().unwrap().text,
+            expected,
+            "{expression}"
+        );
+    }
+}
+
+#[test]
+fn very_long_associative_chains_evaluate_without_overflowing_the_stack() {
+    // Fuzzing once found that a few hundred `|` in a row overflowed the stack
+    // in `evaluate`, which walked a tree as deep as the chain was long. These
+    // chains are balanced now, so the walk is about log2(n) deep.
+    let n = 20_000;
+    let or = vec!["@x = 'no'"; n].join(" or ");
+    let and = vec!["@x = 'yes'"; n].join(" and ");
+    let union = vec!["self::a"; n].join(" | ");
+    let concat = vec!["'x'"; n].join(" || ");
+    let schema = Schema::from_str(&format!(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt3">
+             <pattern><rule context="a">
+               <assert test="not({or})">or</assert>
+               <assert test="{and}">and</assert>
+               <assert test="count({union}) = 1">union</assert>
+               <assert test="string-length({concat}) = {n}">concat</assert>
+             </rule></pattern>
+           </schema>"#
+    ))
+    .unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a x='yes'/>").unwrap())
+        .unwrap();
+    assert!(
+        report.is_valid(),
+        "{:?}",
+        report.failures().collect::<Vec<_>>()
+    );
+}

@@ -243,19 +243,30 @@ inputs.
 
 ### Found while mutation testing
 
-- [ ] **Flat operator chains longer than 32 operands are refused.**
-  `parse_binary_chain` charges one level of `MAX_RECURSION_DEPTH` (32) per
-  operand, because the left-folded tree is evaluated recursively. A stack
-  overflow found by fuzzing is why (`spec/roadmap/`). So `1 + 1 + … + 1`
-  with 33 terms, a 33-way `|` union, or a generated enumeration
-  `@x = 'a' or @x = 'b' or …` with 33 alternatives fails to compile with
-  "expression nested deeper than the limit of 32". To a user that is not
-  nesting. Fix it by evaluating same-operator chains iteratively, for
-  example by flattening them to an n-ary node or walking the left spine in a
-  loop, the way location paths are already exempt. Then charge chains only
-  for real nesting, and update `spec/conformance/#limits`. Acceptance: a
-  10 000-operand `or` chain compiles and evaluates in an unoptimised build,
-  and the fuzz regression for the original overflow still passes.
+- [x] **Flat operator chains longer than 32 operands are refused.** Fixed for
+  `or`, `and`, `|` and `||`. `parse_binary_chain` charged one of the 32
+  levels of `MAX_RECURSION_DEPTH` per operand, because it built a left-leaning
+  tree that the evaluator, the walkers and `Drop` recurse through (the stack
+  overflow found by fuzzing, `spec/roadmap/`). So a generated enumeration
+  `@x = 'a' or @x = 'b' or …` with 33 alternatives failed to compile as "nested
+  too deeply". These four operators are associative, so the parser now builds
+  a balanced tree (`parse_associative_chain`): operands keep their order, so
+  short-circuiting and results are unchanged, and the height is
+  about log2(n). The limit now counts that height plus the deepest nesting inside
+  any operand. 50 000 operands parse, clone, compare, drop and evaluate in an
+  unoptimised build. Covered by `associative_chains_do_not_overflow_the_stack`,
+  `the_limit_counts_a_chain_s_height_plus_the_nesting_inside_it` (in
+  `parser.rs`) and
+  `tests/validation.rs::very_long_associative_chains_evaluate_without_overflowing_the_stack`.
+  A union chain whose operands are not node-sets now names a different pair of
+  types in its error, because the pairs are grouped differently.
+- [ ] **Flat chains of `+`, `-`, `*`, `div`, `mod`, the comparisons and `!`
+  longer than 32 operands are still refused.** They are not associative in
+  general: floating-point addition is not, mixed `+ -` chains are not, and
+  `a = b = c` is `(a = b) = c`. Regrouping them would change results. A 33-term
+  sum is rare in a schema. If one turns up, the fix is to evaluate the
+  left-leaning chain in a loop, which needs an n-ary expression node and
+  an arm for it in each walker.
 
 ### Already in place, or not actionable here (Mistral items not carried forward)
 

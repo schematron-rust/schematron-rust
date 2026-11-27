@@ -5,6 +5,15 @@ git history; this file starts where the first output-affecting change did.
 
 ## Unreleased
 
+- **Long chains of `or`, `and`, `|` and `||` compile.** A chain of more than 32
+  operands, such as a 33-way `@x = 'a' or @x = 'b' or …`, was refused as "nested
+  deeper than the limit of 32". These operators are associative, so the parser
+  now groups a chain as a balanced tree, with the operands in the same order
+  and the same short-circuiting. The limit counts the tree's height (about
+  log2 of the operands) plus the nesting inside an operand. Chains of `+`,
+  `*`, the comparisons and `!` still count one level per operand. A union of
+  operands that are not node-sets now reports a different pair of types in its
+  error.
 - **Exact `xs:integer` and `xs:decimal` under XPath 2.0 and 3.0** (issue #28).
   These two types now hold an exact decimal (28 digits, via the new
   `rust_decimal` dependency) beside the nearest double. Arithmetic follows XPath
