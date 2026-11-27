@@ -637,6 +637,9 @@ fn looks_up_key(expr: &Expr, name: &str) -> bool {
         | Expr::NamedFunctionRef { .. } => false,
         Expr::Negate(inner) => looks_up_key(inner, name),
         Expr::Binary(_, left, right) => looks_up_key(left, name) || looks_up_key(right, name),
+        Expr::Chain(first, rest) => {
+            looks_up_key(first, name) || rest.iter().any(|(_, operand)| looks_up_key(operand, name))
+        }
         Expr::TypeOp { value, .. } => looks_up_key(value, name),
         Expr::Sequence(members) => members.iter().any(|m| looks_up_key(m, name)),
         Expr::Range(from, to) => looks_up_key(from, name) || looks_up_key(to, name),
@@ -768,6 +771,10 @@ fn first_unprefixed_element_name(expr: &Expr) -> Option<String> {
         Expr::Binary(_, left, right) => {
             first_unprefixed_element_name(left).or_else(|| first_unprefixed_element_name(right))
         }
+        Expr::Chain(first, rest) => first_unprefixed_element_name(first).or_else(|| {
+            rest.iter()
+                .find_map(|(_, operand)| first_unprefixed_element_name(operand))
+        }),
         Expr::Function { args, .. } => args.iter().find_map(first_unprefixed_element_name),
         Expr::If {
             condition,
@@ -898,6 +905,12 @@ fn following_from_an_attribute(expr: &Expr) -> bool {
         Expr::Binary(_, left, right) => {
             following_from_an_attribute(left) || following_from_an_attribute(right)
         }
+        Expr::Chain(first, rest) => {
+            following_from_an_attribute(first)
+                || rest
+                    .iter()
+                    .any(|(_, operand)| following_from_an_attribute(operand))
+        }
         Expr::Negate(inner) => following_from_an_attribute(inner),
         Expr::Function { args, .. } => args.iter().any(following_from_an_attribute),
         Expr::Sequence(items) => items.iter().any(following_from_an_attribute),
@@ -1008,6 +1021,12 @@ fn references_variable(expr: &Expr, name: &str) -> bool {
         Expr::Negate(inner) => references_variable(inner, name),
         Expr::Binary(_, left, right) => {
             references_variable(left, name) || references_variable(right, name)
+        }
+        Expr::Chain(first, rest) => {
+            references_variable(first, name)
+                || rest
+                    .iter()
+                    .any(|(_, operand)| references_variable(operand, name))
         }
         Expr::Function { args, .. } => args.iter().any(|a| references_variable(a, name)),
         Expr::TypeOp { value, .. } => references_variable(value, name),
@@ -1140,6 +1159,97 @@ mod tests {
 
     fn kinds(body: &str) -> Vec<LintKind> {
         lints_of(body).into_iter().map(|lint| lint.kind).collect()
+    }
+
+    #[test]
+    fn a_later_operand_of_a_chain_is_read_by_every_lint() {
+        // The first operand says nothing; everything that matters sits in a
+        // later one, past an operator chain's first operand.
+        let found = kinds(
+            r#"<let name="v" value="1"/>
+               <key name="k" match="a" use="@id"/>
+               <pattern><rule context="a">
+                 <assert test="1 + 1 + $v + count(key('k', 'x')) = 4">m</assert>
+               </rule></pattern>"#,
+        );
+        assert!(
+            !found.contains(&LintKind::UnreferencedVariable),
+            "{found:?}"
+        );
+        assert!(!found.contains(&LintKind::UnreferencedKey), "{found:?}");
+
+        // And an unprefixed name in a schema with prefixes, in a later operand.
+        let found = kinds(
+            r#"<ns prefix="p" uri="urn:p"/>
+               <pattern><rule context="p:a">
+                 <assert test="1 + 1 + count(b) = 2">m</assert>
+               </rule></pattern>"#,
+        );
+        assert!(
+            found.contains(&LintKind::UnprefixedNameInNamespacedSchema),
+            "{found:?}"
+        );
+
+        let source = r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern><rule context="a">
+               <assert test="1 + 1 + count(@x/following::y) = 1">m</assert>
+             </rule></pattern>
+           </schema>"#;
+        let portability = Schema::from_str(source).unwrap().portability();
+        assert!(
+            portability
+                .iter()
+                .any(|lint| lint.kind == LintKind::FollowingFromAnAttribute),
+            "{portability:?}"
+        );
+    }
+
+    #[test]
+    fn only_the_key_function_counts_as_a_key_lookup() {
+        // `string('k')` names the key's string but is not a lookup, so the
+        // key is still unreferenced; `key('k', …)` is, wherever it sits.
+        let source = |test: &str| {
+            format!(
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                     <key name="k" match="a" use="@id"/>
+                     <pattern><rule context="a"><assert test="{test}">m</assert></rule></pattern>
+                   </schema>"#
+            )
+        };
+        let unreferenced = |test: &str| {
+            Schema::from_str(&source(test))
+                .unwrap()
+                .lint()
+                .iter()
+                .any(|lint| lint.kind == LintKind::UnreferencedKey)
+        };
+        assert!(unreferenced("string('k') = 'k'"));
+        assert!(!unreferenced("count(key('k', 'x')) = 0"));
+        assert!(!unreferenced("1 + 1 + count(key('k', 'x')) = 2"));
+    }
+
+    #[test]
+    fn following_is_flagged_only_directly_after_an_attribute_step() {
+        let flagged = |test: &str| {
+            let source = format!(
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                     <pattern><rule context="a"><assert test="{test}">m</assert></rule></pattern>
+                   </schema>"#
+            );
+            Schema::from_str(&source)
+                .unwrap()
+                .portability()
+                .iter()
+                .any(|lint| lint.kind == LintKind::FollowingFromAnAttribute)
+        };
+        assert!(flagged("@x/following::y"));
+        assert!(flagged("b/@x/following::y"));
+        // An attribute step not followed by `following`, and `following`
+        // not preceded by an attribute step, are both fine.
+        assert!(!flagged("@x/child::y"));
+        assert!(!flagged("b/following::y"));
+        assert!(!flagged("@x"));
+        assert!(!flagged("following::y/@x"));
     }
 
     #[test]

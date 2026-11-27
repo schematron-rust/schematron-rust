@@ -307,12 +307,18 @@ chain of themselves ran, because each is parsed by a plain loop, not
 recursion. But `evaluate` still walks the `Expr::Binary` tree the loop built
 recursively, one nesting level per repetition — a location path's steps are
 exempt from the same limit for exactly the opposite reason, because
-`evaluate_path` walks those in a loop too. The fix, `parse_binary_chain` in
-`src/xpath/parser.rs`, is what all eight now share, so a chain long enough
-to reach `evaluate`'s actual stack limit — found empirically at a few
-hundred repetitions in an unoptimised build — is instead a clean parse error
-naming the depth, at exactly the threshold every other nested construct
-already used.
+`evaluate_path` walks those in a loop too. The first fix, `parse_binary_chain`
+in `src/xpath/parser.rs`, charged one level per repetition, so a chain long
+enough to reach `evaluate`'s actual stack limit — found empirically at a few
+hundred repetitions in an unoptimised build — was a clean parse error naming
+the depth. That was safe but refused legitimate input, such as a generated
+`or` of 33 alternatives. The fix that replaced it, `parse_chain`, removes the
+hazard instead of bounding it: `or`, `and`, `|` and `||` are grouped as a
+balanced tree about log2(n) deep, and every other operator becomes one flat
+`Expr::Chain` that evaluation folds in a loop. No tree as deep as a chain is
+long is ever built, so a chain of any length is accepted, and
+`no_chain_of_any_repeating_binary_operator_overflows_the_stack` and
+`very_long_flat_chains_evaluate_without_overflowing_the_stack` keep it so.
 
 libFuzzer reports a **slow unit** long before the crate's limits are reached,
 because its threshold is measured against a microsecond budget. A range of

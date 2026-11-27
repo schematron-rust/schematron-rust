@@ -53,12 +53,17 @@ Recursive descent on a thousand nested
 parentheses would otherwise exhaust the stack, and an error beats a crash.
 The limit does not count the *length* of a location path, which is parsed
 iteratively, so `a/b/c/…` of any length is fine. Nor does it count the length
-of a chain of `or`, `and`, `|` or `||`: each is associative, so a chain is
-grouped as a balanced tree whose height, about log2 of the operand count, is
-what counts, together with the deepest nesting inside any operand. A thousand
-`or` alternatives cost ten levels. Chains of other operators (`+`, `-`, `*`,
-`div`, `mod`, the comparisons, `!`) are not associative in general, so they
-still cost one level per operand. The ceiling follows the
+of a chain of one precedence level, whatever the operator: `a + b - c …`,
+`a or b or …`, `a | b | …`, `a = b = …`. No tree as deep as a chain is long is
+ever built, because evaluating, comparing and dropping one recurses once per
+level. `or`, `and`, `|` and `||` are associative, so a chain of them is grouped as
+a balanced tree about log2(n) deep, with the operands in the same order and
+the same short-circuiting. Every other operator (`+`, `-`, `*`, `div`, `mod`, the
+comparisons, `!`) is not associative in general (floating-point addition is
+not, and `a = b = c` is `(a = b) = c`), so three or more operands are held as
+one flat chain and folded from the left in a loop. Either way a chain costs a
+constant number of levels, plus the deepest nesting inside any operand. The
+ceiling follows the
 stack cost of one nesting level in an unoptimised build, where each level
 descends the whole precedence chain below.
 

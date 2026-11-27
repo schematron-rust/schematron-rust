@@ -415,3 +415,42 @@ fn foreign_elements_in_a_message_contribute_only_their_text() {
         .unwrap();
     assert_eq!(report.failures().next().unwrap().text, "xbold");
 }
+
+#[test]
+fn every_operand_and_operator_of_a_chain_is_checked_at_compile_time() {
+    let wrap = |binding: &str, test: &str| {
+        Schema::from_str(&format!(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron"{binding}>
+                 <pattern><rule context="a"><assert test="{test}">m</assert></rule></pattern>
+               </schema>"#
+        ))
+    };
+    // An unbound variable in the last operand is a compile error.
+    let error = wrap("", "1 + 1 + 1 + $nope = 3").unwrap_err();
+    assert_contains!(error.to_string(), "nope");
+    // So is a function from a later XPath version, and an operator.
+    let error = wrap("", "1 + 1 + upper-case('a')").unwrap_err();
+    assert_contains!(error.to_string(), "XPath 2.0");
+    let error = wrap("", "1 = 1 eq 1").unwrap_err();
+    assert_contains!(error.to_string(), "XPath 2.0");
+    let error = wrap(r#" queryBinding="xslt2""#, "1 + 1 + 1 || 1").unwrap_err();
+    assert_contains!(error.to_string(), "XPath 3.0");
+    // A bad literal pattern in a later operand is caught, too.
+    let error = wrap(
+        r#" queryBinding="xslt2""#,
+        "1 + 1 + count(matches('a', '(')) = 0",
+    )
+    .unwrap_err();
+    assert!(matches!(error, Error::XPathSyntax { .. }), "{error}");
+    // The first operand is checked as well as the later ones.
+    let error = wrap("", "$nope + 1 + 1 = 2").unwrap_err();
+    assert_contains!(error.to_string(), "nope");
+    let error = wrap("", "upper-case('a') + 1 + 1").unwrap_err();
+    assert_contains!(error.to_string(), "XPath 2.0");
+    // And a well-formed chain compiles.
+    assert!(wrap(
+        r#" queryBinding="xslt3""#,
+        "1 + 1 + 1 = 3 and (1 = 1 = true())"
+    )
+    .is_ok());
+}

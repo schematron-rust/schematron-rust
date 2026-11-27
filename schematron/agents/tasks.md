@@ -76,14 +76,17 @@ order:
    wrapper. Less surface area, fewer places to get wrong.
 3. `src/xpath/parser.rs` — a parse function at the right precedence. If it
    is a **repeating** binary operator (`Operand (Op Operand)*`), use
-   `parse_binary_chain`, not a hand-rolled `while` loop — a loop that
-   builds a nested `Expr::Binary` tree without charging the shared
-   recursion budget for its own length parses instantly and then
-   overflows the stack in `evaluate` on a long-enough chain of the *same*
-   operator, found by fuzzing nothing more exotic than a few hundred `|`
-   in a row. `MAX_RECURSION_DEPTH`'s doc comment and
+   `parse_chain`, not a hand-rolled `while` loop — a loop that builds a
+   nested `Expr::Binary` tree as deep as the chain is long parses instantly
+   and then overflows the stack in `evaluate` on a long-enough chain of the
+   *same* operator, found by fuzzing nothing more exotic than a few hundred
+   `|` in a row. `parse_chain` builds a balanced tree for an associative
+   operator (add it to the list in `build_chain` only if it really is one:
+   floating-point `+` is not) and a flat `Expr::Chain` otherwise.
+   `MAX_RECURSION_DEPTH`'s doc comment and
    [`spec/testing/`](../spec/testing/index.md#what-fuzzing-found) have the
-   detail.
+   detail. A new walker over `Expr` needs an `Expr::Chain` arm: see
+   [`invariants.md`](invariants.md).
 4. `src/xpath/eval.rs` — the evaluation arm, if the node isn't pure sugar.
 5. `src/schema/compile.rs` — three places, easy to under-count:
    - `check_expression`: the actual `require_v2`/`require_v3` gate, then

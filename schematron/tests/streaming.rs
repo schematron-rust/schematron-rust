@@ -666,3 +666,77 @@ fn a_wrapper_comparison_with_a_child_is_refused_when_it_fires() {
         )
         .is_ok());
 }
+
+#[test]
+fn a_construct_in_a_later_chain_operand_still_refuses_streaming() {
+    // A streaming check that only read a chain's first operand would let
+    // these through, and then answer from one record's worth of document.
+    // The first two operands are harmless on purpose.
+    for (test, reason) in [
+        ("1 + 1 + count(id('x'))", "id()"),
+        ("1 + 1 + count(key('k', 'x'))", "key()"),
+        ("1 + 1 + count(document('x.xml'))", "document()"),
+        ("1 + 1 + count(following::b)", "following:: axis"),
+        ("1 + 1 + count(preceding::b)", "preceding:: axis"),
+        ("1 = 1 = count(/orders)", "absolute path"),
+    ] {
+        let body = if test.contains("key(") {
+            format!(
+                r#"<key name="k" match="a" use="@id"/><pattern><rule context="a"><assert test="{test}">x</assert></rule></pattern>"#
+            )
+        } else {
+            format!(
+                r#"<pattern><rule context="a"><assert test="{test}">x</assert></rule></pattern>"#
+            )
+        };
+        let schema = Schema::from_str(&schema_with(&body)).expect("schema should compile");
+        let refusal = schema.streaming_eligible().expect_err(test);
+        assert!(
+            refusal.contains(reason) || (test.contains("key(") && refusal.contains("key")),
+            "{test}: {refusal}"
+        );
+    }
+}
+
+#[test]
+fn a_chain_of_attribute_tests_is_a_streaming_wrapper_predicate_like_any_other() {
+    // Evaluable on the wrapper before its children arrive: every operand is
+    // an attribute or a literal. One that reads a child is refused.
+    let accepted = Schema::from_str(&schema_with(
+        r#"<pattern><rule context="/orders"><assert test="@a = '1' = true() = true()">x</assert></rule></pattern>"#,
+    ))
+    .unwrap();
+    assert!(accepted
+        .validate_streaming(
+            "<orders a='1'><order/></orders>".as_bytes(),
+            &ValidateOptions::new()
+        )
+        .is_ok());
+
+    let refused = Schema::from_str(&schema_with(
+        r#"<pattern><rule context="/orders"><assert test="1 + 1 + count(order) = 3">x</assert></rule></pattern>"#,
+    ))
+    .unwrap();
+    let error = refused
+        .validate_streaming(
+            "<orders a='1'><order/></orders>".as_bytes(),
+            &ValidateOptions::new(),
+        )
+        .unwrap_err();
+    assert_contains!(error.to_string(), "cannot evaluate");
+
+    // A rule context predicate made of comparisons in a chain is accepted
+    // exactly as a single comparison is; one with arithmetic is not.
+    assert_streaming_matches_full(
+        &schema_with(
+            r#"<pattern><rule context="order[@id = '1' = true()]"><assert test="@ok">needs ok</assert></rule></pattern>"#,
+        ),
+        "<orders><order id='1'/><order id='2' ok='y'/></orders>",
+    );
+    assert_ineligible(
+        &schema_with(
+            r#"<pattern><rule context="order[@id + 1 + 1]"><assert test="@ok">x</assert></rule></pattern>"#,
+        ),
+        "rule context predicate",
+    );
+}

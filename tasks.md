@@ -243,8 +243,9 @@ inputs.
 
 ### Found while mutation testing
 
-- [x] **Flat operator chains longer than 32 operands are refused.** Fixed for
-  `or`, `and`, `|` and `||`. `parse_binary_chain` charged one of the 32
+- [x] **Flat operator chains longer than 32 operands are refused.** Fixed first for
+  `or`, `and`, `|` and `||` with a balanced tree, then for every other
+  operator (next item). `parse_binary_chain` charged one of the 32
   levels of `MAX_RECURSION_DEPTH` per operand, because it built a left-leaning
   tree that the evaluator, the walkers and `Drop` recurse through (the stack
   overflow found by fuzzing, `spec/roadmap/`). So a generated enumeration
@@ -260,13 +261,20 @@ inputs.
   `tests/validation.rs::very_long_associative_chains_evaluate_without_overflowing_the_stack`.
   A union chain whose operands are not node-sets now names a different pair of
   types in its error, because the pairs are grouped differently.
-- [ ] **Flat chains of `+`, `-`, `*`, `div`, `mod`, the comparisons and `!`
-  longer than 32 operands are still refused.** They are not associative in
-  general: floating-point addition is not, mixed `+ -` chains are not, and
-  `a = b = c` is `(a = b) = c`. Regrouping them would change results. A 33-term
-  sum is rare in a schema. If one turns up, the fix is to evaluate the
-  left-leaning chain in a loop, which needs an n-ary expression node and
-  an arm for it in each walker.
+- [x] **Flat chains of `+`, `-`, `*`, `div`, `mod`, the comparisons and `!`
+  longer than 32 operands.** Fixed, for security as well as convenience: no
+  chain length can any longer be used to approach the stack limit, and no
+  legitimate one is refused. They are not associative in general (floating
+  point, mixed `+ -`, `a = b = c`), so they are not regrouped. Three or more
+  operands are held as one flat `Expr::Chain` and folded from the left in a
+  loop (`evaluate_chain`). This needed an arm for the new node in every walker
+  over `Expr`, including the streaming-safety, `document()`, variable and
+  version checks, where a missing arm would have let a construct in a later
+  operand through. `agents/invariants.md` records the rule, and the tests it
+  names fail if an arm is missing. 50 000 operands of every operator parse, and
+  of `+ - * div mod =` evaluate, in an unoptimised build.
+  Along the way a test caught a real bug in the first draft: an operand was
+  dropped from chains of three or more.
 
 ### Already in place, or not actionable here (Mistral items not carried forward)
 

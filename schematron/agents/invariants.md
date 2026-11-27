@@ -301,6 +301,33 @@ from a 1.0 expression. See "Exact decimal arithmetic" in `spec/xpath2/`.
 - Test: `tests/xpath2.rs::exact_arithmetic_follows_xpath_two_promotion`
 - Test: `tests/xpath2.rs::xpath_one_numbers_are_still_doubles`
 
+### No expression tree is as deep as a chain is long, and every walker reads every operand
+
+A left-leaning `Expr::Binary` tree over n operands is n deep, and evaluating,
+cloning, comparing and dropping it recurse once per level, so a few hundred
+`|` in a row overflowed the stack (found by fuzzing). The parser therefore
+never builds one: `parse_chain` groups `or`, `and`, `|` and `||` as a balanced
+tree about log2(n) deep, and every other operator as one flat
+`Expr::Chain(first, [(op, operand)…])` that `evaluate_chain` folds from the left
+in a loop. A chain costs a constant number of the 32 nesting levels, so there
+is no limit on its length. Only an operator that is truly associative may be
+added to the balanced list: floating-point `+` is not, and neither is `a = b = c`.
+
+The cost of a flat node is that **every walker over `Expr` needs an
+`Expr::Chain` arm that visits the first operand and every later one.** A walker
+that read only the first would pass an unbound variable, a gated operator, a
+`document()` call or a streaming-unsafe construct hiding in a later operand
+(`1 + 1 + count(id('x'))`). Where the match is exhaustive the compiler
+refuses a missing arm. Where it has a `_ =>` default (`wrapper_expression`,
+`attribute_predicate`, `following_from_an_attribute`), nothing does, so write
+the arm and a test.
+
+- Test: `tests/streaming.rs::a_construct_in_a_later_chain_operand_still_refuses_streaming`
+- Test: `tests/schema.rs::every_operand_and_operator_of_a_chain_is_checked_at_compile_time`
+- Test: `tests/documents.rs::document_is_found_in_a_later_chain_operand`
+- Test: `src/lint.rs::tests::a_later_operand_of_a_chain_is_read_by_every_lint`
+- Test: `src/xpath/parser.rs::tests::no_chain_of_any_repeating_binary_operator_overflows_the_stack`
+
 ### Expressions are parsed once per schema, not once per document
 
 Compilation caches every expression keyed by source text. Validating N

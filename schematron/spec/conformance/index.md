@@ -125,7 +125,7 @@ Number-to-string conversion follows XPath 1.0's format, not Rust's `Display`.
 |---|---|---|
 | Include depth | 64, configurable | Cycles and expansion blow-up |
 | `extends` chain depth | 64 | Same |
-| XPath sub-expression nesting | 32 | Stack exhaustion on hostile input. A chain of `or`, `and`, `\|` or `\|\|` counts its balanced tree's height (about log2 of the operands), so thousands are fine; `+`, `*`, comparisons and `!` count one per operand |
+| XPath sub-expression nesting | 32 | Stack exhaustion on hostile input. The length of a chain of one operator (`a + b + c …`, `a or b or …`) is not nested depth and is not limited; a chain counts a constant number of levels plus the nesting inside its operands |
 | A single `to` range | 1,000,000 items | A range is materialised |
 | Nested ranges and `for`/`some`/`every` together | 10,000,000 items | Each may be within the limit while the product is not: three ranges of 999 ask for close to a billion |
 | XML element nesting | 1024 | Same |

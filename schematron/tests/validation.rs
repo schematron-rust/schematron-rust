@@ -651,3 +651,113 @@ fn very_long_associative_chains_evaluate_without_overflowing_the_stack() {
         report.failures().collect::<Vec<_>>()
     );
 }
+
+/// `expression` evaluated under `binding`, as the text of one report.
+fn evaluated(binding: &str, expression: &str) -> String {
+    let schema = Schema::from_str(&format!(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="{binding}">
+             <pattern><rule context="/r"><report test="true()"><value-of select="{expression}"/></report></rule></pattern>
+           </schema>"#
+    ))
+    .expect(expression);
+    let document = Document::from_str("<r><b/><b/></r>").unwrap();
+    let report = schema.validate(&document).expect(expression);
+    let text = report.reports().next().unwrap().text.clone();
+    text
+}
+
+#[test]
+fn chains_fold_from_the_left_and_never_regroup() {
+    for (expression, expected) in [
+        // Subtraction and division are not associative.
+        ("10 - 3 - 2", "5"),
+        ("100 div 10 div 5", "2"),
+        ("100 div 10 div 5 div 2", "1"),
+        ("17 mod 10 mod 4", "3"),
+        // Mixed operators at one level read left to right.
+        ("1 - 2 + 3 - 4", "-2"),
+        ("20 div 4 * 3 mod 4", "3"),
+        // Precedence still separates the levels.
+        ("2 * 3 + 4 * 5 - 1", "25"),
+        // Comparison chains compare the previous result.
+        ("string(1 + 2 = 3 = true())", "true"),
+        ("string(1 < 2 < 3)", "true"),
+        // `3 > 2 > 1` is `(3 > 2) > 1`, which is `true > 1`, which is false.
+        ("string(3 > 2 > 1)", "false"),
+        ("string(3 > 2 > 0)", "true"),
+        // `(2 = 2) != 2` compares `true` with the boolean of 2, which is `true`.
+        ("string(2 = 2 != 2)", "false"),
+        ("string(2 = 2 != 0)", "true"),
+        // Floating-point addition is not associative, and the chain is read
+        // as `(0.1 + 0.2) + 0.3`, not `0.1 + (0.2 + 0.3)`.
+        ("string(0.1 + 0.2 + 0.3 = (0.1 + 0.2) + 0.3)", "true"),
+        ("string(0.1 + 0.2 + 0.3 != 0.1 + (0.2 + 0.3))", "true"),
+    ] {
+        assert_eq!(evaluated("xslt", expression), expected, "{expression}");
+    }
+    // Under XPath 2.0 the exact decimals add exactly in either grouping.
+    assert_eq!(
+        evaluated("xslt2", "string(0.1 + 0.2 + 0.3 = 0.1 + (0.2 + 0.3))"),
+        "true"
+    );
+    // `!` feeds each result into the next: ((1 to 3) ! (. * 2)) ! (. + 1).
+    assert_eq!(
+        evaluated("xslt3", "sum((1 to 3) ! (. * 2) ! (. + 1) ! (. * 10))"),
+        "150"
+    );
+}
+
+#[test]
+fn a_chain_stops_at_the_first_error_in_order() {
+    // Under xslt2 an exact division by zero is an error when reached. Left
+    // to right, the first one is the one reported, and a later one is not.
+    let schema = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+             <pattern><rule context="/r">
+               <assert test="1 + 2 + 1 div 0 + (3 mod 0) = 0">m</assert>
+             </rule></pattern>
+           </schema>"#,
+    )
+    .unwrap();
+    let error = schema
+        .validate(&Document::from_str("<r/>").unwrap())
+        .unwrap_err()
+        .to_string();
+    assert_contains!(error, "FOAR0001");
+    assert_contains!(error, "1 div 0");
+
+    // An error in the first operand is reported the same way.
+    let schema = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+             <pattern><rule context="/r">
+               <assert test="1 div 0 + 1 + 1 = 0">m</assert>
+             </rule></pattern>
+           </schema>"#,
+    )
+    .unwrap();
+    let error = schema
+        .validate(&Document::from_str("<r/>").unwrap())
+        .unwrap_err()
+        .to_string();
+    assert_contains!(error, "FOAR0001");
+}
+
+#[test]
+fn very_long_flat_chains_evaluate_without_overflowing_the_stack() {
+    // The same fuzzing finding as the associative chains above, for the
+    // operators that cannot be regrouped: one flat node, folded in a loop.
+    let n = 50_000;
+    let cases = [
+        (vec!["1"; n].join(" + "), "50000"),
+        (vec!["1"; n].join(" * "), "1"),
+        (vec!["1"; n].join(" div "), "1"),
+        (vec!["1"; n].join(" mod "), "0"),
+        (vec!["1"; n].join(" - "), "-49998"),
+        (format!("{} - 1", vec!["1"; n].join(" + ")), "49999"),
+    ];
+    for (expression, expected) in cases {
+        assert_eq!(evaluated("xslt", &expression), expected);
+    }
+    let chain = vec!["1 = 1"; 1000].join(" = ");
+    assert_eq!(evaluated("xslt", &format!("string({chain})")), "true");
+}

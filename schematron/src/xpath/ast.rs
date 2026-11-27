@@ -14,6 +14,15 @@ use std::fmt;
 pub enum Expr {
     /// A binary operation.
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
+    /// Three or more operands joined by operators of one precedence level, read
+    /// left to right: `a + b - c` is the first operand `a` and the rest
+    /// `[(+, b), (-, c)]`, and means `(a + b) - c`.
+    ///
+    /// It holds the chain flat so that evaluating, cloning, comparing and
+    /// dropping it takes a loop, not a recursion as deep as the chain is long.
+    /// A chain of two operands is an [`Expr::Binary`]. `or`, `and`, `|` and `||`
+    /// are associative and are grouped as a balanced tree of `Binary` instead.
+    Chain(Box<Expr>, Vec<(BinaryOp, Expr)>),
     /// Arithmetic negation.
     Negate(Box<Expr>),
     /// A location path, or a filter expression followed by one.
@@ -358,7 +367,7 @@ pub enum BinaryOp {
     ///
     /// Evaluated specially rather than through the generic "evaluate both
     /// sides, then combine" path every other `BinaryOp` takes — see
-    /// `evaluate_binary`'s `And`/`Or` short-circuit, which this joins.
+    /// `apply_binary`'s `And`/`Or` short-circuit, which this joins.
     SimpleMap,
 }
 

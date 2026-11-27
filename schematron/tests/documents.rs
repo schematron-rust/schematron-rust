@@ -439,3 +439,21 @@ fn deep_equal_compares_whole_documents() {
         .collect();
     assert_is_empty!(failures);
 }
+
+#[test]
+fn document_is_found_in_a_later_chain_operand() {
+    // The validator loads documents only for a schema that mentions
+    // `document()`, so the search has to see past a chain's first operand.
+    let schema = schema_with(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern><rule context="/a">
+               <assert test="1 + 1 + count(document('e.xml')/r) = 3">missed</assert>
+             </rule></pattern>
+           </schema>"#,
+        &[("e.xml", "<r/>")],
+    );
+    let report = schema
+        .validate(&Document::from_str("<a/>").unwrap())
+        .unwrap();
+    assert_eq!(report.count_failures(), 0);
+}

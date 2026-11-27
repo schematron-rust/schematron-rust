@@ -5,15 +5,20 @@ git history; this file starts where the first output-affecting change did.
 
 ## Unreleased
 
-- **Long chains of `or`, `and`, `|` and `||` compile.** A chain of more than 32
-  operands, such as a 33-way `@x = 'a' or @x = 'b' or …`, was refused as "nested
-  deeper than the limit of 32". These operators are associative, so the parser
-  now groups a chain as a balanced tree, with the operands in the same order
-  and the same short-circuiting. The limit counts the tree's height (about
-  log2 of the operands) plus the nesting inside an operand. Chains of `+`,
-  `*`, the comparisons and `!` still count one level per operand. A union of
-  operands that are not node-sets now reports a different pair of types in its
-  error.
+- **Operator chains of any length compile.** A chain of more than 32 operands,
+  such as a 33-way `@x = 'a' or @x = 'b' or …` or a 40-term sum, was refused as
+  "nested deeper than the limit of 32". The limit was a guard against a stack
+  overflow (found by fuzzing) in code that recurses once per level of a tree as
+  deep as the chain was long. No such tree is built any more. `or`, `and`, `|` and
+  `||` are associative, so a chain is grouped as a balanced tree about log2(n)
+  deep, with the operands in the same order and the same short-circuiting.
+  Every other operator (`+`, `-`, `*`, `div`, `mod`, the comparisons, `!`) is held
+  as one flat `Expr::Chain` and folded from the left in a loop, so
+  floating-point results and `a = b = c` are exactly what they were. A chain now
+  costs a constant number of levels plus the nesting inside its operands.
+  Public API: `Expr` gains an `Expr::Chain` variant (`Expr` is
+  `#[non_exhaustive]`). A union of operands that are not node-sets now reports a
+  different pair of types in its error.
 - **Exact `xs:integer` and `xs:decimal` under XPath 2.0 and 3.0** (issue #28).
   These two types now hold an exact decimal (28 digits, via the new
   `rust_decimal` dependency) beside the nearest double. Arithmetic follows XPath

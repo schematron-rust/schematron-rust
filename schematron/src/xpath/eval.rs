@@ -88,7 +88,12 @@ pub fn evaluate(expr: &Expr, context: &EvalContext<'_>) -> Result<Value, EvalErr
 
         Expr::Negate(inner) => Ok(negate(&evaluate(inner, context)?, context.document)),
 
-        Expr::Binary(op, left, right) => evaluate_binary(*op, left, right, context),
+        Expr::Binary(op, left, right) => {
+            let left = evaluate(left, context)?;
+            apply_binary(*op, left, right, context)
+        }
+
+        Expr::Chain(first, rest) => evaluate_chain(first, rest, context),
 
         Expr::Function { name, args } => {
             let mut values = Vec::with_capacity(args.len());
@@ -429,12 +434,12 @@ pub(crate) fn for_each_pair(
 /// a dynamic error there, precisely because there is no node to walk from,
 /// the same way it would be in real XPath 3.0.
 fn evaluate_simple_map(
-    left: &Expr,
+    left: Value,
     right: &Expr,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
     let _scope = SequenceScope::enter()?;
-    let items = evaluate(left, context)?.into_items();
+    let items = left.into_items();
     spend_len(items.len())?;
     let size = items.len();
     let mut out = Vec::with_capacity(size);
@@ -456,13 +461,27 @@ fn evaluate_simple_map(
     Ok(Value::Sequence(flatten_into_sequence(out)))
 }
 
+/// A chain is a left fold: `a + b - c` is `(a + b) - c`, evaluated in a loop
+/// rather than by recursing through a tree as deep as it is long.
+fn evaluate_chain(
+    first: &Expr,
+    rest: &[(BinaryOp, Expr)],
+    context: &EvalContext<'_>,
+) -> Result<Value, EvalError> {
+    let mut value = evaluate(first, context)?;
+    for (op, operand) in rest {
+        value = apply_binary(*op, value, operand, context)?;
+    }
+    Ok(value)
+}
+
 // Keeping the exhaustive operator classification and evaluation together
 // makes a newly added `BinaryOp` fail compilation instead of silently taking
 // the wrong eager or short-circuit path.
 #[allow(clippy::too_many_lines)]
-fn evaluate_binary(
+fn apply_binary(
     op: BinaryOp,
-    left: &Expr,
+    left: Value,
     right: &Expr,
     context: &EvalContext<'_>,
 ) -> Result<Value, EvalError> {
@@ -480,13 +499,13 @@ fn evaluate_binary(
     // would raise an error on nodes the left operand has already ruled out.
     let eager = match op {
         BinaryOp::And => {
-            if !evaluate(left, context)?.to_boolean() {
+            if !left.to_boolean() {
                 return Ok(Value::Boolean(false));
             }
             return Ok(Value::Boolean(evaluate(right, context)?.to_boolean()));
         }
         BinaryOp::Or => {
-            if evaluate(left, context)?.to_boolean() {
+            if left.to_boolean() {
                 return Ok(Value::Boolean(true));
             }
             return Ok(Value::Boolean(evaluate(right, context)?.to_boolean()));
@@ -516,7 +535,6 @@ fn evaluate_binary(
         | BinaryOp::Modulo => Eager::Arithmetic(op),
     };
 
-    let left = evaluate(left, context)?;
     let right = evaluate(right, context)?;
     let document = context.document;
 
@@ -614,7 +632,7 @@ fn evaluate_binary(
     }
 }
 
-/// `||`, split out to keep `evaluate_binary` under the line-count lint.
+/// `||`, split out to keep `apply_binary` under the line-count lint.
 ///
 /// Atomizes both operands to their string value — the same conversion
 /// `concat()` applies to each of its arguments — and rejects a function

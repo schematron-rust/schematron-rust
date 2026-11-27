@@ -389,6 +389,12 @@ impl Schema {
                 Schema::check_variables(left, source, location, bindable, enclosing)?;
                 Schema::check_variables(right, source, location, bindable, enclosing)?;
             }
+            Expr::Chain(first, rest) => {
+                Schema::check_variables(first, source, location, bindable, enclosing)?;
+                for (_, operand) in rest {
+                    Schema::check_variables(operand, source, location, bindable, enclosing)?;
+                }
+            }
             Expr::Function { args, .. } => {
                 for arg in args {
                     Schema::check_variables(arg, source, location, bindable, enclosing)?;
@@ -551,6 +557,15 @@ impl Schema {
                 self.check_binary_op_version(*op, source, location)?;
                 self.check_expression(left, source, location)?;
                 self.check_expression(right, source, location)?;
+            }
+            Expr::Chain(first, rest) => {
+                self.check_expression(first, source, location)?;
+                // Every operator in the chain is gated by the query binding,
+                // not only the first.
+                for (op, operand) in rest {
+                    self.check_binary_op_version(*op, source, location)?;
+                    self.check_expression(operand, source, location)?;
+                }
             }
             Expr::Function { name, args } => {
                 check_function(name, args.len(), self.version)
@@ -1159,6 +1174,12 @@ fn calls_document_function(expr: &Expr) -> bool {
         Expr::Binary(_, left, right) => {
             calls_document_function(left) || calls_document_function(right)
         }
+        Expr::Chain(first, rest) => {
+            calls_document_function(first)
+                || rest
+                    .iter()
+                    .any(|(_, operand)| calls_document_function(operand))
+        }
         Expr::Function { name, args } => {
             name == "document" || args.iter().any(calls_document_function)
         }
@@ -1323,6 +1344,22 @@ fn attribute_predicate(expr: &Expr) -> bool {
             _,
             _,
         ) => wrapper_expression(expr),
+        // A chain of comparisons is a predicate on the same terms as one.
+        Expr::Chain(_, rest)
+            if rest.iter().all(|(op, _)| {
+                matches!(
+                    op,
+                    BinaryOp::Equal
+                        | BinaryOp::NotEqual
+                        | BinaryOp::Less
+                        | BinaryOp::LessEqual
+                        | BinaryOp::Greater
+                        | BinaryOp::GreaterEqual
+                )
+            }) =>
+        {
+            wrapper_expression(expr)
+        }
         Expr::Function { name, .. }
             if matches!(
                 name.as_str(),
@@ -1347,6 +1384,9 @@ fn wrapper_expression(expr: &Expr) -> bool {
         }
         Expr::Negate(inner) => wrapper_expression(inner),
         Expr::Binary(_, left, right) => wrapper_expression(left) && wrapper_expression(right),
+        Expr::Chain(first, rest) => {
+            wrapper_expression(first) && rest.iter().all(|(_, operand)| wrapper_expression(operand))
+        }
         Expr::Function { name, args } => {
             let safe_call = match name.as_str() {
                 "true" | "false" | "name" | "local-name" | "namespace-uri" => true,
@@ -1385,6 +1425,10 @@ fn streaming_unsafe_construct(expr: &Expr) -> Option<&'static str> {
         Expr::Binary(_, left, right) => {
             streaming_unsafe_construct(left).or_else(|| streaming_unsafe_construct(right))
         }
+        Expr::Chain(first, rest) => streaming_unsafe_construct(first).or_else(|| {
+            rest.iter()
+                .find_map(|(_, operand)| streaming_unsafe_construct(operand))
+        }),
         Expr::Function { name, args } => UNSAFE_FUNCTIONS
             .iter()
             .find(|&&f| f == name)
