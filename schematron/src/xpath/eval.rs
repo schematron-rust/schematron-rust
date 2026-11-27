@@ -2138,6 +2138,55 @@ mod tests {
     }
 
     #[test]
+    fn axes_stop_exactly_at_a_subtree_that_ends_in_text() {
+        // Here `c`'s subtree ends with its text node rather than with a
+        // namespace node, so an off-by-one at its end would show.
+        let source = "<a><c>t</c></a>";
+        assert_eq!(number(source, "count(c/following::node())"), 0.0);
+        assert_eq!(number(source, "count(c/text()/preceding::node())"), 0.0);
+    }
+
+    #[test]
+    fn the_sequence_budget_starts_afresh_for_each_evaluation() {
+        // Each evaluation spends 900 000 of the 10 000 000-item budget; twelve
+        // of them only fit because the budget resets once a scope closes.
+        for _ in 0..12 {
+            assert_eq!(eval_error(XPathVersion::V2, "count(1 to 900000)"), None);
+        }
+    }
+
+    #[test]
+    fn lang_reads_only_xml_lang() {
+        assert!(!boolean("<a lang='en'/>", "lang('en')"));
+        assert!(!boolean("<a xml:space='preserve'/>", "lang('preserve')"));
+        assert!(boolean("<a xml:lang='en-GB'/>", "lang('en')"));
+    }
+
+    #[test]
+    fn whitespace_may_surround_an_axis_separator() {
+        assert_eq!(number(DOC, "count(child :: b)"), 2.0);
+    }
+
+    #[test]
+    fn sequential_groups_do_not_accumulate_nesting_depth() {
+        // Each group opens and closes one level. If closing did not count,
+        // twenty groups plus the chain itself would pass the limit of 32.
+        let expression = vec!["(1)"; 20].join(" + ");
+        assert_eq!(number(DOC, &expression), 20.0);
+    }
+
+    #[test]
+    fn numbers_far_from_one_print_without_an_exponent() {
+        assert_eq!(text(DOC, "1 div 10000000"), "0.0000001");
+        assert_eq!(
+            text(DOC, "100000000000 * 100000000000"),
+            "10000000000000000000000"
+        );
+        assert_eq!(text(DOC, "-1 div 10000000"), "-0.0000001");
+        assert_eq!(text(DOC, "1 div 4"), "0.25");
+    }
+
+    #[test]
     fn a_position_predicate_needs_an_exact_match() {
         // 1 + 2^-52 is a different number from 1, so it selects nothing.
         assert_eq!(number(DOC, "count(b[1.0000000000000002])"), 0.0);

@@ -1862,3 +1862,43 @@ fn sequence_functions_compare_and_atomize_exactly() {
     assert!(check("string(max((1, number('x')))) = 'NaN'", "<a/>"));
     assert!(check("string(min((number('x'), 1))) = 'NaN'", "<a/>"));
 }
+
+#[test]
+fn date_and_time_arithmetic_is_exact_across_offsets_and_centuries() {
+    for test in [
+        // A timezone offset is kept, not applied twice or in reverse.
+        "string(xs:dateTime('2020-01-01T10:00:00+01:00') + xs:dayTimeDuration('PT1H')) = '2020-01-01T11:00:00+01:00'",
+        "string(xs:dateTime('2020-01-01T10:00:00-05:30') + xs:dayTimeDuration('PT30M')) = '2020-01-01T10:30:00-05:30'",
+        // Minutes and seconds both count toward an instant, and back out of one.
+        "xs:dateTime('2020-01-01T10:01:00Z') - xs:dateTime('2020-01-01T10:00:00Z') = xs:dayTimeDuration('PT1M')",
+        "xs:dateTime('2020-01-01T10:00:30Z') - xs:dateTime('2020-01-01T10:00:00Z') = xs:dayTimeDuration('PT30S')",
+        "string(xs:dateTime('2020-01-01T10:00:00Z') + xs:dayTimeDuration('PT1H23M45S')) = '2020-01-01T11:23:45Z'",
+        // Century and 400-year boundaries of the civil calendar.
+        "string(xs:date('2100-02-28') + xs:dayTimeDuration('P1D')) = '2100-03-01'",
+        "string(xs:date('2400-02-28') + xs:dayTimeDuration('P1D')) = '2400-02-29'",
+        "string(xs:date('2400-02-28') + xs:dayTimeDuration('P2D')) = '2400-03-01'",
+        "string(xs:date('2399-12-31') + xs:dayTimeDuration('P1D')) = '2400-01-01'",
+        // Durations compare by kind and by every component.
+        "not(deep-equal(xs:dayTimeDuration('PT1H'), xs:dayTimeDuration('PT2H')))",
+        "string(xs:yearMonthDuration('P0M')) = 'P0M'",
+        // Time lexical forms.
+        "'24:00:00' castable as xs:time",
+        "not('24:30:00' castable as xs:time)",
+        "not('24:00:01' castable as xs:time)",
+        "not('10:00:5' castable as xs:time)",
+        "not('10:00:0x' castable as xs:time)",
+        // A one-number sequence is true exactly when the number is non-zero.
+        "boolean(for $x in 1 return $x)",
+        "not(boolean(for $x in 0 return $x))",
+    ] {
+        assert!(check(test, "<a/>"), "{test}");
+    }
+}
+
+#[test]
+fn node_order_operators_lex_at_any_offset() {
+    // `>>` and `<<` are two characters wherever they appear.
+    assert!(check("b[2] >> b[1]", "<a><b/><b/></a>"));
+    assert!(check("not(b[1] >> b[2])", "<a><b/><b/></a>"));
+    assert!(check("b[1] << b[2]", "<a><b/><b/></a>"));
+}

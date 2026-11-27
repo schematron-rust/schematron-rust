@@ -610,3 +610,16 @@ fn a_predicate_inside_a_simple_map_sees_the_node_not_the_mapped_item() {
 fn function_lookup_accepts_arity_zero() {
     assert!(check("function-lookup('true', 0)()", "<a/>"));
 }
+
+#[test]
+fn sequential_arrow_and_dynamic_call_chains_release_their_depth() {
+    // Each operand opens and closes one level; forty in a row must not
+    // add up to more than the limit of 32.
+    let arrows = vec!["('a' => string())"; 40].join(", ");
+    assert!(check(
+        &format!("string-length(concat({arrows})) = 40"),
+        "<a/>"
+    ));
+    let calls = vec!["true#0()"; 40].join(", ");
+    assert!(check(&format!("count(({calls})) = 40"), "<a/>"));
+}

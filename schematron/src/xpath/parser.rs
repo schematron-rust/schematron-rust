@@ -1166,6 +1166,14 @@ mod tests {
     }
 
     #[test]
+    fn an_unexpected_token_is_reported_at_its_own_offset() {
+        // The parser steps back over the token it could not use, so the
+        // offset points at that token rather than at the one after it.
+        assert_eq!(parse("for x in (1) return 1").unwrap_err().position, 4);
+        assert_eq!(parse("1 instance of 5").unwrap_err().position, 14);
+    }
+
+    #[test]
     fn malformed_productions_return_located_errors_instead_of_partial_trees() {
         for source in [
             "",

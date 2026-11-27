@@ -199,13 +199,59 @@ inputs.
     `is_char_boundary(len)` is true.
   - `include.rs` `next_order` → `0` or `1`: the rebuilt schema tree is
     read through child lists, never by document order.
-- [ ] **Mutation testing (`src/xpath`).** 1,745 mutants, about two hours at
-  `-j 6`. Run it in shards (`--shard k/4`) and triage the survivors the
-  same way.
+- [x] **Mutation testing (`src/xpath`).** 1,745 mutants, run as one shard
+  and then `--iterate` passes, about 2.5 hours at `-j 6`. Over 100 survivors
+  were triaged.
+  - **One real bug.** `E1 ! E2` set the context position and size to 1. It
+    now follows XPath 3.0 section 3.14 (fixed in `c65ebd8`).
+  - **One design limit.** Flat chains longer than 32 operands are refused;
+    see "Found while mutation testing" below.
+  - **Test gaps, now covered.** Equality precedence; temporal and duration
+    arithmetic across offsets, minutes, seconds and the 2100 and 2400
+    calendar boundaries; `xs:time` lexical forms; `deep-equal`, `data()`,
+    `max`/`min` with NaN, `id()` and `lang()`; range bounds and the budget
+    reset; `following`/`preceding` where a subtree ends in text; exact
+    position predicates; number formatting without exponents; `>>`/`<<` at
+    any offset; parser depth release for groups, arrows and dynamic calls;
+    error offsets; the public keyword, registry and name-list helpers.
+
+  The 25 survivors left are equivalent:
+  - multiplication or division by a sign that is always ±1 (`temporal_arithmetic`,
+    `duration_component`, `Duration::parse`, `offset_minutes`);
+  - guards an earlier check makes unreachable (the version guards in
+    `call_known` and `call_v2_rest`, the name guard and the non-negative
+    arity guard in `parse_primary`, `minutes < 0` after `Some(0)`);
+  - typed-argument arms whose fallback re-parses the same lexical value;
+  - clamps that land on the same index (`insert-before`);
+  - `+= 1` → `*= 1` before a loop that consumes the same character class
+    (`consume_qname`, `lex_eqname`);
+  - an off-by-one in the sequence budget, which needs a 10-million-item
+    evaluation to observe;
+  - `format_number` thresholds that both render the same text, because Rust
+    never writes a capital `E`;
+  - `-0.0` versus `0.0` from `i64_to_f64`, which XPath renders identically;
+  - the first comparison in the `preceding` filter, which the second
+    already implies.
 - [x] **Bound the echoed expression in errors.** An XPath nesting error prints
   the entire offending expression (200 KB for a hostile schema). Truncate it
   around the caret position. Done: 60 characters either side, with `…` at each cut.
   The full source stays in `Error::XPathSyntax::expression`.
+
+### Found while mutation testing
+
+- [ ] **Flat operator chains longer than 32 operands are refused.**
+  `parse_binary_chain` charges one level of `MAX_RECURSION_DEPTH` (32) per
+  operand, because the left-folded tree is evaluated recursively. A stack
+  overflow found by fuzzing is why (`spec/roadmap/`). So `1 + 1 + … + 1`
+  with 33 terms, a 33-way `|` union, or a generated enumeration
+  `@x = 'a' or @x = 'b' or …` with 33 alternatives fails to compile with
+  "expression nested deeper than the limit of 32". To a user that is not
+  nesting. Fix it by evaluating same-operator chains iteratively, for
+  example by flattening them to an n-ary node or walking the left spine in a
+  loop, the way location paths are already exempt. Then charge chains only
+  for real nesting, and update `spec/conformance/#limits`. Acceptance: a
+  10 000-operand `or` chain compiles and evaluates in an unoptimised build,
+  and the fuzz regression for the original overflow still passes.
 
 ### Already in place, or not actionable here (Mistral items not carried forward)
 
