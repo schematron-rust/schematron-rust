@@ -154,6 +154,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn memory_resolver_rebases_to_the_literal_key() {
+        let resolver = MemoryResolver::new();
+        assert_eq!(
+            resolver.rebase("lib.sch", Some("main.sch")),
+            Some("lib.sch".to_string())
+        );
+    }
+
+    #[test]
     fn file_resolver_refuses_network_uris() {
         let error = FileResolver::new()
             .resolve("https://example.com/a.sch", None)

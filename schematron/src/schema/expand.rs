@@ -489,6 +489,8 @@ mod tests {
             id: Some("deep".into()),
             ..Rule::default()
         };
+        let mut at_limit = vec!["base".to_string(); MAX_EXTENDS_DEPTH];
+        assert!(splice(rule.clone(), &HashMap::new(), &mut at_limit).is_ok());
         let mut chain = vec!["base".to_string(); MAX_EXTENDS_DEPTH + 1];
         assert!(splice(rule, &HashMap::new(), &mut chain)
             .unwrap_err()

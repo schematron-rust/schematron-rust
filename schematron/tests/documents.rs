@@ -385,3 +385,31 @@ fn a_loaded_document_keeps_namespace_and_attribute_order() {
         .collect();
     assert_is_empty!(failures);
 }
+
+#[test]
+fn document_is_found_inside_every_nesting_construct() {
+    // Whether a schema calls document() decides whether validation loads
+    // documents at all, so the search must see through every construct.
+    for test in [
+        "if (false()) then false() else exists(document('e.xml')/r)",
+        "count(1 to count(document('e.xml')/r)) = 1",
+        "exists(for $x in 1 return document('e.xml')/r)",
+        "exists(let $x := 1 return document('e.xml')/r)",
+        "some $x in 1 satisfies exists(document('e.xml')/r)",
+        "exists(document#1('e.xml')/r)",
+        "exists#1(document('e.xml')/r)",
+    ] {
+        let schema = schema_with(
+            &format!(
+                r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt3">
+                     <pattern><rule context="/a"><assert test="{test}">missed</assert></rule></pattern>
+                   </schema>"#
+            ),
+            &[("e.xml", "<r/>")],
+        );
+        let report = schema
+            .validate(&Document::from_str("<a/>").unwrap())
+            .unwrap_or_else(|e| panic!("{test}: {e}"));
+        assert_eq!(report.count_failures(), 0, "{test}");
+    }
+}

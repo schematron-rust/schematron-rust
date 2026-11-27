@@ -533,6 +533,13 @@ mod tests {
         assert_eq!(m.query_binding, QueryBinding::Xslt);
         assert_eq!(m.lang.as_deref(), Some("en"));
         assert_eq!(m.title.as_deref(), Some("T"));
+        // `lang` in no namespace is not `xml:lang`.
+        let plain = model(
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" lang="de">
+                 <pattern><rule context="a"><assert test="b">m</assert></rule></pattern>
+               </schema>"#,
+        );
+        assert_eq!(plain.lang, None);
         assert_eq!(m.namespaces[0].prefix, "x");
         assert_eq!(m.phases[0].actives, vec!["q".to_string()]);
     }

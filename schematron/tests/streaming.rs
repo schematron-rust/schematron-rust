@@ -605,3 +605,64 @@ fn options_that_trim_the_report_agree_with_full_validation() {
     assert_eq!(untrimmed.count_failures(), 3);
     assert_eq!(untrimmed.count_fired_rules(), 3);
 }
+
+#[test]
+fn more_streaming_refusals_name_their_construct() {
+    for (body, reason) in [
+        (
+            r#"<pattern id="p1" documents="'x.xml'"><rule context="a"><assert test="1">x</assert></rule></pattern>"#,
+            "pattern \"p1\"",
+        ),
+        (
+            r#"<pattern><let name="v" value="1"/><rule context="a"><assert test="1">x</assert></rule></pattern>"#,
+            "pattern (unnamed)",
+        ),
+        (
+            r#"<pattern><rule context="a | b[1]"><assert test="1">x</assert></rule></pattern>"#,
+            "positional",
+        ),
+        (
+            r#"<pattern><rule context="order/text()"><assert test="1">x</assert></rule></pattern>"#,
+            "outside record elements",
+        ),
+    ] {
+        assert_ineligible(&schema_with(body), reason);
+    }
+    let resolve = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+             <pattern><rule context="a"><assert test="resolve-uri('x')">x</assert></rule></pattern>
+           </schema>"#,
+    )
+    .unwrap();
+    assert_contains!(
+        resolve.streaming_eligible().unwrap_err(),
+        "resolve-uri() without an explicit base URI"
+    );
+}
+
+#[test]
+fn a_wrapper_comparison_with_a_child_is_refused_when_it_fires() {
+    // Both operands must be available before the wrapper's children arrive.
+    let refused = Schema::from_str(&schema_with(
+        r#"<pattern><rule context="/orders"><assert test="@a = order">x</assert></rule></pattern>"#,
+    ))
+    .unwrap();
+    let error = refused
+        .validate_streaming(
+            "<orders a='1'><order/></orders>".as_bytes(),
+            &ValidateOptions::new(),
+        )
+        .unwrap_err();
+    assert_contains!(error.to_string(), "cannot evaluate");
+
+    let accepted = Schema::from_str(&schema_with(
+        r#"<pattern><rule context="/orders"><assert test="@a = '1'">x</assert></rule></pattern>"#,
+    ))
+    .unwrap();
+    assert!(accepted
+        .validate_streaming(
+            "<orders a='1'><order/></orders>".as_bytes(),
+            &ValidateOptions::new()
+        )
+        .is_ok());
+}

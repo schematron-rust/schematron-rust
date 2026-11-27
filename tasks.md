@@ -157,7 +157,8 @@ inputs.
   Done: `schematron/deny.toml` and the `Dependency policy (cargo deny)` CI job.
   Locally it reports advisories, bans, licenses and sources all ok. Removing
   `Unicode-3.0` from the allow list rejects `unicode-ident`, so the license
-  policy is live. The hosted job has not run yet.
+  policy is live. Hosted run 45911111453 on `audit-fixes-2026-11` passed every
+  job, the new Format step and cargo deny job included.
 - [x] **Mutation testing (`src/validate`, `src/xml`).** Coverage is 100% by execution, and
   `cargo-mutants` would show whether the assertions catch changed behavior.
   Run it on `src/xpath` and `src/validate`, and record the survivors as tasks
@@ -181,9 +182,26 @@ inputs.
   The copied tree omits the repository root, so run with
   `-- --all-features -- --skip every_relative_link_resolves`, because that
   docs test checks links outside the crate.
-- [ ] **Mutation testing (`src/xpath`, `src/schema`).** 1,745 and 386
-  mutants, several hours at `-j 6`. Run it with `--shard` across sessions or in a
-  scheduled job, and triage the survivors the same way.
+- [x] **Mutation testing (`src/schema`).** 386 mutants in 27 min: 318
+  caught, 5 timeouts, 33 unviable, 30 missed. New tests close 26 of the misses:
+  - the kind-test name in a 1.0 error, and the `replace()` literal-regex check;
+  - `document()` detection inside if, range, for, let, quantified, a named
+    function reference and a dynamic call;
+  - streaming refusals for a union, `text()`, `resolve-uri#1` and the pattern
+    label, plus a wrapper comparison with a child;
+  - parameter name characters, include fragments matching only by id, foreign
+    elements in messages, `lang` without `xml:`, the exact extends depth limit,
+    and `MemoryResolver::rebase`.
+
+  The four survivors are equivalent:
+  - `expand.rs` `substitute`: the early return (`||` → `&&`) is only a
+    shortcut, and `index < len` → `<=` stops at the same place, because
+    `is_char_boundary(len)` is true.
+  - `include.rs` `next_order` → `0` or `1`: the rebuilt schema tree is
+    read through child lists, never by document order.
+- [ ] **Mutation testing (`src/xpath`).** 1,745 mutants, about two hours at
+  `-j 6`. Run it in shards (`--shard k/4`) and triage the survivors the
+  same way.
 - [x] **Bound the echoed expression in errors.** An XPath nesting error prints
   the entire offending expression (200 KB for a hostile schema). Truncate it
   around the caret position. Done: 60 characters either side, with `…` at each cut.

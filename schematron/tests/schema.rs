@@ -326,3 +326,92 @@ fn schema_variables_keep_the_instance_nodes_inside_a_documents_pattern() {
         );
     }
 }
+
+#[test]
+fn an_xpath_two_kind_test_under_one_point_zero_is_named_in_the_error() {
+    let error = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern><rule context="a"><assert test="a/attribute()">m</assert></rule></pattern>
+           </schema>"#,
+    )
+    .unwrap_err();
+    assert_contains!(error.to_string(), "attribute() kind test");
+}
+
+#[test]
+fn a_bad_literal_regex_in_replace_fails_at_compile_time() {
+    let error = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
+             <pattern><rule context="a"><assert test="replace(., '(', 'x') = ''">m</assert></rule></pattern>
+           </schema>"#,
+    )
+    .unwrap_err();
+    assert!(matches!(error, Error::XPathSyntax { .. }), "{error}");
+}
+
+#[test]
+fn abstract_pattern_parameter_names_follow_xml_name_rules() {
+    // Digits, `-` and `.` may follow the first character; `_` and
+    // non-ASCII letters may start a name. An unsubstituted `$name` would be
+    // an unbound variable and fail to compile.
+    let schema = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+             <pattern abstract="true" id="t">
+               <rule context="$_u"><assert test="$v-1 = $a.b and $p2 and $é">m</assert></rule>
+             </pattern>
+             <pattern is-a="t">
+               <param name="_u" value="a"/><param name="v-1" value="1"/><param name="a.b" value="1"/>
+               <param name="p2" value="true()"/><param name="é" value="true()"/>
+             </pattern>
+           </schema>"#,
+    )
+    .unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a/>").unwrap())
+        .unwrap();
+    assert_eq!(report.count_fired_rules(), 1);
+    assert_eq!(report.count_failures(), 0);
+}
+
+#[test]
+fn an_include_fragment_matches_only_an_id() {
+    // An earlier element has another attribute whose value is the fragment
+    // name. Only `@id` (or `@xml:id`) identifies the included element.
+    let schema = compile_with(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron"><include href="lib.sch#frag"/></schema>"#,
+        &[(
+            "lib.sch",
+            r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+                 <pattern id="other"><rule context="frag"><assert test="false()">wrong</assert></rule></pattern>
+                 <pattern id="frag"><rule context="a"><assert test="false()">right</assert></rule></pattern>
+               </schema>"#,
+        )],
+    )
+    .unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a/>").unwrap())
+        .unwrap();
+    let texts: Vec<_> = report
+        .failures()
+        .map(|f| f.text.trim().to_string())
+        .collect();
+    assert_eq!(texts, vec!["right"]);
+}
+
+#[test]
+fn foreign_elements_in_a_message_contribute_only_their_text() {
+    // A foreign `value-of` is not Schematron's, and a foreign `b` keeps
+    // its text.
+    let schema = Schema::from_str(
+        r#"<schema xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:h="urn:h">
+             <pattern><rule context="a">
+               <assert test="false()">x<h:value-of select="'no'"/><h:b>bold</h:b></assert>
+             </rule></pattern>
+           </schema>"#,
+    )
+    .unwrap();
+    let report = schema
+        .validate(&Document::from_str("<a/>").unwrap())
+        .unwrap();
+    assert_eq!(report.failures().next().unwrap().text, "xbold");
+}
